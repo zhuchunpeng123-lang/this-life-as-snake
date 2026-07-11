@@ -1,0 +1,7 @@
+﻿# OS junk
+Thumbs.db
+Desktop.ini
+# local project data (not part of game source)
+.codebuddy/
+# deps
+node_modules/
