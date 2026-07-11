@@ -119,6 +119,7 @@
 				timer.steam = COMBO_STEAM_INTERVAL_SEC
 				var h = headPos(), es = enemiesIn(h.x, h.y, CO.steamExplosion.radius)
 				for (var k = 0; k < es.length; k++) { hurt(es[k], SK.fire.dotPerSec[idx('fire')] * CO.steamExplosion.damageMul) }
+				Bus.emit('fx:blast', { x: h.x, y: h.y, radius: CO.steamExplosion.radius })   // 需求B：爆环对准真实爆心（即 AOE 中心 h）
 			}
 		}
 		if (foundCombo.electroTurret) {                   // 电磁炮台 bolt+lightning：周期链式电击（伤害=闪电等级×damageMul，走 hurt 吃蛇长+暴击）

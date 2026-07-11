@@ -44,10 +44,17 @@
 | 11_render.js | 护盾描边/内晕 alpha | 0.45 / 0.06 | 0.35/0.55, 0.04/0.09 |
 | 11_render.js | 护盾球半径 | 5px | 4 / 6 |
 | 11_render.js | 冰域显示节数 | 5 | 4 / 8 |
-| 05_particle.js | 弹道步距 | 20px | 15 / 25 |
-| 05_particle.js | 命中爆点 | 4颗/80/0.2 | 6/100/0.25 |
-| 05_particle.js | 链步距 | 25px | 20 / 30 |
-| 05_particle.js | 链色/跳点 | #88ccff / 5颗 | #aaddff / 8颗 |
+| 05_particle.js | 弹道光束色 `BOLT_COLOR` | #fff1a8 | #ffffff / #ffe066 |
+| 05_particle.js | 弹道光束存活 `BOLT_LIFE` | 0.2s | 0.15 / 0.25 |
+| 05_particle.js | 光束线宽 `BEAM_W_PX` | 3px | 2 / 4 |
+| 05_particle.js | 电链色 `LIGHTNING_COLOR` | #9fd0ff | #bfe3ff / #88ccff |
+| 05_particle.js | 电链线宽 `LIGHTNING_W_PX` | 2px | 3 / 1.5 |
+| 05_particle.js | 电链存活 `LIGHTNING_LIFE` | 0.22s | 0.18 / 0.28 |
+| 05_particle.js | 电链抖动 `LIGHTNING_JAG` | 14px | 10 / 20 |
+| 05_particle.js | 爆环色 `BLAST_COLOR` | #ffb04d | #ff8a3d / #ffd27a |
+| 05_particle.js | 爆环存活 `BLAST_LIFE` | 0.4s | 0.3 / 0.5 |
+| 05_particle.js | 爆环线宽 `BLAST_RING_W` | 4px | 3 / 6 |
+| 05_particle.js | 命中/爆散爆点 `HIT_BURST_N` | 6颗 | 4 / 8 |
 | 10_audio.js | 各音效 freq/dur | 候选值 | ~ 调参器微调 |
 | 13_editor.js | 调参清单 | 待确认 | 实测补全 |
 | 12_ui.js | `SKILL_LABEL` | 待确认 | UX 复核 |
