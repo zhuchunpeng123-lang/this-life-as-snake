@@ -9,9 +9,8 @@
 	var SHIELD_ORB_RADIUS = 26          // TODO: 待确认（候选 22 / 30）
 	var ICE_SLOW_LINGER_SEC = 0.5       // TODO: 待确认（候选 0.3 / 0.8）
 	var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
-	// ⚠ COMBO_ELECTRO_INTERVAL_SEC 不是纯表现值：它决定电磁炮台 DPS 节奏，属 gameplay 值。
-	//   目前与蒸汽一致作占位先跑，但为「待回写数值真理源 §9 的债务」——后续实测后必须登记 §9，勿当常量长期留。
-	var COMBO_ELECTRO_INTERVAL_SEC = 2.0  // TODO: 待回写 §9（候选 1.5 / 3.0）
+	// ⚠ COMBO_ELECTRO_INTERVAL_SEC 已废弃：原周期 electroTurret 触发器已改为「bolt 命中触发 + 全局冷却」，
+	//   冷却语义由 CONFIG.COMBO.electroTurret.cooldownSec（§9 2026-07-11 已登记，单源 config 支持 ~ 编辑器/localStorage 热调）承接，不再留作本地常量。
 
 	var timer = { bolt: 0, lightning: 0, steam: 0, electro: 0 }
 	var foundCombo = {}
@@ -39,6 +38,10 @@
 		var crit = Math.random() < CB.critRate
 		Registry.get('enemy').applyDamage(e, Formula.damage(base, GS.segments, crit), crit, isDot)   // ⑦ isDot 透传：DOT 由 enemy 聚合飘字
 	}
+	function hurtCombo(e, base, isDot) {   // Combo 独立口径：不叠 effectMul，仅保留暴击（§4.6 / §9 2026-07-11）
+		var crit = Math.random() < CB.critRate
+		Registry.get('enemy').applyDamage(e, Formula.comboDamage(base, crit), crit, isDot)
+	}
 
 	// —— 五技能主动效果（按拥有等级取数组）——
 	function tickFire(dt) {
@@ -55,6 +58,7 @@
 	function tickBolt(dt) {
 		var i = idx('bolt'); timer.bolt -= dt; if (timer.bolt > 0) { return }
 		timer.bolt = 1 / SK.bolt.fireRate[i]
+		timer.electro -= dt   // 电磁炮台连锁冷却门控（命中触发，非周期）；与 bolt 同拍推进
 		var h = headPos(), es = allEnemies(), maxR2 = SK.bolt.maxRange[i] * SK.bolt.maxRange[i]   // P1-1 射程门控
 		es.sort(function (a, b) { return M.distSq(h.x, h.y, a.x, a.y) - M.distSq(h.x, h.y, b.x, b.y) })
 		var n = Math.min(SK.bolt.nodes[i], es.length), fired = 0
@@ -63,11 +67,16 @@
 			hurt(es[k], SK.bolt.damage[i])
 			Bus.emit('fx:bolt', { from: { x: h.x, y: h.y }, to: { x: es[k].x, y: es[k].y } })   // P1-5 弹道视效
 			if (foundCombo.burningBarrage) { Registry.get('enemy').ignite(es[k], CO.burningBarrage.burnSec, CO.burningBarrage.burnDps) }   // 灼烧弹幕：飞镖命中点燃（固定 dps，不经 Formula）
+			if (foundCombo.electroTurret && timer.electro <= 0) {   // 电磁炮台：bolt 命中触发连锁闪电（§4.6/§9 2026-07-11）；走 comboDamage 不叠 effect；全局冷却防密集弹幕 DPS/性能失控
+				timer.electro = CO.electroTurret.cooldownSec
+				var li = idx('lightning'), emr2 = SK.lightning.maxRange[li] * SK.lightning.maxRange[li]
+				doLightningChain(es[k].x, es[k].y, CO.electroTurret.chains, SK.lightning.damage[li] * CO.electroTurret.damageMul, emr2, true)
+			}
 			fired++
 		}
 	}
 	// 链式选敌（lightning / electroTurret 共用，避免复制走样）。px,py=源点；hops=跳跃数；damageBase 经 hurt()（吃蛇长+暴击）；maxR2=首跳射程平方
-	function doLightningChain(px, py, hops, damageBase, maxR2) {
+	function doLightningChain(px, py, hops, damageBase, maxR2, useCombo) {   // useCombo=true → 走 comboDamage 不叠 effect
 		var poolE = allEnemies(), hit = {}, chain = [{ x: px, y: py }]
 		for (var c = 0; c < hops; c++) {
 			var best = null, bd = Infinity
@@ -77,8 +86,9 @@
 				if (c === 0 && d > maxR2) { continue }   // 首跳射程门控；后续跳跃不限距（链式近战）
 				if (d < bd) { bd = d; best = e }
 			}
-			if (!best) { break }
-			hit[best.id] = true; hurt(best, damageBase)
+		if (!best) { break }
+		hit[best.id] = true
+		if (useCombo) { hurtCombo(best, damageBase) } else { hurt(best, damageBase) }
 			chain.push({ x: best.x, y: best.y }); px = best.x; py = best.y   // 链式跳跃 + 收集链条节点
 		}
 		if (chain.length > 1) { Bus.emit('fx:lightning', { chain: chain }) }   // P1-5 闪电链视效
@@ -113,24 +123,19 @@
 		}
 	}
 	function tickCombos(dt) {
-		if (foundCombo.steamExplosion) {                 // 火+冰：周期 AOE。其余 combo 仅登记加成（待真理源补节奏）
+		if (foundCombo.steamExplosion) {                 // 火+冰：周期 AOE。冰只贡献控制（减速/冻结），不计入直伤（冰无直伤数值）
 			timer.steam -= dt
 			if (timer.steam <= 0) {
 				timer.steam = COMBO_STEAM_INTERVAL_SEC
 				var h = headPos(), es = enemiesIn(h.x, h.y, CO.steamExplosion.radius)
-				for (var k = 0; k < es.length; k++) { hurt(es[k], SK.fire.dotPerSec[idx('fire')] * CO.steamExplosion.damageMul) }
+				for (var k = 0; k < es.length; k++) {
+					// §4.6/§9 2026-07-11：基础伤害 = 火焰当前等级 DOT/s × damageMul，不叠 effectMul（comboDamage），保留暴击
+					hurtCombo(es[k], SK.fire.dotPerSec[idx('fire')] * CO.steamExplosion.damageMul, false)
+				}
 				Bus.emit('fx:blast', { x: h.x, y: h.y, radius: CO.steamExplosion.radius })   // 需求B：爆环对准真实爆心（即 AOE 中心 h）
 			}
 		}
-		if (foundCombo.electroTurret) {                   // 电磁炮台 bolt+lightning：周期链式电击（伤害=闪电等级×damageMul，走 hurt 吃蛇长+暴击）
-			timer.electro -= dt
-			if (timer.electro <= 0) {
-				timer.electro = COMBO_ELECTRO_INTERVAL_SEC
-				var h2 = headPos(), li = idx('lightning')
-				var mr2 = SK.lightning.maxRange[li] * SK.lightning.maxRange[li]   // 首跳门控复用 lightning 射程
-				doLightningChain(h2.x, h2.y, CO.electroTurret.chains, SK.lightning.damage[li] * CO.electroTurret.damageMul, mr2)
-			}
-		}
+		// electroTurret 已改为 bolt 命中触发（见 tickBolt）；冷却由 timer.electro + CO.electroTurret.cooldownSec 管控，此处不再周期触发
 	}
 
 	// —— 3 选 1（保底 guaranteeAttack 攻 + guaranteeSurvival 生）——
@@ -201,3 +206,4 @@
 
 // 📝 修改日志
 // 2025-07-10 · P1-② electroTurret/burningBarrage · skill 侧：tickBolt burningBarrage 引燃、tickCombos electroTurret 链式电击（复用电磁炮台 timing + doLightningChain） · 不动 §9
+// 2026-07-11 · Combo 契约修正（commit 1）· skill 侧：新增 Formula.comboDamage 不叠 effect 口径；hurtCombo 助手；doLightningChain 加 useCombo 开关；tickBolt 加「bolt 命中触发连锁闪电 + 全局冷却」取代原周期 electroTurret；tickCombos steamExplosion 改走 comboDamage（火焰 DOT/s ×2.5，冰只控不伤）、删除 electroTurret 周期块 · 真理源 §4.6/§9 已对齐

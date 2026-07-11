@@ -118,6 +118,10 @@
 		// §2 伤害 = base * effectMul * critMul
 		damage: function (base, segments, isCrit) {
 			return base * Formula.effectMul(segments) * (isCrit ? CONFIG.COMBAT.critMultiplier : 1)
+		},
+		// §4.6 / 真理源 §9 2026-07-11：Combo 独立伤害口径——不乘 effectMul(segments)，仅保留暴击
+		comboDamage: function (base, isCrit) {
+			return base * (isCrit ? CONFIG.COMBAT.critMultiplier : 1)
 		}
 	}
 

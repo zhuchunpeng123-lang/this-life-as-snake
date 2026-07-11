@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-11 · fix(combo): 契约对齐-不叠effect+electro命中触发+DOT不刷硬直
+
+- **改动文件**：`03_core.js`（新增 `Formula.comboDamage`）、`08_skill.js`（hurtCombo/doLightningChain/tickBolt/tickCombos 改造）、`02_config.js`（仅加 `COMBO.electroTurret.cooldownSec=0.5`）、`docs/《数值真理源》`（§4.6 steam 行 + §2.2 示例 + §9 契约修正行）、`docs/DEBT.md`（§1 COMBO_ELECTRO 行）、本文件
+- **一句话**：三 Combo 统一「不叠 effect、保留暴击」口径（comboDamage）；steamExplosion 基础伤害 = 火焰当前等级 DOT/s ×2.5（冰只控不伤）；electroTurret 由周期触发改为「弹射子弹命中触发 + 全局冷却 0.5s」（连锁3、伤害×1.5、不叠 effect）；DOT 不刷硬直/闪白（07_enemy.applyDamage 早已 !isDot 门控，本 commit 仅核验、不改）
+- **是否动 §9**：是（§4.6/§9 2026-07-11「Combo 契约修正」）
+- **验收**：
+  - [ ] 不叠 effect：fire+ice 时 steam 爆伤对长蛇不再随节数放大（同暴击下伤害与蛇长无关），暴击仍 ×1.8
+  - [ ] steam 口径：火 Lv5（DOT 24/s）爆伤基础 = 24×2.5=60/跳；冰仅减速/冻结，无额外直伤
+  - [ ] electro 命中触发：bolt+lightning 时连锁闪电只在弹射子弹命中敌人时出现（非每 2s 周期），连锁3跳、伤害×1.5、不叠 effect；高频弹幕下两次连锁间隔 ≥0.5s（核 `timer.electro`）
+  - [ ] DOT 不刷硬直（须实跑）：火环/护盾/灼烧 DOT 命中敌人时**不闪白、不击退、不硬直**（仅掉血飘字），而 bolt/lightning 即时命中仍正常闪白击退；若仍刷白/击退，说明 applyDamage 未做 !isDot 门控，须补回本 commit
+  - [ ] 未触碰：`git diff --stat` 仅含上述文件；`04_collision.js` / `07_enemy.js` / `02_config.js`（除 cooldownSec 外）无改动
+
+---
+
 ## 2026-07-11 · 地基落地：Git + 文档体系 + 清理 .bak
 
 - **改动文件**：新增 `docs/DEBT.md`、`docs/workflow.md`、`docs/plans/`、`docs/.gitignore`；更新 `CHANGELOG.md`（版本回滚改 Git）、`AGENTS.md`（文档地图）；删除 4 个 `*.bak-20250710.js`

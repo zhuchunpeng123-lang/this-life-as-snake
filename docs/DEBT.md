@@ -21,7 +21,7 @@
 | 08_skill.js | `SHIELD_ORB_RADIUS` | 26 | 22 / 30 | 同上 |
 | 08_skill.js | `ICE_SLOW_LINGER_SEC` | 0.5 | 0.3 / 0.8 | 同上 |
 | 08_skill.js | `COMBO_STEAM_INTERVAL_SEC` | 2.0 | 1.5 / 3.0 | 同上 |
-| 08_skill.js | `COMBO_ELECTRO_INTERVAL_SEC` | 2.0 | 1.5 / 3.0 | **待回写 §9**（真理源尚无此字段） |
+| 08_skill.js | `COMBO_ELECTRO_INTERVAL_SEC` | 已废弃 | — | ✅ 已还：语义由 `CONFIG.COMBO.electroTurret.cooldownSec=0.5`（§9 2026-07-11）承接，本地常量已删 |
 | 07_enemy.js | `CHARGE_DURATION_SEC` | 0.4 | 0.35 / 0.5 | 实测 → 登记 §9 |
 | 07_enemy.js | `WANDER_REDIR_SEC` | 1.5 | 1.2 / 2.0 | 同上 |
 | 07_enemy.js | `BOSS_FIRE_INTERVAL_SEC` | 1.2 | 1.0 / 1.5 | 同上 |

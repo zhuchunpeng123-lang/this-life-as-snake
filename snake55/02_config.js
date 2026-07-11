@@ -103,7 +103,7 @@
 
 		COMBO: {
 			steamExplosion: { parts: ['fire', 'ice'], damageMul: 2.5, radius: 90 },
-			electroTurret: { parts: ['bolt', 'lightning'], chains: 3, damageMul: 1.5 },
+			electroTurret: { parts: ['bolt', 'lightning'], chains: 3, damageMul: 1.5, cooldownSec: 0.5 },
 			burningBarrage: { parts: ['fire', 'bolt'], burnDps: 8, burnSec: 3 }
 		},
 
