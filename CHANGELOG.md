@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-07-11 · fix(wave): 段③割草期补精英对齐真理源
+
+- **改动文件**：`02_config.js`（仅 `STAGE.segments[2].pool` 加 `'elite'`）、`docs/《数值真理源》`（§9 段③补精英行）、`docs/DEBT.md`（§1 STAGE.pool 行）、本文件
+- **一句话**：段③割草期（180–360s）敌群 pool 由 `['chaser','wanderer','charger']` 加 `'elite'`，对齐真理源 §6 段③「全类型+精英」
+- **是否动 §9**：是（§9 2026-07-11「段③补精英」）
+- **验收**：
+  - [ ] 进入段③（游戏 180s 后）刷怪池出现 elite（紫大胖怪，HP 200）
+  - [ ] 段④/段⑤ pool 不受影响（仍含 elite，符合预期）
+  - [ ] `git diff --stat` 仅含上述 4 文件；`03_core.js` / `04_collision.js` / `08_skill.js` / `07_enemy.js` 无改动
+
+---
+
 ## 2026-07-11 · fix(combo): 契约对齐-不叠effect+electro命中触发+DOT不刷硬直
 
 - **改动文件**：`03_core.js`（新增 `Formula.comboDamage`）、`08_skill.js`（hurtCombo/doLightningChain/tickBolt/tickCombos 改造）、`02_config.js`（仅加 `COMBO.electroTurret.cooldownSec=0.5`）、`docs/《数值真理源》`（§4.6 steam 行 + §2.2 示例 + §9 契约修正行）、`docs/DEBT.md`（§1 COMBO_ELECTRO 行）、本文件

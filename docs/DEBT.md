@@ -29,7 +29,7 @@
 | 07_enemy.js | `BOSS_BULLET_RADIUS` | 9 | 8 / 10 | 同上 |
 | 07_enemy.js | `BOSS_BULLET_LIFE_SEC` | 4.0 | 3 / 4 | 同上 |
 | 07_enemy.js | `DOT_TEXT_MIN` | 10 | 8 / 15 | 表现聚合阈值，登记 §9 |
-| 02_config.js | `STAGE.pool` | GDD 文字推断 | — | 待 §9 量化 stage pool |
+| 02_config.js | `STAGE.pool` | GDD 文字推断 | — | 🟡 待 §9 量化 stage pool（段③割草期 pool 已补 elite，对齐 §6 段③「全类型+精英」，§9 2026-07-11 已登记） |
 
 ---
 

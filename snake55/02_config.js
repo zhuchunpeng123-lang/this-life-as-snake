@@ -121,7 +121,7 @@
 			segments: [
 				{ id: 1, name: '保护期', startSec: 0, endSec: 60, cap: 4, spawnRate: 0.5, pool: ['chaser'] },
 				{ id: 2, name: '成长期', startSec: 60, endSec: 180, cap: 12, spawnRate: 2.8, pool: ['chaser', 'wanderer'] },
-				{ id: 3, name: '割草期', startSec: 180, endSec: 360, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger'] },
+				{ id: 3, name: '割草期', startSec: 180, endSec: 360, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
 				{ id: 4, name: '高潮期', startSec: 360, endSec: 480, cap: 50, spawnRate: 16, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
 				{ id: 5, name: 'Boss期', startSec: 480, endSec: 600, cap: 8, spawnRate: 1.5, pool: ['chaser', 'elite'] }
 			],
