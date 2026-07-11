@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>5.5 好玩基因融合版贪吃蛇</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0a0e1a; overflow: hidden; }
+  #game-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #game-canvas { background: #11162a; box-shadow: 0 0 40px rgba(0,0,0,.6); touch-action: none; }
+  #boot-error { position: fixed; left: 0; top: 0; right: 0; z-index: 9999; display: none;
+    color: #ff6b6b; font: 14px/1.6 monospace; padding: 12px; white-space: pre-wrap;
+    background: rgba(10,14,26,.95); }
+</style>
+</head>
+<body>
+  <div id="game-wrap">
+    <canvas id="game-canvas" width="960" height="540"></canvas>
+  </div>
+  <div id="boot-error"></div>
+
+  <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口 -->
+  <script src="02_config.js"></script>
+  <script src="03_core.js"></script>
+  <script src="04_collision.js"></script>
+  <script src="05_particle.js"></script>
+  <script src="06_snake.js"></script>
+  <script src="07_enemy.js"></script>
+  <script src="08_skill.js"></script>
+  <script src="09_wave.js"></script>
+  <script src="10_audio.js"></script>
+  <script src="11_render.js"></script>
+  <script src="12_ui.js"></script>
+  <script src="13_editor.js"></script>
+  <script src="14_main.js"></script>
+
+  <!-- 全局错误兜底：任何脚本抛错直接可视化，杜绝静默白屏 -->
+  <script>
+    window.addEventListener('error', function (e) {
+      var box = document.getElementById('boot-error');
+      box.style.display = 'block';
+      box.textContent = '[启动错误] ' + (e.message || e) + '\n' + (e.filename || '') + ':' + (e.lineno || '');
+    });
+  </script>
+</body>
+</html>
