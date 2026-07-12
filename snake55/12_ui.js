@@ -6,8 +6,11 @@
 	var SKILL_LABEL = { fire: '火焰光环', ice: '冰霜领域', bolt: '追踪飞镖', shield: '守护力场', lightning: '连锁闪电' } // TODO: 待确认
 	var COMBO_LABEL = { steamExplosion: '蒸汽爆炸', electroTurret: '电磁炮台', burningBarrage: '灼烧弹幕' }
 	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
+	var COMBO_COLOR = { steamExplosion: '#ff9a3c', electroTurret: '#9fd0ff', burningBarrage: '#ff5a4c' }   // TODO: 横幅配色待 UX 复核
 
 	var root = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
+	var comboBanner = null
+	var heartBreakUntil = 0, lostHeartIndex = -1
 	var seqId = 0
 	var timers = []
 	var usedChoiceIds = {}
@@ -25,6 +28,7 @@
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,0.72);z-index:20', root)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18', root)
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30', root)
+		comboBanner = mk('div', 'position:absolute;left:50%;top:14%;transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 22px system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s', root)
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前“全显示”实现已超设计边界）') }
@@ -234,11 +238,41 @@
 		}
 	}
 
+	function showComboBanner(id) {                                  // §3 Combo 触发横幅（~0.8s）
+		if (!comboBanner) { return }
+		var label = COMBO_LABEL[id] || id, col = COMBO_COLOR[id] || '#fff'
+		comboBanner.textContent = '⚡ ' + label + '！'
+		comboBanner.style.background = 'linear-gradient(90deg, rgba(0,0,0,0), ' + col + '55, rgba(0,0,0,0))'
+		comboBanner.style.color = col
+		comboBanner.style.display = 'block'; comboBanner.style.opacity = '1'
+		after(800, function () { if (comboBanner) { comboBanner.style.opacity = '0' } })
+		after(1100, function () { if (comboBanner) { comboBanner.style.display = 'none' } })
+	}
+	function buildRecipeHint() {                                     // §3 常驻配方提示：凑什么出什么不再靠猜
+		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, lines = [], keys = CO2 ? Object.keys(CO2) : []
+		for (var i = 0; i < keys.length; i++) {
+			var key = keys[i], c = CO2[key]
+			if (!c || !c.parts || c.parts.length < 2) { continue }
+			var a = c.parts[0], b = c.parts[1], aOwn = lv[a] > 0, bOwn = lv[b] > 0
+			if (!aOwn && !bOwn) { continue }
+			var name = COMBO_LABEL[key] || key, la = SKILL_LABEL[a] || a, lb = SKILL_LABEL[b] || b
+			if (aOwn && bOwn) { lines.push('✦ ' + la + ' + ' + lb + ' → ' + name + '（已激活）') }
+			else { var have = aOwn ? la : lb, need = aOwn ? lb : la; lines.push('◦ 持有 ' + have + '，再得 ' + need + ' → ' + name) }
+		}
+		if (!lines.length) { return '' }
+		return '<div style="margin-top:4px;color:#ffe;font:600 13px system-ui;opacity:.9">' + lines.join('<br>') + '</div>'
+	}
 	function refreshHUD() {
 		if (!hud) { return }
 		var hearts = ''
-		for (var i = 0; i < PLAYER.coreHp; i++) { hearts += (i < GS.coreHp) ? '❤' : '🖤' }
-		hud.innerHTML = '<div>' + hearts + '</div><div>得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + '</div><div>击杀 ' + GS.kills + '　蛇长 ' + GS.segments + '</div><div>时间 ' + fmtTime(GS.timeSec) + '　阶段 ' + stageName + '</div>'
+		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+		var breaking = now < heartBreakUntil
+		for (var i = 0; i < PLAYER.coreHp; i++) {
+			if (i < GS.coreHp) { hearts += '❤' }
+			else if (breaking && i === lostHeartIndex) { hearts += '💥' }   // 扣心瞬间：对应心碎裂闪烁
+			else { hearts += '🖤' }
+		}
+		hud.innerHTML = '<div>' + hearts + '</div><div>得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + '</div><div>击杀 ' + GS.kills + '　蛇长 ' + GS.segments + '</div><div>时间 ' + fmtTime(GS.timeSec) + '　阶段 ' + stageName + '</div>' + buildRecipeHint()
 	}
 
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })
@@ -250,10 +284,10 @@
 		tryTriggerChoiceBySkill(countOwnedSkills())   // ② CH-02 按技能计数精确触发
 		tryTriggerChoiceFlex()                         // P1-3 CH-01 双条件检测
 	})
-	Bus.on('combo:found', function (d) { if (!d || !d.id) { return } GS.comboHighlights.push(d.id); var tg = COMBO_EVENT[d.id]; if (tg) { tagLatest(tg) } })
+	Bus.on('combo:found', function (d) { if (!d || !d.id) { return } GS.comboHighlights.push(d.id); var tg = COMBO_EVENT[d.id]; if (tg) { tagLatest(tg) }; showComboBanner(d.id) })
 	Bus.on('snake:grow', function () { GS.memoryTokens.push({ tag: null }); tryTriggerChoiceFlex() })   // P1-3 每长一节检测 CH-01
 	Bus.on('enemy:die', function (d) { if (d && d.kind === 'elite') { tagLatest('killElite') } })
-	Bus.on('snake:hurt', function () { tagLatest('hurt') })
+	Bus.on('snake:hurt', function () { tagLatest('hurt'); lostHeartIndex = GS.coreHp; heartBreakUntil = (global.performance && global.performance.now ? global.performance.now() : Date.now()) + 500 })   // 扣心碎裂闪烁
 	Bus.on('pickup:eat', function (d) { if (d && d.kind === 'heal') { tagLatest('heal') } })
 	Bus.on('wave:stage', function (d) {
 		if (d && d.name) { stageName = d.name }
@@ -267,6 +301,7 @@
 		stageName = '—'; bossTagged = false; firstUpgradeTagged = false; choicesUsed = 0; choiceActive = false; usedChoiceIds = {}
 		ownedSkillIds = {}
 		hideChoose(); if (choiceBox) { choiceBox.style.display = 'none' } if (result) { result.style.display = 'none'; result.innerHTML = '' }
+		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' }
 	})
 
 	var UI = {

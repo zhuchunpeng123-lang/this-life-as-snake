@@ -16,6 +16,19 @@
 	var BLAST_LIFE = 0.4            // TODO: 爆环存活 0.4s（候选 0.3 / 0.5）
 	var BLAST_RING_W = 4            // TODO: 爆环线宽 4px（候选 3 / 6）
 	var HIT_BURST_N = 6             // TODO: 命中爆点 6颗（候选 4 / 8）
+	var BOLT_FLY_SEC = 0.14           // TODO: 飞镖视觉飞行时长（候选 0.12 / 0.18）；伤害仍即时判定，纯视觉飞行镖
+	var DART_TRAIL_PX = 10            // TODO: 飞镖拖尾占比（候选 8 / 14）
+	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
+	var DOT_TEXT_SIZE = 11            // TODO: DOT 飘字小字号（候选 10 / 12）；与瞬伤大白字 14/20 区分
+	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
+	var SRC_STYLE = {
+		bolt:      { label: '飞镖 ', color: '#2ad4ff' },        // 飞镖：青（候选 #29c7ff / #3fe0ff）
+		lightning: { label: '闪电 ', color: '#c9a8ff' },        // 闪电：紫（候选 #b98cff / #d8bcff）
+		fire:      { label: '🔥DOT ', color: DOT_TEXT_COLOR },  // 火焰 DOT：橙（持续跳）
+		burn:      { label: '🔥DOT ', color: DOT_TEXT_COLOR },  // 灼烧弹幕引燃：同火焰橙
+		shield:    { label: '🛡护盾 ', color: '#ffe6a3' },      // 护盾接触：白金（候选 #ffd166 / #fff0c2）
+		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
+	}
 
 	function newParticle() { return { active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88 } }
 	function resetParticle(p) { p.active = false }
@@ -29,12 +42,16 @@
 	function resetBeam(b) { b.active = false }
 	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
 	function resetBlast(b) { b.active = false }
+	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, color: '#fff' } }
+	function resetDart(b) { b.active = false }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
 	var blastPool = Core.createPool(newBlast, resetBlast, 32)
 	var particles = []
 	var texts = []
 	var beams = []
 	var blasts = []
+	var dartPool = Core.createPool(newDart, resetDart, 32)
+	var darts = []
 
 	// 生成一段光束：from→to；jag>0 时于中点法向偏移出折线控制点（创建时一次性算，绘制零成本）
 	function spawnBeam(x1, y1, x2, y2, color, width, life, jag) {
@@ -56,6 +73,12 @@
 		b.active = true; b.x = x; b.y = y; b.radius = radius; b.color = color; b.ringWidth = BLAST_RING_W
 		b.life = b.maxLife = life
 		blasts.push(b)
+	}
+	function spawnDart(x1, y1, x2, y2, color, life) {   // 飞行镖：从 head 沿弹道插值飞向目标，纯视觉
+		var b = dartPool.acquire()
+		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.color = color
+		b.life = b.maxLife = life
+		darts.push(b)
 	}
 
 	function spawnBurst(x, y, count, color, speed, size, life) {
@@ -103,6 +126,10 @@
 			var bl = blasts[i]; bl.life -= dt
 			if (bl.life <= 0) { blastPool.release(bl); blasts.splice(i, 1) }
 		}
+		for (i = darts.length - 1; i >= 0; i--) {
+			var da = darts[i]; da.life -= dt
+			if (da.life <= 0) { dartPool.release(da); darts.splice(i, 1) }
+		}
 	},
 		// 由 render 在世界坐标系下调用；粒子层绘于核心实体之下，飘字小号，永不盖核心信息（JUICE 不干扰）
 		drawWorld: function (ctx) {
@@ -125,9 +152,22 @@
 				if (b.curve) { ctx.moveTo(b.x1, b.y1); ctx.quadraticCurveTo(b.cx, b.cy, b.x2, b.y2) }
 				else { ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2) }
 				ctx.globalAlpha = ba * 0.35; ctx.strokeStyle = b.color; ctx.lineWidth = b.width * 3; ctx.stroke()
-				ctx.globalAlpha = ba; ctx.strokeStyle = b.color; ctx.lineWidth = b.width; ctx.stroke()
-			}
-			// 爆环：随寿命从中心扩张并淡出（p=1→0 进度）
+			ctx.globalAlpha = ba; ctx.strokeStyle = b.color; ctx.lineWidth = b.width; ctx.stroke()
+		}
+		// 飞行镖（fx:bolt）：沿弹道插值飞行 + 拖尾，纯视觉（伤害即时判定）
+		ctx.lineCap = 'round'
+		for (i = 0; i < darts.length; i++) {
+			var da = darts[i]
+			var dtp = 1 - da.life / da.maxLife; if (dtp < 0) { dtp = 0 }
+			var dax = da.x1 + (da.x2 - da.x1) * dtp, day = da.y1 + (da.y2 - da.y1) * dtp
+			var daa = da.life / da.maxLife; if (daa < 0) { daa = 0 }
+			var tb = Math.max(0, dtp - 0.35), tx2 = da.x1 + (da.x2 - da.x1) * tb, ty2 = da.y1 + (da.y2 - da.y1) * tb
+			ctx.globalAlpha = daa * 0.5; ctx.strokeStyle = da.color; ctx.lineWidth = 3
+			ctx.beginPath(); ctx.moveTo(tx2, ty2); ctx.lineTo(dax, day); ctx.stroke()
+			ctx.globalAlpha = daa; ctx.fillStyle = da.color
+			ctx.beginPath(); ctx.arc(dax, day, 4 * daa + 2, 0, M.PI2); ctx.fill()
+		}
+		// 爆环：随寿命从中心扩张并淡出（p=1→0 进度）
 			for (i = 0; i < blasts.length; i++) {
 				var bl = blasts[i]
 				var bla = bl.life / bl.maxLife
@@ -152,6 +192,7 @@
 			while (texts.length) { textPool.release(texts.pop()) }
 			while (beams.length) { beamPool.release(beams.pop()) }
 			while (blasts.length) { blastPool.release(blasts.pop()) }
+		while (darts.length) { dartPool.release(darts.pop()) }
 		}
 	}
 
@@ -159,8 +200,18 @@
 	Bus.on('enemy:hit', function (d) {
 		var dmg = Math.round(d.damage)
 		if (dmg <= 0) { return }                                  // 过滤 ≤0 伤害：绝不显示「0」飘字（防小数/无效伤害刷屏）
-		spawnBurst(d.x, d.y, 5, COLORS.damageText, 160, 3, 0.3)
-		spawnText(d.x, d.y - 6, '' + dmg, d.crit ? COLORS.critText : COLORS.damageText, d.crit ? 20 : 14)
+		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
+		var ty = d.y - 6 - (d.r || 0)   // 飘字生成在精灵上方（按命中体半径抬升，修 boss 大精灵盖住伤害数字）
+		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字 + 小爆点，与瞬伤大白字明显区分
+			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
+			spawnBurst(d.x, d.y, 3, dc, 120, 2, 0.25)
+			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE)
+		} else {
+			var col = d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText)   // 暴击金优先，其次来源色
+			var lbl = st ? st.label : ''
+			spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3)
+			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14)
+		}
 	})
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || COLORS.enemyChaser, 220, 4, 0.5) })
 	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, COLORS.food, 120, 3, 0.35) } })
@@ -171,7 +222,7 @@
 	// 需求B 技能视效接收（🟡 参数见顶部表现债常量块 TODO+候选，不动 §9）
 	Bus.on('fx:bolt', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnBeam(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, BEAM_W_PX, BOLT_LIFE, 0)   // 白黄发光直线弹道
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, BOLT_FLY_SEC)   // 飞行镖（纯视觉，伤害仍即时判定）
 		spawnBurst(d.to.x, d.to.y, HIT_BURST_N, BOLT_COLOR, 90, 3, 0.25)                     // 少量命中爆点
 	})
 	Bus.on('fx:lightning', function (d) {

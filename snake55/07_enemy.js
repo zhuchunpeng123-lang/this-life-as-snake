@@ -12,7 +12,7 @@
 	var BOSS_FIRE_COUNT = 6              // TODO: 待确认（候选 5 / 8）
 	var BOSS_BULLET_RADIUS = 9           // TODO: 待确认（候选 8 / 10）
 	var BOSS_BULLET_LIFE_SEC = 4.0       // TODO: 待确认（候选 3 / 4）
-	var DOT_TEXT_MIN = 10                // ⑦ 表现层：DOT 累计到此值才飘伤害字（防每帧刷屏）；TODO 候选 8 / 15
+	var DOT_TEXT_MIN = 4                 // ⑦ 表现层：DOT 累计到此值才飘伤害字（防每帧刷屏）；Commit A 由 10→4 让 DOT 飘字更频繁（视觉「持续小数字」），仅影响飘字聚合、不进伤害/命中判定；TODO 候选 3 / 6
 
 	var colorByType = {
 		chaser: COLORS.enemyChaser, wanderer: COLORS.enemyWanderer, charger: COLORS.enemyCharger,
@@ -28,7 +28,7 @@
 			hp: 1, maxHp: 1, radius: 8, baseSpeed: 0, atk: 1, senseRange: -1, color: '#fff',
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0,
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotAccum: 0,
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotAccum: 0, dotSrc: null,   // B-1：伤害来源标签（DOT 累积用，flush 随飘字带出）
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -66,7 +66,7 @@
 		e.color = colorByType[type] || '#fff'
 		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
-		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0
+		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0; e.dotSrc = null   // B-1：对象池复用复位来源标签，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
 			e.phase = 1; e.invuln = 0; e.fireT = BOSS_FIRE_INTERVAL_SEC; e.kbImmune = true; e.senseRange = -1
@@ -116,7 +116,7 @@
 	}
 	// 外部（技能）受击入口。isDot=持续伤害（火光环/护盾接触/燃烧）：不逐帧飘字、不逐帧击退，累计到可读整数再飘（⑥⑦）
 	// ⑦ 修正 DOT 每帧误刷 stun/flashT，收进 !isDot 分支；与 P0「DOT 不击退」口径统一（顺带修正火光环/护盾 DOT 把敌人冻住、白闪的 P0 遗漏）
-	function applyDamage(e, amount, isCrit, isDot) {
+	function applyDamage(e, amount, isCrit, isDot, src) {   // B-1：src=伤害来源标签（仅透传给飘字，不参与伤害计算）
 		if (!e || !e.active || e.type === 'bossBullet' || e.invuln > 0) { return }
 		e.hp -= amount
 		if (!isDot) {                                                // ⑥ 仅即时伤害产生物理反应：受击闪白 + 击退；DOT 不刷 stun/flashT、不击退
@@ -131,17 +131,18 @@
 		}
 		if (isDot) {                                                  // ⑦ DOT 聚合飘字：攒够 DOT_TEXT_MIN 才 emit，杜绝每帧「1」刷屏
 			e.dotAccum += amount
+			if (src) { e.dotSrc = src }                             // B-1：累积来源（混源取末次写，flush 随飘字带出，比来源丢失更准；不进伤害判定）
 			if (e.hp <= 0) {
-				if (e.dotAccum >= 1) { Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color }) }
+				if (e.dotAccum >= 1) { Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color, isDot: true, src: e.dotSrc, r: e.radius }) }
 				die(e); return
 			}
 			if (e.dotAccum >= DOT_TEXT_MIN) {
-				Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color })
-				e.dotAccum = 0
+				Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color, isDot: true, src: e.dotSrc, r: e.radius })
+				e.dotAccum = 0; e.dotSrc = null
 			}
 			return
 		}
-		Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color })
+		Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color, isDot: !!isDot, src: src, r: e.radius })   // r=命中体半径：飘字偏移到精灵上方，防大体型（boss）盖住数字
 		if (e.hp <= 0) { die(e) }
 	}
 	function applySlow(e, pct, dur) {

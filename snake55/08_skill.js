@@ -5,8 +5,6 @@
 	var SK = CONFIG.SKILL, CO = CONFIG.COMBO, ECON = CONFIG.ECON, CB = CONFIG.COMBAT
 
 	// 🟡 真理源未量化的表现/节奏，占位 + 候选，待回写
-	var SHIELD_ORBIT_SEC = 1.6          // TODO: 待确认（候选 1.2 / 2.0）
-	var SHIELD_ORB_RADIUS = 26          // TODO: 待确认（候选 22 / 30）
 	var ICE_SLOW_LINGER_SEC = 0.5       // TODO: 待确认（候选 0.3 / 0.8）
 	var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
 	// ⚠ COMBO_ELECTRO_INTERVAL_SEC 已废弃：原周期 electroTurret 触发器已改为「bolt 命中触发 + 全局冷却」，
@@ -19,6 +17,7 @@
 	function idx(id) { return lvl(id) - 1 }
 	function owns(id) { return lvl(id) > 0 }
 	function headPos() { var s = Registry.get('snake'); return s && s.head ? s.head : { x: 0, y: 0, angle: 0 } }
+	function segmentsList() { var s = Registry.get('snake'); return (s && s.segments) ? s.segments : [] }   // B-2：沿蛇身逐节判定用
 
 	// 局部 AOE：走 collision.queryCircle（半径有界）；过滤 bossBullet
 	function enemiesIn(x, y, r) {
@@ -34,26 +33,35 @@
 		for (var i = 0; i < l.length; i++) { var e = l[i]; if (e.active && e.type !== 'bossBullet') { out.push(e) } }
 		return out
 	}
-	function hurt(e, base, isDot) {
+	function hurt(e, base, isDot, src) {   // src=伤害来源标签（B-1 纯表现，仅透传给飘字，不参与伤害计算）
 		var crit = Math.random() < CB.critRate
-		Registry.get('enemy').applyDamage(e, Formula.damage(base, GS.segments, crit), crit, isDot)   // ⑦ isDot 透传：DOT 由 enemy 聚合飘字
+		Registry.get('enemy').applyDamage(e, Formula.damage(base, GS.segments, crit), crit, isDot, src)   // ⑦ isDot 透传：DOT 由 enemy 聚合飘字
 	}
-	function hurtCombo(e, base, isDot) {   // Combo 独立口径：不叠 effectMul，仅保留暴击（§4.6 / §9 2026-07-11）
+	function hurtCombo(e, base, isDot, src) {   // Combo 独立口径：不叠 effectMul，仅保留暴击（§4.6 / §9 2026-07-11）
 		var crit = Math.random() < CB.critRate
-		Registry.get('enemy').applyDamage(e, Formula.comboDamage(base, crit), crit, isDot)
+		Registry.get('enemy').applyDamage(e, Formula.comboDamage(base, crit), crit, isDot, src)
 	}
 
 	// —— 五技能主动效果（按拥有等级取数组）——
 	function tickFire(dt) {
-		var i = idx('fire'), h = headPos(), es = enemiesIn(h.x, h.y, SK.fire.radius[i])
-		for (var k = 0; k < es.length; k++) { hurt(es[k], SK.fire.dotPerSec[i] * dt, true) }   // 火光环 DOT（⑦ 标记 isDot）
+		var i = idx('fire')
+		var segs = segmentsList(), step = SK.fire.segStep[i] || 1, r = SK.fire.radius[i]
+		var hit = {}   // B-2：同帧同敌去重，避免多节重叠重复结算 DOT
+		for (var s = 0; s < segs.length; s += step) {
+			var es = enemiesIn(segs[s].x, segs[s].y, r)
+			for (var k = 0; k < es.length; k++) { if (hit[es[k].id]) { continue } hit[es[k].id] = true; hurt(es[k], SK.fire.dotPerSec[i] * dt, true, 'fire') }   // 火墙沿整蛇身（⑦ 标记 isDot）
+		}
 	}
 	function tickIce(dt) {
-		var i = idx('ice'), h = headPos(), En = Registry.get('enemy')
-		var es = enemiesIn(h.x, h.y, SK.ice.trailWidth[i])
+		var i = idx('ice'), En = Registry.get('enemy')
+		var segs = segmentsList(), step = SK.ice.segStep[i] || 1, r = SK.ice.trailWidth[i] / 2   // B-2 对齐修正：命中半径=视觉半径（trailWidth/2），消 2× 视觉不符
 		var pct = SK.ice.slowPct[i], dur = ICE_SLOW_LINGER_SEC
 		if (lvl('ice') >= SK.maxLevel) { pct = 1; dur = SK.ice.lv5FreezeSec }            // Lv5 冻结
-		for (var k = 0; k < es.length; k++) { En.applySlow(es[k], pct, dur) }
+		var hit = {}
+		for (var s = 0; s < segs.length; s += step) {
+			var es = enemiesIn(segs[s].x, segs[s].y, r)
+			for (var k = 0; k < es.length; k++) { if (hit[es[k].id]) { continue } hit[es[k].id] = true; En.applySlow(es[k], pct, dur) }
+		}
 	}
 	function tickBolt(dt) {
 		var i = idx('bolt'); timer.bolt -= dt; if (timer.bolt > 0) { return }
@@ -64,7 +72,7 @@
 		var n = Math.min(SK.bolt.nodes[i], es.length), fired = 0
 		for (var k = 0; k < es.length && fired < n; k++) {
 			if (M.distSq(h.x, h.y, es[k].x, es[k].y) > maxR2) { break }   // 已按距离排序，后续只会更远
-			hurt(es[k], SK.bolt.damage[i])
+			hurt(es[k], SK.bolt.damage[i], false, 'bolt')
 			Bus.emit('fx:bolt', { from: { x: h.x, y: h.y }, to: { x: es[k].x, y: es[k].y } })   // P1-5 弹道视效
 			if (foundCombo.burningBarrage) { Registry.get('enemy').ignite(es[k], CO.burningBarrage.burnSec, CO.burningBarrage.burnDps) }   // 灼烧弹幕：飞镖命中点燃（固定 dps，不经 Formula）
 			if (foundCombo.electroTurret && timer.electro <= 0) {   // 电磁炮台：bolt 命中触发连锁闪电（§4.6/§9 2026-07-11）；走 comboDamage 不叠 effect；全局冷却防密集弹幕 DPS/性能失控
@@ -88,7 +96,7 @@
 			}
 		if (!best) { break }
 		hit[best.id] = true
-		if (useCombo) { hurtCombo(best, damageBase) } else { hurt(best, damageBase) }
+		if (useCombo) { hurtCombo(best, damageBase, false, 'lightning') } else { hurt(best, damageBase, false, 'lightning') }
 			chain.push({ x: best.x, y: best.y }); px = best.x; py = best.y   // 链式跳跃 + 收集链条节点
 		}
 		if (chain.length > 1) { Bus.emit('fx:lightning', { chain: chain }) }   // P1-5 闪电链视效
@@ -102,12 +110,13 @@
 	function tickShield(dt) {
 		var i = idx('shield'), h = headPos()
 		var count = SK.shield.count[i], dmg = SK.shield.contactDamage[i]
-		var base = (GS.timeSec / SHIELD_ORBIT_SEC) * M.PI2
+		var orbR = SK.shield.orbitRadius[i]   // B-2：读 config 环绕半径（取代写死 26），随等级变大能扫敌
+		var base = (GS.timeSec / SK.shield.orbitSec) * M.PI2   // B-2：读 config 环绕周期（取代写死常量）
 		for (var o = 0; o < count; o++) {
 			var a = base + o / count * M.PI2
-			var ox = h.x + Math.cos(a) * SHIELD_ORB_RADIUS, oy = h.y + Math.sin(a) * SHIELD_ORB_RADIUS
-			var es = enemiesIn(ox, oy, SHIELD_ORB_RADIUS * 0.5)
-			for (var k = 0; k < es.length; k++) { hurt(es[k], dmg * dt, true) }                  // MVP：接触按 dps 结算（⑦ 标记 isDot）
+			var ox = h.x + Math.cos(a) * orbR, oy = h.y + Math.sin(a) * orbR
+			var es = enemiesIn(ox, oy, orbR * SK.shield.orbitHitMul)   // ② 0.5 提进 config：护盾球命中半径=orbitRadius×orbitHitMul（消失落裸数字）
+			for (var k = 0; k < es.length; k++) { hurt(es[k], dmg * dt, true, 'shield') }                  // MVP：接触按 dps 结算（⑦ 标记 isDot）
 		}
 	}
 
@@ -130,7 +139,7 @@
 				var h = headPos(), es = enemiesIn(h.x, h.y, CO.steamExplosion.radius)
 				for (var k = 0; k < es.length; k++) {
 					// §4.6/§9 2026-07-11：基础伤害 = 火焰当前等级 DOT/s × damageMul，不叠 effectMul（comboDamage），保留暴击
-					hurtCombo(es[k], SK.fire.dotPerSec[idx('fire')] * CO.steamExplosion.damageMul, false)
+					hurtCombo(es[k], SK.fire.dotPerSec[idx('fire')] * CO.steamExplosion.damageMul, false, 'steam')
 				}
 				Bus.emit('fx:blast', { x: h.x, y: h.y, radius: CO.steamExplosion.radius })   // 需求B：爆环对准真实爆心（即 AOE 中心 h）
 			}
@@ -183,8 +192,23 @@
 		if (GS.status === 'choosing') { GS.status = 'playing' }
 	}
 
+	// —— B-GM 调试入口（仅 dev 测试用，不改 gameplay 默认值/公式）——
+	function debugActivateCombo(id) {                 // 单 combo 激活：点亮对应横幅+音效，不影响其他
+		if (!CO[id]) { Log.warn('[调试] 未知 combo：' + id); return }
+		for (var k = 0; k < CO[id].parts.length; k++) { var p = CO[id].parts[k]; if (!owns(p)) { GS.ownedSkills[p] = 1 } }  // 部件未持有则先给 1 级
+		if (!foundCombo[id]) { foundCombo[id] = true; GS.comboScore += ECON.comboFindScore; Bus.emit('combo:found', { id: id }) }
+		Log.info('[调试] 激活 combo：' + id)
+	}
+	function debugMaxAll() {                          // 立即满级：五技能 Lv5 + 触发 combo 检测
+		var ks = SK.list
+		for (var i = 0; i < ks.length; i++) { GS.ownedSkills[ks[i]] = SK.maxLevel }
+		checkCombos()
+		Log.info('[调试] 全部技能满级 Lv' + SK.maxLevel)
+	}
+
 	var Skill = {
 		owned: function () { return GS.ownedSkills }, offer: offer, pick: pick,
+		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }    // 依赖：本帧应在 collision.update 之后调用（queryCircle 哈希新鲜）
 			if (owns('fire')) { tickFire(dt) }

@@ -4,6 +4,71 @@
 
 ---
 
+## 2026-07-12 · feat(skill-geo): 技能沿蛇身判定+范围扩大(Commit B-2)
+
+- **改动文件**：`02_config.js`（fire.radius `[60,75,90,108,128]`、ice.trailWidth `[30,40,48,60,75]`、新增 shield.orbitRadius `[44,58,72,86,100]`/orbitSec `1.6`、fire/ice.segStep `1`）、`08_skill.js`（tickFire/tickIce/tickShield 沿蛇身逐节判定、读 config、同帧去重；删写死 SHIELD_ORBIT_SEC/SHIELD_ORB_RADIUS）、`11_render.js`（drawSkillAura 沿蛇身绘制火墙/霜冻带+护盾读 config 公转；新增 drawDebugHitboxes 钩子承接 GM「显示碰撞盒」）、`03_core.js`（version 0.3-b7→0.3-b8）、数值真理源 §4.1/§4.2/§4.4/§9、docs/DEBT.md
+- **一句话**：火/冰/护盾从"仅蛇头生效"升级为沿整条蛇身逐节判定（视觉=判定），并放大火半径/冰宽度、护盾环绕半径随等级扩大主动扫敌；消除渲染侧写死护盾参数的双份真相源
+- **是否动 §9**：是（fire.radius / ice.trailWidth 放大 + 新增 shield.orbitRadius/orbitSec/fire·ice.segStep，均已回写 §4.1/§4.2/§4.4 与 §9 Changelog）
+- **验收**：
+  - [ ] 持火技能→整条蛇身拖出火墙，经过的小怪持续掉血（飘字 🔥）
+  - [ ] 持冰技能→整条蛇身留霜冻带，小怪减速；Lv5 冻结 1s
+  - [ ] 持护盾→球绕蛇头公转，半径随等级变大（Lv1~44px → Lv5~100px），碰到小怪掉血
+  - [ ] 「显示碰撞盒」(GM)→绿圈=敌半径、红圈=蛇身/蛇头半径实时可见
+  - [ ] 未碰：伤害公式 `Core.Formula.damage` / `04_collision.js` / `02_config.js` 数值结构
+  - [ ] 🟡 fire/ice 初值为原值×1.5，待浏览器实测手感后回填 §9（已标注债务）
+
+---
+
+## 2026-07-12 · feat(editor): ~ 编辑器升级为 GM 测试面板(Commit B-GM)
+
+- **改动文件**：`13_editor.js`（重写为分类 GM 面板：怪物/蛇/技能伤害 slider 自动从 CONFIG 生成、单 Combo 激活按钮、GM 指令、coreHp ±1、手动路径输入）、`08_skill.js`（暴露 `debugActivateCombo(id)` / `debugMaxAll()`）、本文件
+- **一句话**：`~` 编辑器升级为可实战测试的 GM 面板——怪物 HP/速度/半径、蛇速/转向/节数、各技能逐等级伤害全部可滑；三个 Combo 各自按钮独立点亮；无限无敌/满级/清敌/碰撞盒开关即时生效；手动输入路径（config 重载 / `GS.` 即时）覆盖任意数值。仅为 dev 工具，不改任何 gameplay 默认值/公式
+- **是否动 §9**：否（全部为 dev 调参/测试入口；config slider 走既有 override+重载机制，运行时指令走 `GS`/Registry，无数值结构变化）
+- **碰撞盒可视化说明**：GM「显示碰撞盒」按钮写入运行时标志 `global.GMDBG.showHitboxes`，由 `11_render.js` 的 `drawDebugHitboxes` 绘制钩子实时呈现（已在 Commit B-2 一并落地：绿圈=敌半径、红圈=蛇身/蛇头半径）
+- **验收**：
+  - [ ] `~` 开关面板；怪物/蛇/技能分类清晰，slider 拖动后「保存并重载」生效（数值回写 localStorage `snake55_tuning`）
+  - [ ] 怪物 HP/速度/半径、蛇速/转向/最大节数、飞镖/闪电/火/护盾逐等级伤害 slider 可拖动并保存
+  - [ ] 三个 Combo 各自按钮：进入游戏后点击 → 对应横幅+音效亮起，不影响其余 Combo
+  - [ ] 「立即满级」→ 五技能 Lv5 + Combo 检测触发；「无限无敌」→ 蛇头无敌光环常亮；「清空敌人」→ 场上怪清空
+  - [ ] coreHp `+1/-1` 按钮即时改变心数显示
+  - [ ] 手动输入 `GS.coreHp`/`GS.invincibleUntil` 即时生效；输入 `SKILL.fire.radius.2` 等路径加入覆盖（提示重载）
+  - [ ] 未碰：伤害公式 / `02_config.js` 默认值 / `04_collision.js` / `03_core.js`
+  - [x] 碰撞盒可视化已由 B-2 落地（`drawDebugHitboxes` + GM 按钮）
+
+---
+
+## 2026-07-12 · feat(skill-geo): 技能沿蛇身视觉对齐 + 伤害来源标签(Commit B-1)
+
+- **改动文件**：`08_skill.js`（`hurt`/`hurtCombo` 加 `src` 形参并在 fire/bolt/lightning/shield/steam 调用点透传）、`07_enemy.js`（`applyDamage` 加 `src` 形参 + 三处 `enemy:hit` emit 带 `src`，燃烧 tick 标 `'burn'`）、`05_particle.js`（新增 `SRC_STYLE` 来源标签映射，`enemy:hit` 飘字按 `src` 加前缀+专属色）、本文件、`docs/DEBT.md`（§2 登 `SRC_STYLE` 表现债）
+- **一句话**：伤害飘字标注来源+数值——`飞镖 -25`(青)/`闪电 -18`(紫)/`🔥DOT -4`(橙持续)/`🛡护盾 -14`(白金)/`💥蒸汽 -30`(暖橙)，一眼分清谁打了多少；冰无直伤不飘。纯表现层，只读现有伤害值与来源，不碰伤害计算
+- **是否动 §9**：否（仅新增 `src` 透传形参与飘字前缀/色，`SRC_STYLE` 色板为表现债登记 DEBT §2；伤害数值、公式、命中判定均未变）
+- **验收**：
+  - [ ] bolt 命中飘 `飞镖 -N`（青）；lightning 链飘 `闪电 -N`（紫）
+  - [ ] 火环/灼烧 DOT 飘 `🔥DOT -N`（橙，持续小字）；护盾接触飘 `🛡护盾 -N`（白金，DOT）
+  - [ ] steam 爆炸飘 `💥蒸汽 -N`（暖橙）；暴击时金色优先、仍带来源前缀
+  - [ ] 冰无直伤不飘伤害字（仅减速表现）
+  - [ ] 伤害数值与改动前一致（未碰计算）；重开无残留/NaN
+  - [ ] 未触碰：`02_config.js`/`04_collision.js`/`03_core.js`/`10_audio.js`
+
+---
+
+## 2026-07-11 · feat(skill-vfx): 技能视觉辨识+可读性大修(Commit A)
+
+- **改动文件**：`07_enemy.js`（次：`DOT_TEXT_MIN` 10→4 + `enemy:hit` 透传 `isDot`）、`05_particle.js`（主：飞镖改飞行镖视觉 + DOT/即时飘字分色）、`11_render.js`（主：技能食物辉光/敌人燃烧·减速标记/无敌帧闪烁/受击红闪 vignette/火·冰·护盾光环增强/受击强震复用 `SHK.death`）、`12_ui.js`（次：combo 横幅 + 常驻配方提示 + 心碎闪烁）、`03_core.js`（仅 `version` 0.3-b6→0.3-b7，纯元数据）、`docs/DEBT.md`（§1 DOT_TEXT_MIN 值 + §2 新增表现债）、本文件
+- **一句话**：五技能一眼可辨（飞镖=飞行镖 / 闪电=瞬时电弧 / 火=跳动火环 / 冰=霜冻 / 护盾=白金球+拖影）、DOT 持续小橙红飘字 + 敌人燃烧/减速可见、combo 横幅+配方提示、技能食物发光星标区分、受击红闪+心碎+无敌闪烁——纯表现层大修；沿蛇身几何/范围扩圈留给 Commit B
+- **是否动 §9**：否（所有新值均为表现债，顶部 `🟡 TODO + 2候选`，登记 DEBT §2；`DOT_TEXT_MIN` 仅影响飘字聚合、不进伤害/命中判定）
+- **§6 功能审计结论**：火焰 DOT（每帧 tick 掉血）、冰冻（真改 `slowT/slowPct` 移动）、护盾（轨道球接触 `hurt(isDot)`）三处逻辑**均存活**；本次只补视觉，零逻辑修复
+- **验收**：
+  - [ ] 五技能一眼可辨：飞镖=沿弹道飞行的发光镖+拖尾（伤害仍即时，玩法不变）；闪电=瞬时蓝白折线电弧连线、无飞行体；火=跳动橙红火环+火舌；冰=蓝白霜冻地带+霜点；护盾=白金发光球绕蛇转+拖影
+  - [ ] DOT 有持续小橙红飘字（`DOT_TEXT_MIN`=4 更频繁）+ 敌人燃烧（红脉动环+火苗）/ 减速（蓝染环+冰晶）可见
+  - [ ] combo 触发有横幅(~0.8s)+音效（audio 已挂）+ HUD 常驻配方提示（如「弹射 + 闪电 → 电磁炮台（已激活）」）；凑 combo 不再靠猜
+  - [ ] 技能食物（发光呼吸+星标+头顶「!」）vs 普通食物（素色无光）一眼区分
+  - [ ] 受击有全屏红闪 vignette + 心数💥碎裂 + 无敌帧蛇头闪烁（约 1s 可感）；强震复用 `SHK.death`，未新增魔法数字，3 心游戏不过猛
+  - [ ] **⑥ 回验（关键）**：DOT（火环/护盾/灼烧）命中敌人**不闪白、不击退、不硬直**（仅掉血飘字）；bolt/lightning 即时命中**仍闪白+击退**——与 §9 combo 契约一致
+  - [ ] 未触碰：`02_config.js`（gameplay 值）、`04_collision.js`、`08_skill.js`、`10_audio.js`；`03_core.js` 仅 version 字符串变更
+
+---
+
 ## 2026-07-11 · fix(wave): 段③割草期补精英对齐真理源
 
 - **改动文件**：`02_config.js`（仅 `STAGE.segments[2].pool` 加 `'elite'`）、`docs/《数值真理源》`（§9 段③补精英行）、`docs/DEBT.md`（§1 STAGE.pool 行）、本文件
