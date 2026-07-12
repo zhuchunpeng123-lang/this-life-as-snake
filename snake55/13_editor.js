@@ -10,7 +10,7 @@
 		enemyHp: [1, 400, 1], enemySpeed: [20, 300, 5], enemyAtk: [1, 10, 1], enemyRadius: [6, 60, 1],
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
-		fireRadius: [20, 220, 2], iceWidth: [10, 180, 2], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // B-2 标定：火焰半径/冰冻宽度/护盾环半径(px) + 冰冻减速%
+		fireRadius: [20, 220, 2], iceWidth: [10, 180, 2], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05], iceLinger: [1, 8, 0.25], iceSlowLinger: [0.1, 2, 0.05],   // B-2 标定：火焰半径/冰冻宽度/护盾环半径(px) + 冰冻减速% + 冰区滞留时长 + 减速跟随短窗(s)
 		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5]
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
@@ -24,19 +24,16 @@
 	// 技能伤害（逐等级数组 → 每级一个 slider）；COMBO 标量另列
 	var SKILL_ARR = [
 		{ path: 'SKILL.fire.dotPerSec', label: '火 DOT/s', rng: 'fireDot', levels: 5 },
-		{ path: 'SKILL.fire.radius', label: '火焰半径', rng: 'fireRadius', levels: 5 },        // B-2 标定核心
-		{ path: 'SKILL.ice.trailWidth', label: '冰冻宽度', rng: 'iceWidth', levels: 5 },       // B-2 标定核心
-		{ path: 'SKILL.ice.slowPct', label: '冰冻减速%', rng: 'iceSlow', levels: 5 },          // 冰整块之前未暴露，一并补上
 		{ path: 'SKILL.bolt.damage', label: '飞镖伤害', rng: 'boltDmg', levels: 5 },
 		{ path: 'SKILL.lightning.damage', label: '闪电伤害', rng: 'lightningDmg', levels: 5 },
-		{ path: 'SKILL.shield.contactDamage', label: '护盾接触', rng: 'shieldDmg', levels: 5 },
-		{ path: 'SKILL.shield.orbitRadius', label: '护盾环半径', rng: 'shieldOrbit', levels: 5 }   // B-2 标定核心
+		{ path: 'SKILL.shield.contactDamage', label: '护盾接触', rng: 'shieldDmg', levels: 5 }
 	]
 	var SKILL_SCALAR = [
 		{ path: 'COMBO.steamExplosion.damageMul', label: '蒸汽倍率', rng: 'comboMul' },
 		{ path: 'COMBO.electroTurret.damageMul', label: '电磁倍率', rng: 'comboMul' },
 		{ path: 'COMBO.burningBarrage.burnDps', label: '灼烧DPS', rng: 'burnDps' },
-		{ path: 'COMBO.steamExplosion.radius', label: '蒸汽半径', rng: 'comboRadius' }
+		{ path: 'COMBO.steamExplosion.radius', label: '蒸汽半径', rng: 'comboRadius' },
+		{ path: 'SKILL.ice.slowLingerSec', label: '减速跟随窗s·持久', rng: 'iceSlowLinger' }   // 持久覆盖（需保存重载）；运行时即时版见「实时标定」❄ 冰系手感
 	]
 	// 蛇/战斗 标量（走 override+重载）
 	var SNAKE_SCALAR = [
@@ -56,15 +53,60 @@
 	try { overrides = JSON.parse(global.localStorage.getItem(LS_KEY) || '{}') } catch (e) { overrides = {} }
 	var dirty = false
 
-	var panel = null, open = false
+	var panel = null, open = false, tuneTimer = null   // tuneTimer：面板打开时定时刷新等级显示（dev 实时）
 	var SLIDERS = []   // { id, path, kind:'config' } kind 仅 config（GS 用按钮即时改，不存 override）
+	// —— 实时标定（dev）：运行时覆盖层，拖动即时生效、免重载；不持久、不写 config 默认 ——
+	var TUNING_ARR = [
+		{ path: 'SKILL.fire.radius', label: '火焰半径', rng: 'fireRadius', levels: 5 },
+		{ path: 'SKILL.ice.trailWidth', label: '冰冻宽度', rng: 'iceWidth', levels: 5 },
+		{ path: 'SKILL.shield.orbitRadius', label: '护盾环半径', rng: 'shieldOrbit', levels: 5 },
+		{ path: 'SKILL.ice.slowPct', label: '冰冻减速%', rng: 'iceSlow', levels: 5 },
+		{ path: 'SKILL.ice.lingerSec', label: '冰区滞留s', rng: 'iceLinger', levels: 5 }
+	]
+	var rtTuning = {}
+	function rtGet(path) { return rtTuning.hasOwnProperty(path) ? rtTuning[path] : undefined }
+	function rtSet(path, val) { if (val == null) { delete rtTuning[path] } else { rtTuning[path] = val } }
+	function rtResetGroup() { for (var k = 0; k < TUNING_ARR.length; k++) { var a = TUNING_ARR[k], base = getPath(a.path); if (Array.isArray(base)) { for (var lv = 0; lv < a.levels; lv++) { delete rtTuning[a.path + '.' + lv] } } } for (var ks = 0; ks < TUNING_SCALAR.length; ks++) { delete rtTuning[TUNING_SCALAR[ks].path] } }   // 同时清冰系标量（减速跟随窗）运行时覆盖
+	var TUNING_SLIDERS = []
+	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
+	var TUNING_SCALAR = [
+		{ path: 'SKILL.ice.slowLingerSec', label: '减速跟随窗s', rng: 'iceSlowLinger' }
+	]
+	var TUNING_SCALAR_SLIDERS = []
 
 	function sliderRow(id, label, path, v, r) {
 		var mn = RANGE[r][0], mx = RANGE[r][1], st = RANGE[r][2]
 		return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font:600 12px system-ui"><span>' + label + '</span><span id="v_' + id + '">' + v + '</span></div>' +
 			'<input type="range" id="s_' + id + '" min="' + mn + '" max="' + mx + '" step="' + st + '" value="' + v + '" style="width:100%"></div>'
 	}
+	function tuningRow(id, label, v, def, r, pref) {   // 实时标定行：显示「当前 / 默认」防丢基准；pref 控制 id 前缀（per-level=ts / 标量=sc）避免与 config 滑条及彼此撞车
+		pref = pref || 'ts'
+		var mn = RANGE[r][0], mx = RANGE[r][1], st = RANGE[r][2]
+		return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font:600 12px system-ui"><span>' + label + '</span><span id="' + pref + 'v_' + id + '">' + v + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + def + '</span></span></div>' +
+			'<input type="range" id="' + pref + '_' + id + '" min="' + mn + '" max="' + mx + '" step="' + st + '" value="' + v + '" style="width:100%"></div>'
+	}
+	function fmtTune(path, val) { return (path.indexOf('slowPct') >= 0) ? Number(val).toFixed(2) : String(Math.round(val)) }   // 减速% 2 位小数，半径/宽度取整
+	function refreshTuneLevels() {   // 实时等级显示 + 高亮当前等级对应的标定滑条行（dev 辅助，便于知道该拖哪一级）
+		if (!panel) { return }
+		var el = panel.querySelector('#tune_levels'); if (el) {
+			var list = CONFIG.SKILL.list, parts = []
+			for (var n = 0; n < list.length; n++) {
+				var id = list[n], lv = (GS.ownedSkills && GS.ownedSkills[id]) || 0
+				parts.push(lv > 0 ? (id + ' Lv' + lv) : (id + ' 未解锁'))
+			}
+			el.textContent = '当前等级：' + parts.join('　')
+		}
+		var rows = panel.querySelectorAll('[data-skill]')
+		for (var m = 0; m < rows.length; m++) {
+			var sk = rows[m].getAttribute('data-skill'), lv2 = parseInt(rows[m].getAttribute('data-lv'), 10)
+			var active = (GS.ownedSkills && GS.ownedSkills[sk]) || 0
+			var on = (active === lv2)
+			rows[m].style.background = on ? 'rgba(45,225,168,0.18)' : 'transparent'
+			rows[m].style.boxShadow = on ? 'inset 0 0 0 1px #2de1a8' : 'none'
+		}
+	}
 	function buildSections() {
+		SLIDERS.length = 0; TUNING_SLIDERS.length = 0   // 每次重建清空，render() 可重入（复位/沙盒刷新面板）
 		var secs = []
 		// —— 怪物 ——
 		var h = ''
@@ -132,7 +174,19 @@
 		gm += '<button id="gm_max" style="width:100%;padding:8px;margin:5px 0;border:0;border-radius:6px;background:#ffd166;color:#063;font:700 12px system-ui;cursor:pointer">立即满级（五技能 Lv5 + 检测 Combo）</button>'
 		gm += '<button id="gm_clear" style="width:100%;padding:8px;margin:5px 0;border:0;border-radius:6px;background:#ff8c5b;color:#063;font:700 12px system-ui;cursor:pointer">清空敌人（清当前波）</button>'
 		gm += '<button id="gm_box" style="width:100%;padding:8px;margin:5px 0;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">显示碰撞盒：关</button>'
-		secs.push({ title: 'GM 指令', body: gm, open: true })
+		// 单技能精确激活（GM 指令区也放一份，方便测试；清空其余；B-2 修复：此前用户反馈 GM 找不到此功能）
+		gm += '<div style="font:600 11px system-ui;opacity:.7;margin:8px 0 2px">单技能激活（清空其余）</div>'
+		gm += '<div style="display:flex;gap:6px;margin:4px 0"><select id="gm_skill" style="flex:1;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui">'
+		for (var gsk = 0; gsk < CONFIG.SKILL.list.length; gsk++) { gm += '<option value="' + CONFIG.SKILL.list[gsk] + '">' + CONFIG.SKILL.list[gsk] + '</option>' }
+		gm += '</select><input id="gm_lvl" type="number" min="1" max="5" value="1" style="width:54px;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"></div>'
+		gm += '<button id="gm_skill_go" style="width:100%;padding:8px;margin:4px 0;border:0;border-radius:6px;background:#c9a8ff;color:#063;font:700 12px system-ui;cursor:pointer">仅激活此技能</button>'
+		// 训练假人（超高血·不秒·站着），接 spawnDummy(count,hp)，默认 1/5000；B-GM 补回：此前只在「标定/Tuning」，现移入 GM 指令区可见位置
+		gm += '<div style="font:600 11px system-ui;opacity:.7;margin:8px 0 2px">训练假人（默认 1 · 5000 血）</div>'
+		gm += '<div style="display:flex;gap:6px;margin:4px 0"><input id="gm_dummy_n" type="number" min="1" max="50" value="1" title="数量" style="width:56px;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"><input id="gm_dummy_hp" type="number" min="100" max="1000000" value="5000" title="血量" style="flex:1;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"></div>'
+		gm += '<button id="gm_dummy" style="width:100%;padding:8px;margin:4px 0;border:0;border-radius:6px;background:#ffd166;color:#063;font:700 12px system-ui;cursor:pointer">生成假人</button>'
+		// 冰系手感（冰区滞留 / 减速跟随窗）已统一收口到「实时标定（手感沙盒）」，GM 指令只保留即时动作指令，避免重复控制、归类更清晰
+		gm += '<div style="font:600 11px system-ui;opacity:.55;margin:6px 0 2px;border-top:1px dashed #2a3358;padding-top:6px">冰系手感滑条见「实时标定（手感沙盒）」</div>'
+		secs.push({ title: 'GM 指令', body: gm, open: false })
 		// —— 阶段跳转（测试）：按 STAGE.segments 生成，点击即把 GS.timeSec 写到目标段起点，免手动熬时间 ——
 		var jp = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">点击直接跳到该阶段（写运行时 GS.timeSec，即时生效）</div>'
 		var segsCfg = (CONFIG.STAGE && CONFIG.STAGE.segments) ? CONFIG.STAGE.segments : []
@@ -141,6 +195,36 @@
 			jp += '<button data-stage="' + seC.startSec + '" data-last="' + (sg === segsCfg.length - 1 ? 1 : 0) + '" class="gm_stage" style="width:100%;padding:8px;margin:4px 0;border:1px solid #ffd166;border-radius:6px;background:transparent;color:#ffd166;cursor:pointer;font:700 12px system-ui">跳到 ' + seC.id + '·' + seC.name + '（' + seC.startSec + 's）</button>'
 		}
 		secs.push({ title: '阶段跳转（测试）', body: jp, open: false })
+		// —— 实时标定（手感沙盒）：运行时即时滑条，免重载，仅当前会话（不写 config 默认）——
+		var tb = '<div id="tune_levels" style="font:700 12px system-ui;margin:4px 0 10px;padding:6px 8px;border:1px solid #2de1a8;border-radius:6px;background:rgba(45,225,168,0.08);line-height:1.5">当前等级：加载中…</div>'
+		tb += '<div style="font:700 11px system-ui;opacity:.85;margin:2px 0 2px;color:#2ad4ff">技能几何 / 手感（逐等级）</div>'
+		for (var ta = 0; ta < TUNING_ARR.length; ta++) {
+			var tarr = TUNING_ARR[ta], tbase = getPath(tarr.path)
+			if (!Array.isArray(tbase)) { continue }
+			for (var tlv = 0; tlv < tarr.levels; tlv++) {
+				var tpath = tarr.path + '.' + tlv
+				var tdef = (tbase[tlv] != null) ? tbase[tlv] : 0
+			var tcur = (rtGet(tpath) !== undefined) ? rtGet(tpath) : tdef
+			var tid = TUNING_SLIDERS.length; TUNING_SLIDERS.push({ id: tid, path: tpath, def: tdef })
+			var skName = tarr.path.split('.')[1]   // 'SKILL.fire.radius' → 'fire'
+			tb += '<div id="trow_' + tid + '" data-skill="' + skName + '" data-lv="' + (tlv + 1) + '" style="margin:2px 0;padding:3px 4px;border-radius:6px">' + tuningRow(tid, tarr.label + ' L' + (tlv + 1), fmtTune(tpath, tcur), tdef, tarr.rng, 'ts') + '</div>'
+			}
+		}
+		// ❄ 冰系手感·标量（运行时 rtSet）：减速跟随窗（离开冰区后减速残留时长）；与「技能数值」持久版 slowLingerSec 区分——此处为运行时即时
+		tb += '<div style="font:700 11px system-ui;opacity:.85;margin:10px 0 2px;color:#2ad4ff">❄ 冰系手感（标量 · 运行时）</div>'
+		for (var tsa = 0; tsa < TUNING_SCALAR.length; tsa++) {
+			var tsar = TUNING_SCALAR[tsa], tsbase = getPath(tsar.path)
+			var tsdef = isNum(tsbase) ? tsbase : 0
+			var tscur = (rtGet(tsar.path) !== undefined) ? rtGet(tsar.path) : tsdef
+			var tsid = TUNING_SCALAR_SLIDERS.length; TUNING_SCALAR_SLIDERS.push({ id: tsid, path: tsar.path, def: tsdef })
+			tb += '<div style="margin:2px 0">' + tuningRow(tsid, tsar.label, fmtTune(tsar.path, tscur), tsdef, tsar.rng, 'sc') + '</div>'
+		}
+		tb += '<button id="tune_reset" style="width:100%;padding:8px;margin:6px 0;border:1px solid #2de1a8;border-radius:6px;background:transparent;color:#2de1a8;cursor:pointer;font:700 12px system-ui">复位本组默认</button>'
+		tb += '<div style="margin-top:8px;border-top:1px solid #2a3358;padding-top:8px">'
+		tb += '<button id="tune_sandbox" style="width:100%;padding:8px;margin:4px 0;border:1px solid #ff8c5b;border-radius:6px;background:transparent;color:#ff8c5b;cursor:pointer;font:700 12px system-ui">标定沙盒：关</button>'
+		tb += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 0">提示：单技能激活 / 生成假人 见「GM 指令」</div>'
+		tb += '</div>'
+		secs.push({ title: '实时标定（手感沙盒）', body: tb, open: true })
 		// —— 手动输入 ——
 		var mi = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">路径写 config 覆盖（重载生效）或以 GS. 开头即时改运行时</div>' +
 			'<input id="mi_path" placeholder="如 SKILL.fire.radius.2 或 GS.coreHp" style="width:100%;padding:6px;margin:4px 0;box-sizing:border-box;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px monospace">' +
@@ -188,6 +272,39 @@
 				var ban = document.getElementById('ed_dirty'); if (ban) { ban.style.display = 'block' }
 			}
 		}
+		// 实时标定滑条（拖动即时生效，免重载；不写 persistent override）；独立前缀 ts_/tv_ 避免与 config 滑条 id 撞车
+		for (var tk = 0; tk < TUNING_SLIDERS.length; tk++) {
+			var td = TUNING_SLIDERS[tk], tinp = panel.querySelector('#ts_' + td.id)
+			if (!tinp) { continue }
+			tinp.oninput = function () {
+				var t = TUNING_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
+				if (!t) { return }
+				rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 08_skill RT() 即时生效到画面几何
+				var tvl = document.getElementById('tsv_' + t.id)
+				if (tvl) { tvl.innerHTML = fmtTune(t.path, val) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }   // 同步刷新当前值读数（B-3 修复：前缀 ts/sc 区分，读 rtTuning 回显而非写死默认）
+			}
+		}
+		// 实时标定·标量（运行时 rtSet）：减速跟随窗等；独立前缀 sc_/scv_ 与逐等级 ts_ 区分
+		for (var tsk2 = 0; tsk2 < TUNING_SCALAR_SLIDERS.length; tsk2++) {
+			var tsd = TUNING_SCALAR_SLIDERS[tsk2], tsinp = panel.querySelector('#sc_' + tsd.id)
+			if (!tsinp) { continue }
+			tsinp.oninput = function () {
+				var t = TUNING_SCALAR_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
+				if (!t) { return }
+				rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 08_skill RT() 即时生效
+				var tvl = document.getElementById('scv_' + t.id)
+				if (tvl) { tvl.innerHTML = fmtTune(t.path, val) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
+			}
+		}
+		panel.querySelector('#tune_reset').onclick = function () { rtResetGroup(); render() }   // 复位本组：仅清实时覆盖，不动其他 override
+		panel.querySelector('#tune_sandbox').onclick = function () {
+			GS.tuningSandbox = !GS.tuningSandbox
+			this.textContent = '标定沙盒：' + (GS.tuningSandbox ? '开' : '关')
+			this.style.color = GS.tuningSandbox ? '#7CFC00' : '#ff8c5b'
+			this.style.borderColor = GS.tuningSandbox ? '#7CFC00' : '#ff8c5b'
+			Log.info('[GM] 标定沙盒 ' + (GS.tuningSandbox ? '开（停掉落）' : '关'))
+		}
+		// 实时标定沙盒内不再重复放置「单技能激活 / 生成假人」按钮（已统一到 GM 指令区，避免重复入口）；原 handler 随元素移除一并删除
 		// 单 combo
 		var cb = panel.querySelectorAll('.gm_combo')
 		for (var c = 0; c < cb.length; c++) {
@@ -216,6 +333,19 @@
 			this.style.color = global.GMDBG.showHitboxes ? '#7CFC00' : '#2ad4ff'
 			this.style.borderColor = global.GMDBG.showHitboxes ? '#7CFC00' : '#2ad4ff'
 		}
+		// B-2 修复：GM 指令区单技能激活（与 标定/Tuning 同源，清空其余）
+		panel.querySelector('#gm_skill_go').onclick = function () {
+			if (GS.status !== 'playing') { Log.warn('请先进入游戏再激活技能'); return }
+			var id = panel.querySelector('#gm_skill').value, lv = parseInt(panel.querySelector('#gm_lvl').value, 10) || 1
+			Registry.get('skill').debugSetSkill(id, lv)
+		}
+		// B-GM 补回：GM 指令区「生成假人」接线（与 标定/Tuning 同源，调用 spawnDummy）
+		panel.querySelector('#gm_dummy').onclick = function () {
+			if (GS.status !== 'playing') { Log.warn('请先进入游戏再生成假人'); return }
+			var n = parseInt(panel.querySelector('#gm_dummy_n').value, 10) || 1, hp = parseInt(panel.querySelector('#gm_dummy_hp').value, 10) || 5000
+			Registry.get('enemy').spawnDummy(n, hp)
+		}
+		// 冰系手感（冰区滞留 / 减速跟随窗）已统一收口到「实时标定（手感沙盒）」运行时滑条，GM 指令不再重复放置；原 handler 随元素移除一并删除
 		// 阶段跳转：写 GS.timeSec 到目标段起点；末段(Boss)额外 +bossWarnLeadSec 让 Boss 立即生成
 		var stg = panel.querySelectorAll('.gm_stage')
 		for (var si = 0; si < stg.length; si++) {
@@ -243,10 +373,11 @@
 		panel.querySelector('#ed_copy').onclick = function () { var s = JSON.stringify(overrides, null, 2); try { global.navigator.clipboard.writeText(s) } catch (e) {} Log.info('覆盖JSON: ' + s) }
 		panel.querySelector('#ed_reset').onclick = function () { global.localStorage.removeItem(LS_KEY); global.location.reload() }
 		relHp()
+		refreshTuneLevels()   // 标定面板渲染后即时刷新等级文字 + 高亮当前等级行
 	}
 	function relHp() { var el = panel && panel.querySelector('#gm_hp_val'); if (el) { el.textContent = (GS.coreHp | 0) } }
 
-	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render() } }
+	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render(); if (tuneTimer) { clearInterval(tuneTimer) } tuneTimer = setInterval(refreshTuneLevels, 300) } else { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = null } } }   // 面板开时每 300ms 实时刷新等级/高亮；关时清理
 
 	document.addEventListener('keydown', function (e) { if (e.key === '`' || e.key === '~') { if (!panel) { build() } toggle() } })
 
@@ -254,15 +385,17 @@
 		panel = document.createElement('div')
 		panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:320px;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:40;box-shadow:-4px 0 18px #000'
 		document.body.appendChild(panel)
+		GS.tuningSandbox = GS.tuningSandbox || false   // B-GM 沙盒标志（dev，默认关）
 		render()
 	}
 
-	var Editor = { init: function () { if (!panel) { build() } }, overrides: function () { return overrides }, LS_KEY: LS_KEY }
+	var Editor = { init: function () { if (!panel) { build() } }, overrides: function () { return overrides }, LS_KEY: LS_KEY, rtGet: rtGet, rtSet: rtSet, rtResetGroup: rtResetGroup }
 	Registry.register('editor', Editor)
 	Log.info('editor 就绪：~ 键开关 GM 测试面板（config 滑块保存后重载生效，GM 指令即时）')
 
 })(typeof window !== 'undefined' ? window : this)
 
 // 📝 修改日志
+// 2026-07-13 · B-GM · GM 面板系统性梳理 + B-1/B-2/B-3 修复 · ①冰系手感收口：移除 GM 指令里与「实时标定」重复的 冰区滞留/减速跟随窗 滑条，冰系统一到「实时标定（手感沙盒）」（默认展开），新增 TUNING_SCALAR 运行时标量滑条承载 减速跟随窗s（即时 rtSet，08_skill RT() 生效）；②去重：移除实时标定内重复的「单技能激活/生成假人」按钮（仅留 GM 指令），提示指路；③B-3 修复：实时标定滑条读 rtTuning 回显当前值（前缀 ts/sc 区分，重开面板不再回到默认）；④rtResetGroup 一并清冰系标量覆盖；⑤持久版 减速跟随窗s·持久 保留在「技能数值」（config override 范式，与运行时版区分）· 不动 §9 / core / collision
 // 2026-07-12 · B-GM · editor 升级为分类 GM 测试面板 · 重写 13_editor.js：怪物/蛇/技能伤害分类 slider（沿 override+重载机制，路径自动生成，boss.hpTotal 单独处理）+ 单 Combo 激活按钮（debugActivateCombo）+ GM 指令（无限无敌/满级/清敌/碰撞盒）+ coreHp ±1 按钮 + 手动路径输入（GS. 即时 / config 重载）；08_skill.js 暴露 debugActivateCombo/debugMaxAll · 不动 §9 / core / collision
 // 2025-07-10 · editor 解锁 Combo 测试按钮 · 调参面板新增「🔓 解锁全部 Combo（测试）」按钮（set fire/ice/bolt/lightning + pick→checkCombos） · 不动 §9

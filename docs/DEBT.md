@@ -19,7 +19,7 @@
 |---|---|---|---|---|
 | 08_skill.js | `SHIELD_ORBIT_SEC`(已删) | — | — | ✅ 已还：B-2 迁 `CONFIG.SKILL.shield.orbitSec=1.6`（§9 2026-07-12 登记）；08_skill.js 本地常量已删，`11_render.js` drawSkillAura 已同步读 `orbitSec`（消双份真相源） |
 | 08_skill.js | `SHIELD_ORB_RADIUS`(已删) | — | — | ✅ 已还：B-2 迁 `CONFIG.SKILL.shield.orbitRadius=[44,58,72,86,100]`（§9 2026-07-12 登记）；`11_render.js` drawSkillAura 已同步读 `orbitRadius` |
-| 08_skill.js | `ICE_SLOW_LINGER_SEC` | 0.5 | 0.3 / 0.8 | 同上 |
+| 08_skill.js | `ICE_SLOW_LINGER_SEC` | 0.5 | 0.3 / 0.8 | ✅ 已还：B-2 迁 `CONFIG.SKILL.ice.slowLingerSec=0.4`（减速跟随短窗，L1–4 每帧刷新 `applySlow(e,pct,slowLingerSec)`，离开约 0.4s 恢复；L5 冻结仍用 `lv5FreezeSec`）；原本地常量已删，减速时长 ≠ 冰区滞留时长 |
 | 08_skill.js | `COMBO_STEAM_INTERVAL_SEC` | 2.0 | 1.5 / 3.0 | 同上 |
 | 08_skill.js | `COMBO_ELECTRO_INTERVAL_SEC` | 已废弃 | — | ✅ 已还：语义由 `CONFIG.COMBO.electroTurret.cooldownSec=0.5`（§9 2026-07-11）承接，本地常量已删 |
 | 07_enemy.js | `CHARGE_DURATION_SEC` | 0.4 | 0.35 / 0.5 | 实测 → 登记 §9 |
@@ -30,6 +30,9 @@
 | 07_enemy.js | `BOSS_BULLET_LIFE_SEC` | 4.0 | 3 / 4 | 同上 |
 | 07_enemy.js | `DOT_TEXT_MIN` | 4 (原 10) | 3 / 6 | 表现聚合阈值，Commit A 由 10→4 让 DOT 飘字更频繁（视觉「持续小数字」）；**仅影响飘字聚合、不进伤害/命中判定**，登记 §9 |
 | 02_config.js | `STAGE.pool` | GDD 文字推断 | — | 🟡 待 §9 量化 stage pool（段③割草期 pool 已补 elite，对齐 §6 段③「全类型+精英」，§9 2026-07-11 已登记） |
+| 02_config.js | `SKILL.ice.lingerSec` | [2.0,2.5,3.0,3.5,4.0] (A) | 待实测标定 | 🟡 B-2 初值 A：冰区滞留时长（=减速持续初值，L1–4 每帧刷新短窗仍是 slowLingerSec）；实测后由 Notion 真理源 §9 回填 |
+| 02_config.js | `SKILL.ice.slowLingerSec` | 0.4 | 待实测标定 | 🟡 B-2 初值：减速跟随短窗（≠ 滞留时长），离开冰区约 0.4s 恢复；实测回填 §9 |
+| 02_config.js | `SKILL.shield.orbitRadius` | [30,40,50,60,70] (A) | 待实测标定 | 🟡 B-2 初值 A：护盾贴头点防曲线（headRadius=14，球落点刚好头外侧，不扩全身/不压火墙）；实测回填 §9 |
 
 ---
 
@@ -89,6 +92,9 @@
 
 - ✅ **render.js 硬编码护盾参数**：B-2 已消除——`11_render.js` drawSkillAura 改为读 `CONFIG.SKILL.shield.orbitRadius/orbitSec`（取代写死 26/1.6），火/冰沿蛇身绘制，并补 GM「显示碰撞盒」`drawDebugHitboxes` 钩子（读 `global.GMDBG.showHitboxes`）。双份真相源已消（§1 对应债同步还）。
 - ✅ **手动 .bak 备份**：已被 Git 取代（2026-07-11 落地时清理）。
+- 🔴 **dev-only 标定工具隔离（B-TUNE）**：`13_editor.js` 运行时覆盖层 `rtTuning`（`RT()` 桥接 `08_skill.js` tickFire/tickIce/tickShield 实时读取，仅换输入来源、不写 config）与 `07_enemy.js` 训练假人 `spawnDummy`（`die()` 钳血 `e.hp=1` 不秒、`baseSpeed=0` 站着、`countMobs` 排除）均为**纯 dev 测试工具，不得进 release 路径**——发布前须由构建/打包流程剔除或加 `if (DEBUG)` 门控，避免标定滑条/沙盒/假人泄漏到玩家环境。
+- 🔴 **冰区减速每帧扫描（B-2 perf 债）**：`08_skill.js` tickIce 对每张活跃冰区调用一次 `collision.queryCircle`（冰区上限 `ICE_ZONE_CAP=256` 防爆量）；蛇尾快速移动 + 高 `lingerSec` 时冰区数上升，需实测帧时。若卡，候选：① 冰区合并 / 空间网格预筛；② 降低扫描频率（每 N 帧）；③ 冰区 AABB 粗筛再精确圆判定。待实测。
+- ✅ **B-2 回归·Bus 事件名大写导致粒子系统崩溃（2026-07-13 修复）**：`08_skill.js` 新增「敌人进入冰区」事件时用了 `fx:iceSlow`（含大写 `S`），而 `03_core.js` 的 `Bus` 断言强制事件名全小写（`/^[a-z0-9]+:[a-z0-9_]+$/`）。后果：`05_particle.js` 加载期 `Bus.on('fx:iceSlow',…)` 触发断言 **抛错 → 整个粒子系统未注册 → 所有技能特效（火/电/爆环/光束）与伤害数字全部消失**；同时 `08_skill.js` 的 `Bus.emit('fx:iceSlow')` 与监听名不一致 → 「减速」飘字永不发出。修复：两处（on/emit）统一改名为全小写 `fx:iceslow`。**教训**：新增 Bus 事件名必须全小写、且 on 与 emit 必须同名；建议后续在 `Bus.on/emit` 旁加注释提醒，或在代码评审清单里列一条「事件名全小写且收发同名」。**验证**：Node 沙盒加载全部模块确认 `particle` 注册、冰减速 280/400 帧生效、`fx:iceslow` 进入触发 1 次（飘字正常）。
 
 ---
 

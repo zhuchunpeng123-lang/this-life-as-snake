@@ -5,3 +5,6 @@ Desktop.ini
 .codebuddy/
 # deps
 node_modules/
+# Node 离线测试脚手架（非游戏源码，禁止进入 commit）
+_harness*.js
+*.harness.js

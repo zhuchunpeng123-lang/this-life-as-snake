@@ -239,6 +239,12 @@
 		spawnBlast(d.x, d.y, d.radius, BLAST_COLOR, BLAST_LIFE)          // 扩张暖橙爆环
 		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)     // 少量爆散团
 	})
+	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
+	Bus.on('fx:iceslow', function (d) {
+		if (!d || d.x == null || d.y == null) { return }
+		spawnText(d.x, d.y - 6 - (d.r || 12), '减速', '#9fdcff', 12)
+		spawnBurst(d.x, d.y, 3, '#9fdcff', 90, 2, 0.25)
+	})
 	Bus.on('core:run_reset', function () { Particle.clear() })
 
 	Registry.register('particle', Particle)

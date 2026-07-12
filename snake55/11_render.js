@@ -150,12 +150,13 @@
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
+		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		var segs = s.segments || []
 		var flick = 0.7 + 0.3 * Math.sin(GS.timeSec * FIRE_FLICKER_HZ)   // 火跳动
 		ctx.save()
 		// —— 火：沿整条蛇身成火墙（与 tickFire 同 segStep 采样；视觉=判定）——
 		if (owned.fire > 0) {
-			var fi = owned.fire - 1, fr = SKC.fire.radius[fi], stepF = SKC.fire.segStep[fi] || 1
+			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
 			for (var sf = 0; sf < segs.length; sf += stepF) {
 				var sg = segs[sf]
 				ctx.beginPath(); ctx.arc(sg.x, sg.y, fr, 0, M.PI2)
@@ -173,7 +174,7 @@
 		}
 		// —— 护盾：球绕蛇头公转，半径/周期读 config（与 tickShield 同 orbitRadius/orbitSec，消双份真相源）——
 		if (owned.shield > 0) {
-			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = SKC.shield.orbitRadius[si]
+			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = RTA('SKILL.shield.orbitRadius.' + si, SKC.shield.orbitRadius[si])
 			var base2 = (GS.timeSec / SKC.shield.orbitSec) * M.PI2
 			for (var o = 0; o < sc; o++) {
 				var a2 = base2 + o / sc * M.PI2
@@ -187,17 +188,23 @@
 				ctx.beginPath(); ctx.arc(ox2, oy2, orbR * SKC.shield.orbitHitMul, 0, M.PI2); ctx.strokeStyle = 'rgba(255,225,140,0.20)'; ctx.lineWidth = 1.5; ctx.stroke()   // B-2 对齐修正：命中环=orbitRadius×orbitHitMul，让玩家看清烫区
 			}
 		}
-		// —— 冰：沿整条蛇身留霜冻带（与 tickIce 同 segStep 采样；视觉=判定）——
+		// —— 冰：真·轨迹——蛇尾经过处滞留的地面冰区（读 Skill.getIceZones()，与 tickIce 判定严格一致；视觉=判定）——
 		if (owned.ice > 0) {
-			var ii = owned.ice - 1, iw = SKC.ice.trailWidth[ii] / 2, stepI = SKC.ice.segStep[ii] || 1
-			for (var qi = 0; qi < segs.length; qi += stepI) {
-				var sg2 = segs[qi]; if (!sg2) { continue }
-				ctx.beginPath(); ctx.arc(sg2.x, sg2.y, iw, 0, M.PI2)
-				ctx.fillStyle = 'rgba(100,200,255,0.5)'; ctx.fill()   // 冰蓝霜区
-				ctx.fillStyle = 'rgba(220,240,255,0.4)'   // 霜点
-				for (var fk = 0; fk < 3; fk++) {
-					var fa = fk * 2.1 + qi, fr2 = 4 + (fk % 2) * 3
-					ctx.beginPath(); ctx.arc(sg2.x + Math.cos(fa) * fr2, sg2.y + Math.sin(fa) * fr2, 1.3, 0, M.PI2); ctx.fill()
+			var zones = (sk.getIceZones ? sk.getIceZones() : null)
+			if (zones) {
+				for (var zi = 0; zi < zones.length; zi++) {
+					var z = zones[zi]
+					var zremain = z.expire - GS.timeSec
+					var zlife = z.life > 0 ? z.life : 1
+					var zratio = zremain > 0 ? (zremain / zlife) : 0   // 剩余寿命占比 → 淡出
+					var za = (0.18 + 0.32 * zratio).toFixed(2)         // 冰区底色透明度随寿命衰减（不强到挡视线）
+					ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, M.PI2)
+					ctx.fillStyle = 'rgba(120,205,255,' + za + ')'; ctx.fill()   // 冰蓝霜区
+					ctx.fillStyle = 'rgba(225,243,255,0.5)'   // 霜点（固定亮，强调落点）
+					for (var fk = 0; fk < 3; fk++) {
+						var fa = fk * 2.1 + zi, fr2 = 4 + (fk % 2) * 3
+						ctx.beginPath(); ctx.arc(z.x + Math.cos(fa) * fr2, z.y + Math.sin(fa) * fr2, 1.3, 0, M.PI2); ctx.fill()
+					}
 				}
 			}
 		}

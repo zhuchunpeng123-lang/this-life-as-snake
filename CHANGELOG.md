@@ -4,38 +4,28 @@
 
 ---
 
-## 2026-07-12 · feat(skill-geo): 技能沿蛇身判定+范围扩大(Commit B-2)
 
-- **改动文件**：`02_config.js`（fire.radius `[60,75,90,108,128]`、ice.trailWidth `[30,40,48,60,75]`、新增 shield.orbitRadius `[44,58,72,86,100]`/orbitSec `1.6`、fire/ice.segStep `1`）、`08_skill.js`（tickFire/tickIce/tickShield 沿蛇身逐节判定、读 config、同帧去重；删写死 SHIELD_ORBIT_SEC/SHIELD_ORB_RADIUS）、`11_render.js`（drawSkillAura 沿蛇身绘制火墙/霜冻带+护盾读 config 公转；新增 drawDebugHitboxes 钩子承接 GM「显示碰撞盒」）、`03_core.js`（version 0.3-b7→0.3-b8）、数值真理源 §4.1/§4.2/§4.4/§9、docs/DEBT.md
-- **一句话**：火/冰/护盾从"仅蛇头生效"升级为沿整条蛇身逐节判定（视觉=判定），并放大火半径/冰宽度、护盾环绕半径随等级扩大主动扫敌；消除渲染侧写死护盾参数的双份真相源
-- **是否动 §9**：是（fire.radius / ice.trailWidth 放大 + 新增 shield.orbitRadius/orbitSec/fire·ice.segStep，均已回写 §4.1/§4.2/§4.4 与 §9 Changelog）
+
+## 2026-07-13 · feat(skill-geo): 冰冻真轨迹化+护盾贴头点防+冰冻减速反馈(Commit B-2)
+
+- **改动文件**：`02_config.js`（fire.radius `[60,75,90,108,128]`、ice.trailWidth `[30,40,48,60,75]`、新增 shield.orbitRadius `[44,58,72,86,100]`/orbitSec `1.6`、fire/ice.segStep `1`、ice.lingerSec `[2.0,2.5,3.0,3.5,4.0]`、ice.slowLingerSec `0.4`）、`08_skill.js`（tickFire/tickIce/tickShield 沿蛇身逐节判定、读 config、同帧去重；删写死 SHIELD_ORBIT_SEC/SHIELD_ORB_RADIUS；tickIce 真轨迹化冰区沿蛇身落点铺霜冻带（视觉=判定）、L5 冻结用 `lv5FreezeSec`；新增 `fx:iceslow` 事件做减速飘字反馈；暴露 `debugSetSkill(id,lv)`/`debugActivateCombo`/`debugMaxAll`；RT() 实时桥接 tickFire/tickIce/tickShield + `drawSkillAura` 经 `RTA` 读覆盖层）、`05_particle.js`（`Bus.on('fx:iceslow')` 减速飘字）、`07_enemy.js`（spawnDummy 训练假人 isDummy/baseSpeed=0/die() 回满血不秒/countMobs 排除；applyDamage 透传 src/isDot）、`11_render.js`（drawSkillAura 沿蛇身绘制火墙/霜冻带+护盾读 config 公转；新增 GM「显示碰撞盒」`drawDebugHitboxes`）、`09_wave.js`（GS.tuningSandbox 守卫 Pickup.update 与 enemy:die 掉落，沙盒停刷）、`13_editor.js`（GM 面板系统梳理：实时标定滑条/标定沙盒/单技能精确激活/生成假人；冰系手感收口「实时标定（手感沙盒）」、去重入口、滑条回显修复）、`03_core.js`（version 0.3-b8→0.3-b9）、数值真理源 §4.1/§4.2/§4.4/§9、docs/DEBT.md
+- **一句话**：B-2 整体提交——①冰冻真轨迹化：冰区沿整条蛇身落点铺霜冻带（视觉=判定，蛇尾经过处也有冰）；②护盾贴头点防：护盾环绕半径 `orbitRadius`(44→100) 刚好头外侧点防，不压火墙/不扩全身；③冰冻减速反馈：敌人入冰区发 `fx:iceslow` 飘「减速」字+蓝染减速环（L1–4 短窗 `slowLingerSec` 离场约 0.4s 恢复，L5 冻结约 1s）；④GM 实时标定滑条/沙盒/训练假人（`rtTuning` 运行时即时生效免重载）+ 单技能精确激活 `debugSetSkill` / 生成假人 `spawnDummy` 恢复；⑤回归修复：`fx:iceSlow` 大写被 `Bus` 断言拒收致 `05_particle` 加载崩溃（全特效/伤害数字消失）→ 收发统一全小写 `fx:iceslow`
+- **是否动 §9**：是（fire.radius/ice.trailWidth 放大 + 新增 shield.orbitRadius/orbitSec/fire·ice.segStep/ice.lingerSec/ice.slowLingerSec，均已回写 §4.1/§4.2/§4.4 与 §9 Changelog）
 - **验收**：
-  - [ ] 持火技能→整条蛇身拖出火墙，经过的小怪持续掉血（飘字 🔥）
-  - [ ] 持冰技能→整条蛇身留霜冻带，小怪减速；Lv5 冻结 1s
-  - [ ] 持护盾→球绕蛇头公转，半径随等级变大（Lv1~44px → Lv5~100px），碰到小怪掉血
+  - [ ] 持冰技能→整条蛇身留霜冻真轨迹，蛇尾经过处也有冰带（非仅蛇头）
+  - [ ] 护盾球绕蛇头公转，半径随等级变大（Lv1~44px→Lv5~100px），落点恰头外侧点防，不压火墙/不扩全身
+  - [ ] 敌人入冰区→飘「减速」字（`fx:iceslow` 触发）+ 蓝染减速环；离开约 0.4s 恢复；Lv5 冻结约 1s（僵直+冰晶）
+  - [ ] GM 实时标定：拖 fire.radius L3 火墙即时胀缩、拖 ice.trailWidth 霜带即时变宽、拖 减速跟随窗s 减速残留时长即时变；显示「当前/默认」；「复位本组默认」弹回
+  - [ ] 标定沙盒：开→停刷食物/技能球；「单技能精确激活」选 ice→其余清空只冰生效
+  - [ ] 生成假人(1/5000)→黄色假人站着挨打：DOT 逐跳飘字、减速环、护盾扫敌可见，假人掉血不消失（die 回满）；蛇头蹭假人不掉心
   - [ ] 「显示碰撞盒」(GM)→绿圈=敌半径、红圈=蛇身/蛇头半径实时可见
-  - [ ] 未碰：伤害公式 `Core.Formula.damage` / `04_collision.js` / `02_config.js` 数值结构
-  - [ ] 🟡 fire/ice 初值为原值×1.5，待浏览器实测手感后回填 §9（已标注债务）
+  - [ ] 未碰：伤害公式 `Core.Formula.damage` / `04_collision.js` / `02_config.js` 数值结构（`SHIELD_ORBIT_SEC/SHIELD_ORB_RADIUS` 本地常量已删，渲染侧双份真相源已消）
+  - [ ] 🟡 fire/ice 初值×1.5、ice.lingerSec/slowLingerSec/orbitRadius 等初值，待浏览器实测手感回填 §9（已登 DEBT §1）
+  - [ ] 回归验证：`fx:iceSlow`→`fx:iceslow` 后 05_particle 正常注册、所有技能特效/伤害数字恢复；Node 沙盒加载全模块确认 particle 注册、`fx:iceslow` 进入触发一次飘字正常
 
 ---
 
-## 2026-07-12 · feat(editor): ~ 编辑器升级为 GM 测试面板(Commit B-GM)
 
-- **改动文件**：`13_editor.js`（重写为分类 GM 面板：怪物/蛇/技能伤害 slider 自动从 CONFIG 生成、单 Combo 激活按钮、GM 指令、coreHp ±1、手动路径输入）、`08_skill.js`（暴露 `debugActivateCombo(id)` / `debugMaxAll()`）、本文件
-- **一句话**：`~` 编辑器升级为可实战测试的 GM 面板——怪物 HP/速度/半径、蛇速/转向/节数、各技能逐等级伤害全部可滑；三个 Combo 各自按钮独立点亮；无限无敌/满级/清敌/碰撞盒开关即时生效；手动输入路径（config 重载 / `GS.` 即时）覆盖任意数值。仅为 dev 工具，不改任何 gameplay 默认值/公式
-- **是否动 §9**：否（全部为 dev 调参/测试入口；config slider 走既有 override+重载机制，运行时指令走 `GS`/Registry，无数值结构变化）
-- **碰撞盒可视化说明**：GM「显示碰撞盒」按钮写入运行时标志 `global.GMDBG.showHitboxes`，由 `11_render.js` 的 `drawDebugHitboxes` 绘制钩子实时呈现（已在 Commit B-2 一并落地：绿圈=敌半径、红圈=蛇身/蛇头半径）
-- **验收**：
-  - [ ] `~` 开关面板；怪物/蛇/技能分类清晰，slider 拖动后「保存并重载」生效（数值回写 localStorage `snake55_tuning`）
-  - [ ] 怪物 HP/速度/半径、蛇速/转向/最大节数、飞镖/闪电/火/护盾逐等级伤害 slider 可拖动并保存
-  - [ ] 三个 Combo 各自按钮：进入游戏后点击 → 对应横幅+音效亮起，不影响其余 Combo
-  - [ ] 「立即满级」→ 五技能 Lv5 + Combo 检测触发；「无限无敌」→ 蛇头无敌光环常亮；「清空敌人」→ 场上怪清空
-  - [ ] coreHp `+1/-1` 按钮即时改变心数显示
-  - [ ] 手动输入 `GS.coreHp`/`GS.invincibleUntil` 即时生效；输入 `SKILL.fire.radius.2` 等路径加入覆盖（提示重载）
-  - [ ] 未碰：伤害公式 / `02_config.js` 默认值 / `04_collision.js` / `03_core.js`
-  - [x] 碰撞盒可视化已由 B-2 落地（`drawDebugHitboxes` + GM 按钮）
-
----
 
 ## 2026-07-12 · feat(skill-geo): 技能沿蛇身视觉对齐 + 伤害来源标签(Commit B-1)
 

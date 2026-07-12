@@ -120,8 +120,13 @@
 			Bus.emit('snake:grow', { segments: GS.segments })
 		}
 	})
-	Bus.on('collision:head_enemy', function () {
+	Bus.on('collision:head_enemy', function (d) {
 		if (GS.status !== 'playing') { return }             // ④ 暂停/选择/死亡态不结算蛇头受击（防冤死）
+		// B-1：训练假人是安全观察靶，蛇头蹭到不掉心、不触发受击表现（避免"碰自己假人掉血"反直觉）
+		if (d && d.enemyId != null) {
+			var _el = (Registry.get('enemy') || {}).list || []
+			for (var _i = 0; _i < _el.length; _i++) { if (_el[_i].id === d.enemyId && _el[_i].isDummy) { return } }
+		}
 		var now = GS.timeSec
 		if (now < GS.invincibleUntil) { return }            // 无敌帧
 		var next = GS.coreHp - CONFIG.COMBAT.headHitDamage

@@ -71,6 +71,7 @@
 		foods: foods,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }
+			if (GS.tuningSandbox) { return }   // B-GM 标定沙盒：暂停所有道具/技能掉落刷新（不刷食物/治疗/首技能保底）
 			// P0-1 首技能保底（§5 裁定 ≤10s）：倒计时 firstSkillGuaranteeSec(9s) 后在蛇头正前方给出，让玩家先熟悉操作
 			if (!gotFirstSkill) { firstSkillTimer += dt; if (firstSkillTimer >= PK.skillPity.firstSkillGuaranteeSec) { spawnSkillInFront(); gotFirstSkill = true } }
 			foodTimer -= dt
@@ -131,7 +132,7 @@
 	})
 	Bus.on('enemy:die', function (d) {
 		killsSinceSkill++
-		if (rollSkillDrop()) { spawnOrbAt('skill', d.x, d.y); killsSinceSkill = 0; gotFirstSkill = true }
+		if (!GS.tuningSandbox && rollSkillDrop()) { spawnOrbAt('skill', d.x, d.y); killsSinceSkill = 0; gotFirstSkill = true }   // B-GM 沙盒：停击杀掉技能球
 	})
 	Bus.on('core:run_reset', function () {
 		while (foods.length) { orbPool.release(foods.pop()) }

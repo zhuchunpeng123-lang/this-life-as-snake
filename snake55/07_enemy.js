@@ -28,6 +28,7 @@
 			hp: 1, maxHp: 1, radius: 8, baseSpeed: 0, atk: 1, senseRange: -1, color: '#fff',
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0,
+		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
 		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotAccum: 0, dotSrc: null,   // B-1：伤害来源标签（DOT 累积用，flush 随飘字带出）
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
@@ -64,7 +65,7 @@
 		e.active = true; e.id = ++_id; e.type = type
 		e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
-		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0
+		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // B-GM：复用复位 isDummy + B-2 冰标记，防残留
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0; e.dotSrc = null   // B-1：对象池复用复位来源标签，防残留串味
 		if (type === 'boss') {
@@ -84,10 +85,27 @@
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.burnT = 0; e.burnDps = 0
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
+	function spawnDummy(count, hp) {                   // B-GM 标定沙盒：训练假人（超高血 / 不秒 / 站着），便于看 DOT 逐跳 / 减速时长 / 护盾扫敌
+		count = count || 1; hp = hp || 5000
+		for (var n = 0; n < count; n++) {
+			var e = pool.acquire()
+			pickSpawnPos(_pos, 24)
+			e.active = true; e.id = ++_id; e.type = 'dummy'
+			e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = 24
+			e.color = '#ffd166'
+			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false
+			e.burnT = 0; e.burnDps = 0
+			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0; e.dotSrc = null
+			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
+			list.push(e)
+		}
+		Log.info('[调试] 生成训练假人 ×' + count + ' (hp=' + hp + ')')
+		return count
+	}
 
 	// 新手保护期降速（§6 rookieProtect）
 	function rookieSpeedMul(now) {
@@ -104,6 +122,7 @@
 	}
 
 	function die(e) {
+		if (e.isDummy) { e.hp = e.maxHp; return }   // B-GM 训练假人：不秒、不计入击杀/分数/掉落；始终回满血，可无限反复测 DOT/减速/击退（避免血条卡死 1/maxHp 失观测意义）
 		e.active = false
 		GS.kills++
 		GS.killStreak++                                   // 先自增连杀
@@ -235,8 +254,8 @@
 	}
 
 	var Enemy = {
-		list: list, spawn: spawn, applyDamage: applyDamage, applySlow: applySlow, ignite: ignite,
-		countMobs: function () { var c = 0; for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type !== 'bossBullet') { c++ } } return c },
+		list: list, spawn: spawn, spawnDummy: spawnDummy, applyDamage: applyDamage, applySlow: applySlow, ignite: ignite,
+		countMobs: function () { var c = 0; for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type !== 'bossBullet' && !list[i].isDummy) { c++ } } return c },   // B-GM：假人不占刷怪 cap
 		hasBoss: function () { for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type === 'boss') { return true } } return false },
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }

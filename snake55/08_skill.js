@@ -4,9 +4,18 @@
 	var M = Core.M, Formula = Core.Formula
 	var SK = CONFIG.SKILL, CO = CONFIG.COMBO, ECON = CONFIG.ECON, CB = CONFIG.COMBAT
 
-	// 🟡 真理源未量化的表现/节奏，占位 + 候选，待回写
-	var ICE_SLOW_LINGER_SEC = 0.5       // TODO: 待确认（候选 0.3 / 0.8）
-	var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
+// 🟡 真理源未量化的表现/节奏，占位 + 候选，待回写
+// ⚠ ICE_SLOW_LINGER_SEC 已废弃：减速跟随短窗改走 config SKILL.ice.slowLingerSec（B-2 必改项：L1–4 每帧刷新短窗，离开约 slowLingerSec 恢复；L5 冻结用 lv5FreezeSec）
+var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
+// —— B-2 冰冻真轨迹：蛇尾经过处滞留数秒的地面冰区（对象池 + 活动表，render 读此画）——
+var ICE_ZONE_CAP = 256              // 🟡 perf 债：冰区池上限，防 lingerSec 拖大爆量；每帧「冰区×queryCircle」扫描已登 DEBT
+var iceZonePool = Core.createPool(
+  function () { return { x: 0, y: 0, r: 0, life: 0, expire: 0 } },
+  function (z) { z.x = 0; z.y = 0; z.r = 0; z.life = 0; z.expire = 0 },
+  ICE_ZONE_CAP
+)
+var iceZones = []                   // 活跃冰区（render.read）
+var iceLastTail = null              // 上次采样尾点（间距判定，保证连续无缝）
 	// ⚠ COMBO_ELECTRO_INTERVAL_SEC 已废弃：原周期 electroTurret 触发器已改为「bolt 命中触发 + 全局冷却」，
 	//   冷却语义由 CONFIG.COMBO.electroTurret.cooldownSec（§9 2026-07-11 已登记，单源 config 支持 ~ 编辑器/localStorage 热调）承接，不再留作本地常量。
 
@@ -16,6 +25,12 @@
 	function lvl(id) { return GS.ownedSkills[id] || 0 }
 	function idx(id) { return lvl(id) - 1 }
 	function owns(id) { return lvl(id) > 0 }
+	// B-GM 实时标定桥（dev）：读 editor 运行时覆盖，无覆盖回退冻结 CONFIG 默认；仅替换 input 来源，不改几何/判定/公式
+	function RT(path, fb) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
 	function headPos() { var s = Registry.get('snake'); return s && s.head ? s.head : { x: 0, y: 0, angle: 0 } }
 	function segmentsList() { var s = Registry.get('snake'); return (s && s.segments) ? s.segments : [] }   // B-2：沿蛇身逐节判定用
 
@@ -45,7 +60,7 @@
 	// —— 五技能主动效果（按拥有等级取数组）——
 	function tickFire(dt) {
 		var i = idx('fire')
-		var segs = segmentsList(), step = SK.fire.segStep[i] || 1, r = SK.fire.radius[i]
+		var segs = segmentsList(), step = SK.fire.segStep[i] || 1, r = RT('SKILL.fire.radius.' + i, SK.fire.radius[i])   // B-GM 实时标定桥：拖动即时生效
 		var hit = {}   // B-2：同帧同敌去重，避免多节重叠重复结算 DOT
 		for (var s = 0; s < segs.length; s += step) {
 			var es = enemiesIn(segs[s].x, segs[s].y, r)
@@ -54,13 +69,43 @@
 	}
 	function tickIce(dt) {
 		var i = idx('ice'), En = Registry.get('enemy')
-		var segs = segmentsList(), step = SK.ice.segStep[i] || 1, r = SK.ice.trailWidth[i] / 2   // B-2 对齐修正：命中半径=视觉半径（trailWidth/2），消 2× 视觉不符
-		var pct = SK.ice.slowPct[i], dur = ICE_SLOW_LINGER_SEC
-		if (lvl('ice') >= SK.maxLevel) { pct = 1; dur = SK.ice.lv5FreezeSec }            // Lv5 冻结
-		var hit = {}
-		for (var s = 0; s < segs.length; s += step) {
-			var es = enemiesIn(segs[s].x, segs[s].y, r)
-			for (var k = 0; k < es.length; k++) { if (hit[es[k].id]) { continue } hit[es[k].id] = true; En.applySlow(es[k], pct, dur) }
+		var segs = segmentsList()
+		if (segs.length === 0) { return }
+		var r = RT('SKILL.ice.trailWidth.' + i, SK.ice.trailWidth[i]) / 2   // B-2 对齐：命中半径=视觉半径（trailWidth/2）；B-GM 实时桥
+		// —— 尾迹采样：仅在蛇尾移动 ≥ r 时生成冰区（真轨迹，不随蛇身移动；间距=r 保证连续无缝）——
+		var tail = segs[segs.length - 1]
+		if (!iceLastTail) { iceLastTail = { x: tail.x, y: tail.y } }
+		var tdx = tail.x - iceLastTail.x, tdy = tail.y - iceLastTail.y
+		if (tdx * tdx + tdy * tdy >= r * r && iceZones.length < ICE_ZONE_CAP) {   // 间距达 r → 生成；超上限暂停（防爆量）
+			var linger = RT('SKILL.ice.lingerSec.' + i, SK.ice.lingerSec[i])       // 冰区滞留时长（🟡 初值待 §9 回填）
+			var z = iceZonePool.acquire()
+			z.x = tail.x; z.y = tail.y; z.r = r; z.life = linger; z.expire = GS.timeSec + linger
+			iceZones.push(z)
+			iceLastTail.x = tail.x; iceLastTail.y = tail.y
+		}
+		// —— 过期回收（原地滞留数秒后消失，不随蛇移动）——
+		for (var k = iceZones.length - 1; k >= 0; k--) {
+			if (iceZones[k].expire <= GS.timeSec) { iceZonePool.release(iceZones[k]); iceZones.splice(k, 1) }
+		}
+		// —— 减速施加（沿冰区精确圆-圆判定，与渲染冰区圆严格一致）——
+		var pct = RT('SKILL.ice.slowPct.' + i, SK.ice.slowPct[i])
+		var slowWin = RT('SKILL.ice.slowLingerSec', SK.ice.slowLingerSec)   // 减速跟随短窗：每帧刷新，离开约 slowLingerSec 恢复（≠ 冰区滞留时长）
+		if (lvl('ice') >= SK.maxLevel) { pct = 1; slowWin = SK.ice.lv5FreezeSec }   // Lv5 冻结仍用 lv5FreezeSec
+		for (var j = 0; j < iceZones.length; j++) {
+			var zz = iceZones[j]
+			var es = enemiesIn(zz.x, zz.y, zz.r)             // 🟡 perf 债：每帧每冰区一次 queryCircle 扫描（已登 DEBT）
+			for (var m = 0; m < es.length; m++) {
+				var e = es[m]
+				var cdx = e.x - zz.x, cdy = e.y - zz.y, crr = zz.r + e.radius   // 精确圆-圆：与渲染冰区圆严格一致（看到的=打到的）
+				if (cdx * cdx + cdy * cdy <= crr * crr) { En.applySlow(e, pct, slowWin); e._iceHit = true }
+			}
+		}
+		// —— 进入检测（两遍法：本帧命中置 _iceHit，再判 inIce 变化触发飘字）——
+		var all = allEnemies()
+		for (var n = 0; n < all.length; n++) {
+			var en = all[n]
+			var was = en.inIce; en.inIce = !!en._iceHit; en._iceHit = false
+			if (en.inIce && !was) { Bus.emit('fx:iceslow', { x: en.x, y: en.y, r: en.radius }) }   // 坐标用敌人位置；事件名全小写过 Bus 断言
 		}
 	}
 	function tickBolt(dt) {
@@ -110,7 +155,7 @@
 	function tickShield(dt) {
 		var i = idx('shield'), h = headPos()
 		var count = SK.shield.count[i], dmg = SK.shield.contactDamage[i]
-		var orbR = SK.shield.orbitRadius[i]   // B-2：读 config 环绕半径（取代写死 26），随等级变大能扫敌
+		var orbR = RT('SKILL.shield.orbitRadius.' + i, SK.shield.orbitRadius[i])   // B-2：读 config 环绕半径；B-GM 实时桥：拖动即时生效
 		var base = (GS.timeSec / SK.shield.orbitSec) * M.PI2   // B-2：读 config 环绕周期（取代写死常量）
 		for (var o = 0; o < count; o++) {
 			var a = base + o / count * M.PI2
@@ -205,10 +250,18 @@
 		checkCombos()
 		Log.info('[调试] 全部技能满级 Lv' + SK.maxLevel)
 	}
+	function debugSetSkill(id, level) {               // 标定沙盒：仅给指定技能 Lv N，清空其余（不像 debugMaxAll 全塞）
+		if (SK.list.indexOf(id) < 0) { Log.warn('[调试] 未知技能：' + id); return }
+		level = Math.max(1, Math.min(SK.maxLevel, level | 0))
+		GS.ownedSkills = {}
+		GS.ownedSkills[id] = level
+		checkCombos()
+		Log.info('[调试] 单技能激活：' + id + ' Lv' + level)
+	}
 
 	var Skill = {
 		owned: function () { return GS.ownedSkills }, offer: offer, pick: pick,
-		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll,
+		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll, debugSetSkill: debugSetSkill,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }    // 依赖：本帧应在 collision.update 之后调用（queryCircle 哈希新鲜）
 			if (owns('fire')) { tickFire(dt) }
@@ -216,12 +269,16 @@
 			if (owns('bolt')) { tickBolt(dt) }
 			if (owns('lightning')) { tickLightning(dt) }
 			if (owns('shield')) { tickShield(dt) }
-			tickCombos(dt)
-		}
-	}
+		tickCombos(dt)
+	},
+	getIceZones: function () { return iceZones }   // B-2：render 读此画真实冰区（看到的=打到的）
+}
 
 	Bus.on('pickup:eat', function (d) { if (d && d.kind === 'skill') { offer() } })
-	Bus.on('core:run_reset', function () { foundCombo = {}; timer.bolt = 0; timer.lightning = 0; timer.steam = 0; timer.electro = 0 })
+	Bus.on('core:run_reset', function () {
+		foundCombo = {}; timer.bolt = 0; timer.lightning = 0; timer.steam = 0; timer.electro = 0
+		iceZones.length = 0; iceLastTail = null   // B-2：清空冰区池 + 复位尾点，防重开残留/NaN
+	})
 
 	Registry.register('skill', Skill)
 	Log.info('skill 就绪：5 技能 × Lv' + SK.maxLevel)
