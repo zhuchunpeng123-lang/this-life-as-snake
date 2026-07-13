@@ -29,7 +29,7 @@
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0,
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotAccum: 0, dotSrc: null,   // B-1：伤害来源标签（DOT 累积用，flush 随飘字带出）
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值），每来源独立 flush、独立标签（火墙🔥火墙/灼烧🔥灼烧），互不混
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -67,7 +67,7 @@
 		e.color = colorByType[type] || '#fff'
 		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // B-GM：复用复位 isDummy + B-2 冰标记，防残留
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
-		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0; e.dotSrc = null   // B-1：对象池复用复位来源标签，防残留串味
+		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
 			e.phase = 1; e.invuln = 0; e.fireT = BOSS_FIRE_INTERVAL_SEC; e.kbImmune = true; e.senseRange = -1
@@ -99,7 +99,7 @@
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
-			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotAccum = 0; e.dotSrc = null
+			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
 			list.push(e)
 		}
@@ -148,19 +148,21 @@
 				e.kbx = dx / L * CB.enemyKnockbackPx; e.kby = dy / L * CB.enemyKnockbackPx
 			}
 		}
-		if (isDot) {                                                  // ⑦ DOT 聚合飘字：攒够 DOT_TEXT_MIN 才 emit，杜绝每帧「1」刷屏
-			e.dotAccum += amount
-			if (src) { e.dotSrc = src }                             // B-1：累积来源（混源取末次写，flush 随飘字带出，比来源丢失更准；不进伤害判定）
-			if (e.hp <= 0) {
-				if (e.dotAccum >= 1) { Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color, isDot: true, src: e.dotSrc, r: e.radius }) }
-				die(e); return
-			}
-			if (e.dotAccum >= DOT_TEXT_MIN) {
-				Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotAccum, crit: false, color: e.color, isDot: true, src: e.dotSrc, r: e.radius })
-				e.dotAccum = 0; e.dotSrc = null
-			}
-			return
+	if (isDot) {                                                  // ⑦ DOT 分源聚合飘字（B-4 衍生）：每来源独立累积/flush，互不混
+		if (!src) { src = '_dot' }                              // 兜底 key（所有 DOT 调用均应传 src；兜底防 dotMap[undefined]）
+		e.dotMap[src] = (e.dotMap[src] || 0) + amount
+		if (e.hp <= 0) {                                        // 死亡：各来源残留 DOT 分别 flush（≥1 才出，杜绝「0」）
+			for (var dk in e.dotMap) { if (e.dotMap[dk] >= 1) { Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotMap[dk], crit: false, color: e.color, isDot: true, src: dk, r: e.radius }) } }
+			die(e); return
 		}
+		for (var dk in e.dotMap) {                              // 周期 flush：各来源独立达 DOT_TEXT_MIN 即出独立飘字并清零该来源
+			if (e.dotMap[dk] >= DOT_TEXT_MIN) {
+				Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotMap[dk], crit: false, color: e.color, isDot: true, src: dk, r: e.radius })
+				e.dotMap[dk] = 0
+			}
+		}
+		return
+	}
 		Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color, isDot: !!isDot, src: src, r: e.radius })   // r=命中体半径：飘字偏移到精灵上方，防大体型（boss）盖住数字
 		if (e.hp <= 0) { die(e) }
 	}
@@ -239,7 +241,7 @@
 	}
 	if (e.burnT > 0) {                                          // ⑦ 燃烧 DOT：置于 bossBullet return 后、stun return 前
 		e.burnT -= dt
-		applyDamage(e, e.burnDps * dt, false, true)            // 固定 dps、不经 Formula、isDot 聚合飘字、不击退（约束2：位置精确，避免子弹结算/眩晕期暂停）
+		applyDamage(e, e.burnDps * dt, false, true, 'burn')  // 固定 dps、不经 Formula、isDot 分源聚合飘字、不击退（约束2：位置精确，避免子弹结算/眩晕期暂停）；B-4 ①b 像素级补完 + 衍生：补 src='burn' 透传进 dotMap 累计，引燃飘字带「🔥灼烧 」独立标签（否则 dotMap 不累计、SRC_STYLE.burn 成死配置）；纯标签零 gameplay
 	}
 	if (e.stun > 0) { e.stun -= dt; applyKnockback(e); resolveContact(e, dt); return }
 		if (e.type === 'chaser' || e.type === 'elite') { steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }

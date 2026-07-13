@@ -77,6 +77,8 @@
 
 ---
 
+> **B-4 combo VFX 表现债（2026-07-13）**：`05_particle.js` 新增 `flashCores` 叠层闪核（蒸汽白 `rgba(255,255,255,0.92)`/电磁紫 `rgba(201,168,255,0.55)`）、蒸汽白蒸汽云 `rgba(255,255,255,0.8)`/冰晶 `#9fdcff`、电磁紫电链 `#c9a8ff`、灼烧橙镖 `#ff7a3c`/内芯 `#ffd27a` —— 均为 inline 字面量，与文件顶部 `🟡 TODO` 块风格一致，待 ~ 调参器定稿并建议提进顶部 TODO 块常量（对齐 `SRC_STYLE.lightning` / `DOT_TEXT_COLOR` / 冰区 `COLORS`）。
+
 ## §3 设计债（GDD 已规划、代码未实现，须 §八 计划）
 
 - 🔴 **铁壁蛇阵**：需改 `03_core.js` / `04_collision.js` → 走 AGENTS.md §三 流程。

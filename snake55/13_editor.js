@@ -1,6 +1,6 @@
 ;(function (global) {
 	'use strict'
-	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Log = global.Log
+	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Log = global.Log, Core = global.Core, M = Core.M
 	var LS_KEY = 'snake55_tuning'
 
 	// —— UI 滑块范围常量（集中，避免逻辑里散落魔法数字；dev 工具边界，非 gameplay 数值）——
@@ -167,6 +167,13 @@
 			cb += '<button data-combo="' + cid + '" class="gm_combo" style="width:100%;padding:8px;margin:5px 0;border:1px solid #c9a8ff;border-radius:6px;background:transparent;color:#c9a8ff;cursor:pointer;font:700 12px system-ui">激活 Combo：' + cid + '</button>'
 		}
 		secs.push({ title: '单 Combo 激活（测试）', body: cb, open: false })
+		// —— 单 Combo 视觉预览（脱离实战，dev-only）：直接 Bus.emit 对应 fx: 事件 + 蛇头附近 spawn dummy 供链/镖瞄准 ——
+		var pv = ''
+		for (var pc = 0; pc < comboKeys.length; pc++) {
+			var pvc = comboKeys[pc]
+			pv += '<button data-preview="' + pvc + '" class="gm_preview" style="width:100%;padding:8px;margin:5px 0;border:1px solid #ff8c5b;border-radius:6px;background:transparent;color:#ff8c5b;cursor:pointer;font:700 12px system-ui">预览 VFX：' + pvc + '</button>'
+		}
+		secs.push({ title: '单 Combo 视觉预览（脱离实战）', body: pv, open: false })
 		// —— GM 指令 ——
 		var gm = ''
 		gm += '<div style="display:flex;gap:6px;margin:6px 0"><button id="gm_inv_on" style="flex:1;padding:8px;border:0;border-radius:6px;background:#7CFC00;color:#063;font:700 12px system-ui;cursor:pointer">无限无敌</button>' +
@@ -313,6 +320,11 @@
 				Registry.get('skill').debugActivateCombo(this.getAttribute('data-combo'))
 			}
 		}
+		// 单 combo VFX 预览（脱离实战：无需敌人/冷却，直接发 fx: 事件 + 蛇头附近 spawn dummy）
+		var pvBtns = panel.querySelectorAll('.gm_preview')
+		for (var pc = 0; pc < pvBtns.length; pc++) {
+			pvBtns[pc].onclick = function () { previewCombo(this.getAttribute('data-preview')) }
+		}
 		// GM 指令
 		panel.querySelector('#gm_hp_add').onclick = function () { GS.coreHp = Math.min(99, (GS.coreHp | 0) + 1); relHp() }
 		panel.querySelector('#gm_hp_sub').onclick = function () { GS.coreHp = Math.max(0, (GS.coreHp | 0) - 1); relHp() }
@@ -376,6 +388,45 @@
 		refreshTuneLevels()   // 标定面板渲染后即时刷新等级文字 + 高亮当前等级行
 	}
 	function relHp() { var el = panel && panel.querySelector('#gm_hp_val'); if (el) { el.textContent = (GS.coreHp | 0) } }
+	// B-4：单 combo VFX 预览（dev-only，脱离实战）。直接合成 payload 发 fx: 事件，并在蛇头附近 spawn dummy 供链/镖瞄准，完全绕过 gameplay/冷却/敌人条件。
+	function spawnDummiesNearHead(count) {
+		var En = Registry.get('enemy'); if (!En || !En.spawnDummy) { return [] }
+		En.spawnDummy(count, 5000)
+		var s = Registry.get('snake'), h = (s && s.head) ? s.head : { x: CONFIG.GAME.worldWidth / 2, y: CONFIG.GAME.worldHeight / 2 }
+		var all = [], dummies = []
+		for (var i = 0; i < En.list.length; i++) { if (En.list[i].active && En.list[i].type === 'dummy') { all.push(En.list[i]) } }
+		dummies = all.slice(-count)
+		for (var j = 0; j < dummies.length; j++) {
+			var ang = (j / Math.max(1, dummies.length)) * M.PI2 + 0.6, dist = 70 + j * 18
+			dummies[j].x = h.x + Math.cos(ang) * dist
+			dummies[j].y = h.y + Math.sin(ang) * dist
+		}
+		return dummies
+	}
+	function previewCombo(id) {
+		var CO = CONFIG.COMBO
+		if (!CO[id]) { Log.warn('[预览] 未知 combo：' + id); return }
+		var s = Registry.get('snake'), h = (s && s.head) ? { x: s.head.x, y: s.head.y } : { x: CONFIG.GAME.worldWidth / 2, y: CONFIG.GAME.worldHeight / 2 }
+		if (id === 'steamExplosion') {
+			Bus.emit('fx:steamblast', { x: h.x, y: h.y, radius: CO.steamExplosion.radius })
+			Log.info('[预览] 蒸汽爆炸：白色蒸汽云 + 冰晶碎屑 + 实心白闪核')
+		} else if (id === 'electroTurret') {
+			var ds = spawnDummiesNearHead(3)
+			var chain = [{ x: h.x, y: h.y }]
+			for (var i = 0; i < ds.length; i++) { chain.push({ x: ds[i].x, y: ds[i].y }) }
+			Bus.emit('fx:electroarc', { chain: chain })
+			Log.info('[预览] 电磁炮台：紫电链 + 节点放射电芒 + 蛇头紫辉光')
+		} else if (id === 'burningBarrage') {
+			var dn = spawnDummiesNearHead(3), En = Registry.get('enemy')
+			for (var k = 0; k < dn.length; k++) {
+				Bus.emit('fx:burndart', { from: h, to: { x: dn[k].x, y: dn[k].y } })
+				if (En && En.ignite) { En.ignite(dn[k], CO.burningBarrage.burnSec, CO.burningBarrage.burnDps) }  // 点燃 → 敌身橙色灼烧环（drawBurnMark 即时显示）
+			}
+			Log.info('[预览] 灼烧弹幕：橙燃烧镖 + 命中橙焰爆 + 敌身火环')
+		} else {
+			Log.warn('[预览] 暂不支持的 combo：' + id)
+		}
+	}
 
 	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render(); if (tuneTimer) { clearInterval(tuneTimer) } tuneTimer = setInterval(refreshTuneLevels, 300) } else { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = null } } }   // 面板开时每 300ms 实时刷新等级/高亮；关时清理
 

@@ -20,12 +20,21 @@
 	var DART_TRAIL_PX = 10            // TODO: 飞镖拖尾占比（候选 8 / 14）
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
 	var DOT_TEXT_SIZE = 11            // TODO: DOT 飘字小字号（候选 10 / 12）；与瞬伤大白字 14/20 区分
+	// —— B-4 增强：电磁 vs 基础闪电"一眼区分"靠 粗细 / 分叉结构 / 命中残留时长（非只色）· 纯表现 TODO 待 ~ 定稿 ——
+	var ELECTRO_W_PX = 5          // TODO: 电磁电链线宽 5px（基础闪电 2px；粗弧拉开）候选 4 / 6
+	var ELECTRO_LIFE = 0.34       // TODO: 电磁电链存活 0.34s（基础 0.22；停留更久留得住眼）候选 0.30 / 0.40
+	var ELECTRO_JAG = 18          // TODO: 电磁电链折线抖动 18px（更狂野分叉感）候选 14 / 22
+	var ELECTRO_BRANCH_N = 8      // TODO: 电磁节点放射分叉数 8（基础无分叉）候选 6 / 10
+	var ELECTRO_BRANCH_LIFE = 0.2 // TODO: 电磁分叉/命中残留辉光存活 0.2s（基础无残留）候选 0.15 / 0.25
+	var ELECTRO_GLOW_R = 16       // TODO: 电磁命中残留辉光半径 16px（基础无）候选 12 / 20
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
 	var SRC_STYLE = {
 		bolt:      { label: '飞镖 ', color: '#2ad4ff' },        // 飞镖：青（候选 #29c7ff / #3fe0ff）
-		lightning: { label: '闪电 ', color: '#c9a8ff' },        // 闪电：紫（候选 #b98cff / #d8bcff）
-		fire:      { label: '🔥DOT ', color: DOT_TEXT_COLOR },  // 火焰 DOT：橙（持续跳）
-		burn:      { label: '🔥DOT ', color: DOT_TEXT_COLOR },  // 灼烧弹幕引燃：同火焰橙
+		lightning: { label: '闪电 ', color: '#9fd0ff' },        // 闪电：蓝白（B-4 修正：由紫 #c9a8ff 改与 fx:lightning 电链色 LIGHTNING_COLOR 对齐；候选 #bfe3ff / #88ccff）
+		electro:   { label: '⚡电磁 ', color: '#c9a8ff' },      // 电磁炮台连锁：紫（B-4 验收①a 新增：与 fx:electroarc 紫电链对齐，独立于基础闪电；src='electro' 由 08_skill doLightningChain 透传）
+		fire:      { label: '🔥火墙 ', color: '#ff9a3c' },      // 火焰墙 DOT：橙（B-4 衍生：与灼烧引燃分源独立飘字，标签区分）
+		burn:      { label: '🔥灼烧 ', color: '#ff5a2c' },      // 灼烧弹幕引燃：红橙（B-4 衍生：与火墙分源独立飘字，色比火墙红以辨识）
+		burning:   { label: '🔥灼烧 ', color: '#ff7a3c' },      // 灼烧弹幕 combo：橙（B-4 验收①c 补全：bolt 命中经此标识，与 fx:burndart 橙镖/火环一致；仅飘字前缀，零 gameplay）
 		shield:    { label: '🛡护盾 ', color: '#ffe6a3' },      // 护盾接触：白金（候选 #ffd166 / #fff0c2）
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
@@ -37,7 +46,7 @@
 
 	var particlePool = Core.createPool(newParticle, resetParticle, 128)
 	var textPool = Core.createPool(newText, resetText, 32)
-	// 光束（fx:bolt / fx:lightning 复用），curve=true 走 quadratic 折线；爆环（fx:blast）
+	// 光束（fx:bolt / fx:lightning / fx:electroarc 复用），curve=true 走 quadratic 折线；爆环（fx:steamblast）
 	function newBeam() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, cx: 0, cy: 0, curve: false, life: 0, maxLife: 1, width: 2, color: '#fff' } }
 	function resetBeam(b) { b.active = false }
 	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
@@ -52,6 +61,14 @@
 	var blasts = []
 	var dartPool = Core.createPool(newDart, resetDart, 32)
 	var darts = []
+	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 32)
+	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
+	function spawnFlashCore(x, y, radius, color, life) {
+		var f = flashPool.acquire()
+		f.active = true; f.x = x; f.y = y; f.radius = radius; f.color = color
+		f.life = f.maxLife = life
+		flashCores.push(f)
+	}
 
 	// 生成一段光束：from→to；jag>0 时于中点法向偏移出折线控制点（创建时一次性算，绘制零成本）
 	function spawnBeam(x1, y1, x2, y2, color, width, life, jag) {
@@ -130,6 +147,10 @@
 			var da = darts[i]; da.life -= dt
 			if (da.life <= 0) { dartPool.release(da); darts.splice(i, 1) }
 		}
+		for (i = flashCores.length - 1; i >= 0; i--) {
+			var fc = flashCores[i]; fc.life -= dt
+			if (fc.life <= 0) { flashPool.release(fc); flashCores.splice(i, 1) }
+		}
 	},
 		// 由 render 在世界坐标系下调用；粒子层绘于核心实体之下，飘字小号，永不盖核心信息（JUICE 不干扰）
 		drawWorld: function (ctx) {
@@ -187,12 +208,24 @@
 			}
 			ctx.globalAlpha = 1
 		},
+		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上，仅作爆发高光，不长时间盖核心信息（JUICE）
+		drawOverlay: function (ctx) {
+			for (var i = 0; i < flashCores.length; i++) {
+				var fc = flashCores[i]
+				var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }
+				ctx.globalAlpha = a * 0.85
+				ctx.fillStyle = fc.color
+				ctx.beginPath(); ctx.arc(fc.x, fc.y, fc.radius * (1.25 - a * 0.25), 0, M.PI2); ctx.fill()
+			}
+			ctx.globalAlpha = 1
+		},
 		clear: function () {
 			while (particles.length) { particlePool.release(particles.pop()) }
 			while (texts.length) { textPool.release(texts.pop()) }
 			while (beams.length) { beamPool.release(beams.pop()) }
 			while (blasts.length) { blastPool.release(blasts.pop()) }
-		while (darts.length) { dartPool.release(darts.pop()) }
+			while (darts.length) { dartPool.release(darts.pop()) }
+			while (flashCores.length) { flashPool.release(flashCores.pop()) }
 		}
 	}
 
@@ -225,6 +258,13 @@
 		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, BOLT_FLY_SEC)   // 飞行镖（纯视觉，伤害仍即时判定）
 		spawnBurst(d.to.x, d.to.y, HIT_BURST_N, BOLT_COLOR, 90, 3, 0.25)                     // 少量命中爆点
 	})
+	// B-3：灼烧弹幕飞镖视觉（橙 #ff7a3c，与基础白黄 fx:bolt 区分；事件名全小写）
+	Bus.on('fx:burndart', function (d) {
+		if (!d || !d.from || !d.to) { return }
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, '#ff7a3c', BOLT_FLY_SEC)   // 橙色飞行镖（燃烧弹）
+		spawnBurst(d.to.x, d.to.y, 10, '#ff7a3c', 170, 4, 0.3)                  // 更大更亮橙焰爆点（命中处）
+		spawnBurst(d.to.x, d.to.y, 5, '#ffd27a', 120, 3, 0.22)                   // 内芯亮黄爆点（层次）
+	})
 	Bus.on('fx:lightning', function (d) {
 		if (!d || !d.chain || d.chain.length < 2) { return }
 		for (var i = 1; i < d.chain.length; i++) {
@@ -233,11 +273,53 @@
 			spawnBurst(b.x, b.y, HIT_BURST_N, LIGHTNING_COLOR, 100, 3, 0.25)                               // 节点爆点
 		}
 	})
+	// B-4 增强：电磁炮台连锁闪电视觉（紫 #c9a8ff）——
+	// 与基础蓝白 fx:lightning 的区分维度＝粗弧(ELECTRO_W_PX) + 节点多分叉(ELECTRO_BRANCH_N) + 命中残留辉光(ELECTRO_BRANCH_LIFE)；
+	// 基础闪电保持细/快/蓝白/单链/无残留，靠简洁对比；事件名全小写。零 gameplay（不改伤害/连锁/射程/冷却/判定）
+	Bus.on('fx:electroarc', function (d) {
+		if (!d || !d.chain || d.chain.length < 2) { return }
+		var h0 = d.chain[0]
+		spawnFlashCore(h0.x, h0.y, ELECTRO_GLOW_R + 4, 'rgba(201,168,255,0.55)', ELECTRO_BRANCH_LIFE + 0.05)  // 蛇头炮台紫辉光（实体之上，比基础闪电多一层残留）
+		for (var i = 1; i < d.chain.length; i++) {
+			var a = d.chain[i - 1], b = d.chain[i]
+			spawnBeam(a.x, a.y, b.x, b.y, '#c9a8ff', ELECTRO_W_PX, ELECTRO_LIFE, ELECTRO_JAG)   // 紫色粗弧电链（明显比基础闪电 2px 粗、存活更久，留得住眼）
+			spawnBurst(b.x, b.y, HIT_BURST_N, '#c9a8ff', 110, 3, 0.25)                          // 节点紫爆点
+			spawnFlashCore(b.x, b.y, ELECTRO_GLOW_R, 'rgba(201,168,255,0.5)', ELECTRO_BRANCH_LIFE)  // 命中残留紫辉光（~0.2s afterglow；基础闪电无，靠此拉开停留时长）
+			for (var r = 0; r < ELECTRO_BRANCH_N; r++) {                                        // 节点多分叉放射紫电芒（基础闪电无分叉）
+				var ra = (r / ELECTRO_BRANCH_N) * M.PI2 + Math.random() * 0.3, rl = 16 + Math.random() * 14
+				spawnBeam(b.x, b.y, b.x + Math.cos(ra) * rl, b.y + Math.sin(ra) * rl, '#c9a8ff', 2, ELECTRO_BRANCH_LIFE, 0)
+			}
+		}
+	})
 	// 需求B：steamExplosion 等的周期爆闪（爆心由调用方传入真实坐标）
-	Bus.on('fx:blast', function (d) {
+	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
-		spawnBlast(d.x, d.y, d.radius, BLAST_COLOR, BLAST_LIFE)          // 扩张暖橙爆环
-		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)     // 少量爆散团
+		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.92)', 0.22)   // 实心白闪核（绘于实体之上，不被盖）
+		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.8)', 0.55)              // 白色蒸汽云扩张≈r90（亮度上调）
+		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
+		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
+		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）
+			var p = particlePool.acquire()
+			p.active = true
+			p.x = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
+			p.y = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
+			p.vx = (Math.random() * 2 - 1) * 20
+			p.vy = -(50 + Math.random() * 60)
+			p.life = p.maxLife = 0.5
+			p.size = 4 + Math.random() * 4
+			p.color = 'rgba(255,255,255,0.6)'; p.drag = 0.92
+			particles.push(p)
+		}
+		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射
+			var ia = Math.random() * M.PI2, isp = 120 + Math.random() * 120
+			var ip = particlePool.acquire()
+			ip.active = true; ip.x = d.x; ip.y = d.y
+			ip.vx = Math.cos(ia) * isp; ip.vy = Math.sin(ia) * isp
+			ip.life = ip.maxLife = 0.45
+			ip.size = 2 + Math.random() * 2
+			ip.color = '#9fdcff'; ip.drag = 0.9
+			particles.push(ip)
+		}
 	})
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {

@@ -226,7 +226,9 @@
 		ctx.translate(GAME.logicalWidth / 2 - cam.x + ox, GAME.logicalHeight / 2 - cam.y + oy)
 		drawBounds()
 		var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
-		drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawDebugHitboxes()
+		drawPickups(); drawEnemies(); drawSnake(); drawSkillAura()
+		if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
+		drawDebugHitboxes()
 		ctx.restore()
 		drawHurtVignette()
 		drawBossWarn()
