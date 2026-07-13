@@ -189,7 +189,7 @@
 	deepFreeze(CONFIG)
 	selfCheck()
 
-	var Core = { M: M, createPool: createPool, deepFreeze: deepFreeze, Formula: Formula, selfCheck: selfCheck, resetRun: resetRun, version: '0.3-b9' }
+	var Core = { M: M, createPool: createPool, deepFreeze: deepFreeze, Formula: Formula, selfCheck: selfCheck, resetRun: resetRun, version: '0.3-b11' }
 
 	global.Log = Log
 	global.assert = assert
