@@ -27,7 +27,7 @@
 			x: 0, y: 0, vx: 0, vy: 0, angle: 0,
 			hp: 1, maxHp: 1, radius: 8, baseSpeed: 0, atk: 1, senseRange: -1, color: '#fff',
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
-		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0,
+		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
 		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值），每来源独立 flush、独立标签（火墙🔥火墙/灼烧🔥灼烧），互不混
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
@@ -65,7 +65,7 @@
 		e.active = true; e.id = ++_id; e.type = type
 		e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
-		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // B-GM：复用复位 isDummy + B-2 冰标记，防残留
+		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
@@ -85,7 +85,7 @@
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
@@ -97,7 +97,7 @@
 			e.active = true; e.id = ++_id; e.type = 'dummy'
 			e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = 24
 			e.color = '#ffd166'
-			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.inIce = false; e._iceHit = false
+			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
 			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
@@ -233,6 +233,7 @@
 		var hx = snake && snake.head ? snake.head.x : e.x
 		var hy = snake && snake.head ? snake.head.y : e.y
 		if (e.slowT > 0) { e.slowT -= dt }
+	if (e.steamCd > 0) { e.steamCd -= dt }   // ④ per-enemy 蒸汽引爆冷却（死亡经对象池复用复位）
 		if (e.flashT > 0) { e.flashT -= dt }   // ⑥ 闪白计时衰减
 		if (e.type === 'bossBullet') {
 			e.lifeT -= dt; e.x += e.vx * dt; e.y += e.vy * dt
@@ -290,3 +291,4 @@
 
 // 📝 修改日志
 // 2025-07-10 · P1-② electroTurret/burningBarrage · enemy 侧：newEnemy 新增 burnT/burnDps 字段、spawn 复位、spawnBullet 兜底、ignite() 点燃入口、updateOne 燃烧 DOT tick（bossBullet return 后→stun 前） · 不动 §9
+// 2026-07-14 · ④ 蒸汽状态引爆 · enemy 侧：newEnemy + spawn/spawnBullet/spawnDummy 加 per-enemy steamCd 字段（默认 0、三处复位）；updateOne 每帧 steamCd -= dt（死亡经对象池复用自然复位，满足④「死亡清理」）；带冰判定读 e.slowT>0（Lv5 冻结 pct=1 仍走 slowT，已覆盖，无需独立 frozenT 字段）· 不动 §9
