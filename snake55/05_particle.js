@@ -39,12 +39,12 @@
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
 
-	function newParticle() { return { active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88 } }
+	function newParticle() { return { active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
 	function resetParticle(p) { p.active = false }
-	function newText() { return { active: false, x: 0, y: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14 } }
+	function newText() { return { active: false, x: 0, y: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
 	function resetText(t) { t.active = false }
 
-	var particlePool = Core.createPool(newParticle, resetParticle, 128)
+	var particlePool = Core.createPool(newParticle, resetParticle, 512)   // b9 性能护栏：齐爆峰值防爆池增长 GC 尖刺（128→512，一次性内存廉价）
 	var textPool = Core.createPool(newText, resetText, 32)
 	// 光束（fx:bolt / fx:lightning / fx:electroarc 复用），curve=true 走 quadratic 折线；爆环（fx:steamblast）
 	function newBeam() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, cx: 0, cy: 0, curve: false, life: 0, maxLife: 1, width: 2, color: '#fff' } }
@@ -54,24 +54,63 @@
 	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, color: '#fff' } }
 	function resetDart(b) { b.active = false }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
-	var blastPool = Core.createPool(newBlast, resetBlast, 32)
+	var blastPool = Core.createPool(newBlast, resetBlast, 96)   // b9：爆环池 32→96（蒸汽齐爆峰值）
 	var particles = []
 	var texts = []
 	var beams = []
 	var blasts = []
 	var dartPool = Core.createPool(newDart, resetDart, 32)
 	var darts = []
-	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 32)
+	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 96)   // b9：闪核池 32→96（蒸汽白闪/电磁辉光峰值）
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
+	// b9：VFX 输出硬上限（门控所有进池写入，治"怪多+combo 多"draw 爆炸掉帧）
+	//   maxParticles/maxTexts=活跃上限；spawnBudgetPerFrame=每帧生成预算（削平齐爆单帧尖峰）
+	//   优先级：high=死亡爆点/命中/伤害飘字（尽量保留）；low=蒸汽上升/冰晶碎屑/减速标签（满时丢弃）
+	//   走 RT 热调（~ 调参器），不写裸数字；HUD「粒子」供实测下调
+	function RT(path, fb) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
+	function maxParticles() { return RT('PERF.maxParticles', CONFIG.PERF.maxParticles) }
+	function maxTexts() { return RT('PERF.maxTexts', CONFIG.PERF.maxTexts) }
+	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', CONFIG.PERF.spawnBudgetPerFrame) }
+	var frameSpawn = 0   // 每帧 VFX 生成计数（Particle.update 帧首清零；与 fixed-step 对齐）
+	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
+	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
+	function emitParticle(x, y, vx, vy, life, size, color, drag, prio) {
+		if (frameSpawn >= spawnBudget()) { return false }                 // 每帧预算耗尽：丢弃（削平齐爆尖峰）
+		if (particles.length >= maxParticles()) {
+			if (prio === 'high') { var ei = evictLow(particles); if (ei < 0) { return false } particlePool.release(particles[ei]); particles.splice(ei, 1) }
+			else { return false }                                          // 低优先且已满：丢弃
+		}
+		var p = particlePool.acquire()
+		p.active = true; p.x = x; p.y = y; p.vx = vx; p.vy = vy
+		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio
+		particles.push(p); frameSpawn++; return true
+	}
+	function emitText(x, y, str, color, size, prio) {
+		if (frameSpawn >= spawnBudget()) { return false }
+		if (texts.length >= maxTexts()) {
+			if (prio === 'high') { var ei = evictLow(texts); if (ei < 0) { return false } textPool.release(texts[ei]); texts.splice(ei, 1) }
+			else { return false }
+		}
+		var t = textPool.acquire()
+		t.active = true; t.x = x; t.y = y; t.vy = -40
+		t.life = t.maxLife = 0.8; t.text = str; t.color = color; t.size = size || 14; t.prio = prio
+		texts.push(t); frameSpawn++; return true
+	}
 	function spawnFlashCore(x, y, radius, color, life) {
+		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆白闪核尖峰
 		var f = flashPool.acquire()
 		f.active = true; f.x = x; f.y = y; f.radius = radius; f.color = color
 		f.life = f.maxLife = life
-		flashCores.push(f)
+		flashCores.push(f); frameSpawn++
 	}
 
 	// 生成一段光束：from→to；jag>0 时于中点法向偏移出折线控制点（创建时一次性算，绘制零成本）
 	function spawnBeam(x1, y1, x2, y2, color, width, life, jag) {
+		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平电链/飞镖束尖峰
 		var b = beamPool.acquire()
 		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.width = width; b.color = color
 		b.curve = !!jag
@@ -86,42 +125,35 @@
 	}
 	// 生成扩张爆环 + 少量爆散团（爆散团走小圆点粒子）
 	function spawnBlast(x, y, radius, color, life) {
+		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆爆环尖峰
 		var b = blastPool.acquire()
 		b.active = true; b.x = x; b.y = y; b.radius = radius; b.color = color; b.ringWidth = BLAST_RING_W
 		b.life = b.maxLife = life
-		blasts.push(b)
+		blasts.push(b); frameSpawn++
 	}
 	function spawnDart(x1, y1, x2, y2, color, life) {   // 飞行镖：从 head 沿弹道插值飞向目标，纯视觉
+		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平飞镖尖峰
 		var b = dartPool.acquire()
 		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.color = color
 		b.life = b.maxLife = life
-		darts.push(b)
+		darts.push(b); frameSpawn++
 	}
 
-	function spawnBurst(x, y, count, color, speed, size, life) {
+	function spawnBurst(x, y, count, color, speed, size, life) {   // 命中/死亡爆点：high 优先（满上限时挤掉低优先）
 		for (var i = 0; i < count; i++) {
-			var p = particlePool.acquire()
 			var a = Math.random() * M.PI2
 			var sp = speed * (0.5 + Math.random() * 0.5)
-			p.active = true; p.x = x; p.y = y
-			p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp
-			p.life = p.maxLife = life
-			p.size = size * (0.7 + Math.random() * 0.6)
-			p.color = color; p.drag = 0.88
-			particles.push(p)
+			emitParticle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, size * (0.7 + Math.random() * 0.6), color, 0.88, 'high')
 		}
 	}
-	function spawnText(x, y, str, color, size) {
-		var t = textPool.acquire()
-		t.active = true; t.x = x; t.y = y; t.vy = -40
-		t.life = t.maxLife = 0.8; t.text = str; t.color = color; t.size = size || 14
-		texts.push(t)
-	}
+	function spawnText(x, y, str, color, size) { emitText(x, y, str, color, size, 'high') }   // 伤害飘字：high 优先
 
 	var Particle = {
 		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText,
+		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
 		update: function (dt) {
 			var i
+			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
 			for (i = particles.length - 1; i >= 0; i--) {
 				var p = particles[i]
 				p.life -= dt
@@ -298,38 +330,38 @@
 		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.8)', 0.55)              // 白色蒸汽云扩张≈r90（亮度上调）
 		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
 		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
-		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）
-			var p = particlePool.acquire()
-			p.active = true
-			p.x = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
-			p.y = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
-			p.vx = (Math.random() * 2 - 1) * 20
-			p.vy = -(50 + Math.random() * 60)
-			p.life = p.maxLife = 0.5
-			p.size = 4 + Math.random() * 4
-			p.color = 'rgba(255,255,255,0.6)'; p.drag = 0.92
-			particles.push(p)
+		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· low 优先（满上限时最先被挤掉）
+			var px = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
+			var py = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
+			emitParticle(px, py, (Math.random() * 2 - 1) * 20, -(50 + Math.random() * 60), 0.5, 4 + Math.random() * 4, 'rgba(255,255,255,0.6)', 0.92, 'low')
 		}
-		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射
+		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射 · low 优先
 			var ia = Math.random() * M.PI2, isp = 120 + Math.random() * 120
-			var ip = particlePool.acquire()
-			ip.active = true; ip.x = d.x; ip.y = d.y
-			ip.vx = Math.cos(ia) * isp; ip.vy = Math.sin(ia) * isp
-			ip.life = ip.maxLife = 0.45
-			ip.size = 2 + Math.random() * 2
-			ip.color = '#9fdcff'; ip.drag = 0.9
-			particles.push(ip)
+			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, '#9fdcff', 0.9, 'low')
 		}
 	})
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
-		spawnText(d.x, d.y - 6 - (d.r || 12), '减速', '#9fdcff', 12)
+		emitText(d.x, d.y - 6 - (d.r || 12), '减速', '#9fdcff', 12, 'low')   // 减速标签：low 优先（满上限时丢弃，不抢伤害飘字预算）
 		spawnBurst(d.x, d.y, 3, '#9fdcff', 90, 2, 0.25)
+	})
+	// ⑥ 首测 A：冰锥从尾部甩出 → 飞向落点（纯视觉，伤害即时判定于池内）+ 落点霜环预告（读"要在这冻"）
+	Bus.on('fx:ice_throw', function (d) {
+		if (!d || !d.from || !d.to) { return }
+		var travel = d.travel || 0.16   // 飞行时长与 08_skill ICE_THROW_SEC 同源
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, '#9fdcff', travel)   // 冰锥飞行（尾→落点）
+		spawnBlast(d.to.x, d.to.y, d.r || 40, 'rgba(159,220,255,0.45)', 0.15)   // 落地预告霜环（极短，读"要在这冻"）
+	})
+	// ⑥ 首测 A：冰锥到达落点 → 霜环扩张淡出 + 冰晶爆点（冰池生长动画由 render 读 icePools.growT 承担）
+	Bus.on('fx:ice_pool', function (d) {
+		if (!d || d.x == null || d.y == null) { return }
+		spawnBlast(d.x, d.y, d.r || 40, 'rgba(225,243,255,0.75)', 0.3)   // 落点霜环扩张淡出
+		spawnBurst(d.x, d.y, 6, '#9fdcff', 110, 3, 0.28)                  // 冰晶爆点
 	})
 	Bus.on('core:run_reset', function () { Particle.clear() })
 
 	Registry.register('particle', Particle)
-	Log.info('particle 就绪：池 128/32')
+	Log.info('particle 就绪：池 粒子512/字32/束64/爆96/镖32/闪96')
 
 })(typeof window !== 'undefined' ? window : this)

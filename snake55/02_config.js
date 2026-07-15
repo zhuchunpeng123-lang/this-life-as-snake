@@ -62,8 +62,18 @@
 				process: { px: 4, frames: 6 },
 				crit: { px: 8, frames: 12 },
 				death: { px: 16, frames: 30 },
-				maxComposite: 18
-			}
+			maxComposite: 18,
+			gateSec: { 1: 0.35, 2: 0.5, 3: 0.5 },   // 任务2：屏震分档最小重触发间隔(s)·T1=0.35(蒸汽齐爆轻档)/T2=0.5(process)/T3=0.5(crit·death，仅 coreHp/Boss/大招)；间隔内同/低档丢弃、高档越级覆盖
+			steam: { manyMin: 3, decayPerSec: 1.6 }   // ④-B+任务2：蒸汽引爆屏震门控·真源 §2.2.1「严禁单一强度轰炸·防脱敏」。本帧齐爆数≥manyMin→T1 轻档(light)一次(禁映射 crit/T3)；单体(<manyMin)→T0 不震；decayPerSec=trauma 衰减(每秒)，多次引爆不线性叠加(N爆≠N震)
+		}
+		},
+
+		// —— §性能护栏（非 §9 平衡值；🟡 待实测+候选，归 b9 性能专项）——
+		PERF: {
+			steamBurstCapPerFrame: 10,  // 🟡 蒸汽齐爆同帧 VFX 上限（仅门控视觉 fx:steamblast 的 Bus.emit，伤害 hurtCombo 始终结算）；候选 8 / 10 / 12，实测再收。保住"大 AOE 齐爆"读感
+			maxParticles: 350,          // 🟡 全局粒子活跃上限（门控所有进池写入，含 fx:steamblast 直 push 旁路，否则齐爆打爆池）；候选 300/350/400，RT 热调，HUD「粒子」实测下调
+			maxTexts: 48,              // 🟡 全局飘字活跃上限（门控最贵的 fillText 飘字）；候选 40/48/60，RT 热调
+			spawnBudgetPerFrame: 120   // 🟡 每帧 VFX 生成预算（削平齐爆单帧尖峰，覆盖 burst/text/blast/beam/flash/dart）；候选 100/120/150，RT 热调
 		},
 
 		// —— §2.3 JUICE 手感基因（新增） ——
@@ -95,7 +105,7 @@
 			attackSkills: ['fire', 'bolt', 'lightning'],
 			survivalSkills: ['ice', 'shield'],
 		fire: { dotPerSec: [6, 9, 13, 18, 24], radius: [60, 75, 90, 108, 128], segStep: 1, lv5: 'spreadBurn' },  // B-2：半径放大×1.5初值，沿蛇身铺开（真理源 §4.1，待实测回填）
-		ice: { slowPct: [0.20, 0.30, 0.40, 0.50, 0.60], trailWidth: [30, 40, 48, 60, 75], segStep: 1, lv5FreezeSec: 1.0, lingerSec: [2.0, 2.5, 3.0, 3.5, 4.0], slowLingerSec: 0.4 },  // B-2：宽度放大×1.5初值（§4.2 待实测回填）；lingerSec=冰区滞留/减速持续初值 A[2.0,2.5,3.0,3.5,4.0]；slowLingerSec=减速跟随短窗(离开约0.4s恢复)标量；🟡 初值待 Notion 真理源 §9 回填
+		ice: { slowPct: [0.20, 0.30, 0.40, 0.50, 0.60], lv5FreezeSec: 1.0, freezeCd: 3.0, poolLingerSec: [4, 5, 6, 7, 8], maxActivePools: 2, poolRadius: [90, 110, 130, 150, 170], seekRange: [100, 140, 180, 220, 260] },  // ⑥ 系统性调整（大范围·持续控制场）：poolLingerSec 改按等级[4,5,6,7,8](冰池存续拉长·供敌群聚拢+火墙多次扫爆)·新增 maxActivePools=2(并发冰池上限·2片稳定大控制场)·poolRadius[5]=[90,110,130,150,170](全等级≥蒸汽90px·冰圈≥爆圈)·freezeCd=3.0不动·slowPct/Lv5冻结1s不动；蒸汽COMBO.steamExplosion.radius=90不动(选A·仅e.inIce防冰圈外凭空引爆)；真理源§4.2回写，③校验DPS/密度
 		bolt: { damage: [10, 13, 16, 20, 25], nodes: [1, 2, 3, 4, 5], fireRate: [2.0, 2.2, 2.5, 2.8, 3.2], maxRange: [100, 140, 180, 220, 260], lv5: 'pierce+1' },  // P1-1 射程门控（px）
 		shield: { count: [1, 2, 3, 4, 5], contactDamage: [8, 11, 14, 18, 22], orbitRadius: [30, 40, 50, 60, 70], orbitSec: 1.6, orbitHitMul: 0.5, lv5: 'reflect' },  // B-2：orbitRadius 收紧为贴头点防曲线 A[30,40,50,60,70]（headRadius=14，球落点刚好头外侧，不扩全身/不压火墙）；orbitSec 取代写死常量 1.6（§4.4 待实测回填）；orbitHitMul=护盾球命中半径占 orbitRadius 比例（🟡 几何因子，待标定回填 §9）
 			lightning: { damage: [9, 12, 15, 19, 24], chains: [2, 3, 4, 5, 7], intervalSec: [1.2, 1.1, 1.0, 0.9, 0.8], maxRange: [120, 155, 190, 225, 240], lv5: 'stun' }  // P1-1 首跳射程门控（px）
