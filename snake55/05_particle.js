@@ -65,7 +65,7 @@
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
 	// b9：VFX 输出硬上限（门控所有进池写入，治"怪多+combo 多"draw 爆炸掉帧）
 	//   maxParticles/maxTexts=活跃上限；spawnBudgetPerFrame=每帧生成预算（削平齐爆单帧尖峰）
-	//   优先级：high=死亡爆点/命中/伤害飘字（尽量保留）；low=蒸汽上升/冰晶碎屑/减速标签（满时丢弃）
+	//   优先级：high=死亡爆点/蒸汽VFX/combo爆环/玩家受击（尽量保留）；low=enemy:hit 逐次命中火花+伤害飘字/冰减速标签（满时先丢）
 	//   走 RT 热调（~ 调参器），不写裸数字；HUD「粒子」供实测下调
 	function RT(path, fb) {
 		var ed = Registry.get('editor')
@@ -139,14 +139,15 @@
 		darts.push(b); frameSpawn++
 	}
 
-	function spawnBurst(x, y, count, color, speed, size, life) {   // 命中/死亡爆点：high 优先（满上限时挤掉低优先）
+	function spawnBurst(x, y, count, color, speed, size, life, prio) {   // prio 默认 high；仅 enemy:hit 逐次命中火花传 'low'，满上限时优先丢弃
+		prio = (prio === 'low') ? 'low' : 'high'
 		for (var i = 0; i < count; i++) {
 			var a = Math.random() * M.PI2
 			var sp = speed * (0.5 + Math.random() * 0.5)
-			emitParticle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, size * (0.7 + Math.random() * 0.6), color, 0.88, 'high')
+			emitParticle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, size * (0.7 + Math.random() * 0.6), color, 0.88, prio)
 		}
 	}
-	function spawnText(x, y, str, color, size) { emitText(x, y, str, color, size, 'high') }   // 伤害飘字：high 优先
+	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
 	var Particle = {
 		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText,
@@ -267,15 +268,15 @@
 		if (dmg <= 0) { return }                                  // 过滤 ≤0 伤害：绝不显示「0」飘字（防小数/无效伤害刷屏）
 		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
 		var ty = d.y - 6 - (d.r || 0)   // 飘字生成在精灵上方（按命中体半径抬升，修 boss 大精灵盖住伤害数字）
-		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字 + 小爆点，与瞬伤大白字明显区分
+		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字 + 小爆点，与瞬伤大白字明显区分；enemy:hit 逐次火花→low 优先丢
 			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
-			spawnBurst(d.x, d.y, 3, dc, 120, 2, 0.25)
-			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE)
+			spawnBurst(d.x, d.y, 3, dc, 120, 2, 0.25, 'low')
+			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'low')
 		} else {
 			var col = d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText)   // 暴击金优先，其次来源色
 			var lbl = st ? st.label : ''
-			spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3)
-			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14)
+			spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3, 'low')
+			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14, 'low')
 		}
 	})
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || COLORS.enemyChaser, 220, 4, 0.5) })
@@ -330,14 +331,14 @@
 		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.8)', 0.55)              // 白色蒸汽云扩张≈r90（亮度上调）
 		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
 		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
-		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· low 优先（满上限时最先被挤掉）
+		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· high 优先（蒸汽 VFX 尽量保留）
 			var px = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
 			var py = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
-			emitParticle(px, py, (Math.random() * 2 - 1) * 20, -(50 + Math.random() * 60), 0.5, 4 + Math.random() * 4, 'rgba(255,255,255,0.6)', 0.92, 'low')
+			emitParticle(px, py, (Math.random() * 2 - 1) * 20, -(50 + Math.random() * 60), 0.5, 4 + Math.random() * 4, 'rgba(255,255,255,0.6)', 0.92, 'high')
 		}
-		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射 · low 优先
+		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射 · high 优先
 			var ia = Math.random() * M.PI2, isp = 120 + Math.random() * 120
-			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, '#9fdcff', 0.9, 'low')
+			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, '#9fdcff', 0.9, 'high')
 		}
 	})
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）

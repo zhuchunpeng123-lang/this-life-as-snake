@@ -10,7 +10,7 @@
 		enemyHp: [1, 400, 1], enemySpeed: [20, 300, 5], enemyAtk: [1, 10, 1], enemyRadius: [6, 60, 1],
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
-		fireRadius: [20, 220, 2], iceWidth: [10, 180, 2], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05], iceLinger: [1, 8, 0.25], iceSlowLinger: [0.1, 2, 0.05],   // B-2 标定：火焰半径/冰冻宽度/护盾环半径(px) + 冰冻减速% + 冰区滞留时长 + 减速跟随短窗(s)
+		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
 		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5]
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
@@ -32,8 +32,7 @@
 		{ path: 'COMBO.steamExplosion.damageMul', label: '蒸汽倍率', rng: 'comboMul' },
 		{ path: 'COMBO.electroTurret.damageMul', label: '电磁倍率', rng: 'comboMul' },
 		{ path: 'COMBO.burningBarrage.burnDps', label: '灼烧DPS', rng: 'burnDps' },
-		{ path: 'COMBO.steamExplosion.radius', label: '蒸汽半径', rng: 'comboRadius' },
-		{ path: 'SKILL.ice.slowLingerSec', label: '减速跟随窗s·持久', rng: 'iceSlowLinger' }   // 持久覆盖（需保存重载）；运行时即时版见「实时标定」❄ 冰系手感
+		{ path: 'COMBO.steamExplosion.radius', label: '蒸汽半径', rng: 'comboRadius' }
 	]
 	// 蛇/战斗 标量（走 override+重载）
 	var SNAKE_SCALAR = [
@@ -58,10 +57,11 @@
 	// —— 实时标定（dev）：运行时覆盖层，拖动即时生效、免重载；不持久、不写 config 默认 ——
 	var TUNING_ARR = [
 		{ path: 'SKILL.fire.radius', label: '火焰半径', rng: 'fireRadius', levels: 5 },
-		{ path: 'SKILL.ice.trailWidth', label: '冰冻宽度', rng: 'iceWidth', levels: 5 },
+		{ path: 'SKILL.ice.poolRadius', label: '冰池半径', rng: 'icePoolR', levels: 5 },
 		{ path: 'SKILL.shield.orbitRadius', label: '护盾环半径', rng: 'shieldOrbit', levels: 5 },
 		{ path: 'SKILL.ice.slowPct', label: '冰冻减速%', rng: 'iceSlow', levels: 5 },
-		{ path: 'SKILL.ice.lingerSec', label: '冰区滞留s', rng: 'iceLinger', levels: 5 }
+		{ path: 'SKILL.ice.seekRange', label: '索敌射程', rng: 'iceSeek', levels: 5 },
+		{ path: 'SKILL.ice.poolLingerSec', label: '冰池滞留s', rng: 'icePoolLinger', levels: 5 }   // ⑥ 系统性调整：poolLingerSec 改 5 级数组→并入按级标定（命 RT('…poolLingerSec.'+i)），移出 TUNING_SCALAR 标量
 	]
 	var rtTuning = {}
 	function rtGet(path) { return rtTuning.hasOwnProperty(path) ? rtTuning[path] : undefined }
@@ -70,7 +70,7 @@
 	var TUNING_SLIDERS = []
 	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
 	var TUNING_SCALAR = [
-		{ path: 'SKILL.ice.slowLingerSec', label: '减速跟随窗s', rng: 'iceSlowLinger' }
+		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' }
 	]
 	var TUNING_SCALAR_SLIDERS = []
 
