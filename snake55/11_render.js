@@ -19,12 +19,33 @@
 	var canvas = null, ctx = null, dpr = 1
 	var cam = { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 }
 	var shakeMag = 0, shakeFrames = 0
+	var trauma = 0   // ④-B 蒸汽引爆 trauma 通道（0..1）：与 impulse 通道叠加取大，封顶 maxComposite；时间窗内多次引爆不线性叠加
+	// 任务2+❷：屏震分档节流 + 蒸汽齐爆帧末聚合状态
+	var _traumaGateUntil = 0   // 节流窗口末（GS.timeSec）；窗口内同/低档请求丢弃
+	var _traumaLastRank = 0    // 上次应用档位 rank（1=T1/2=T2/3=T3）
+	var _steamThisFrame = 0    // 本帧 fx:steamblast 计数（帧末聚合→T1 一次，单体 T0 不震）
+	var _lastSteamCount = 0    // HUD：上帧蒸汽齐爆数
+	var _frameMs = 0           // HUD：本帧绘制耗时(ms)
 	var _fpsLast = 0, _fpsAcc = 0, _fpsFrames = 0, _fps = 0
+	function RT(path, fb) {    // 运行时标定桥（与 08_skill/05_particle 同步）：读 editor 覆盖，无覆盖回退冻结 CONFIG（仅显示/视觉用）
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
 
 	function addShake(s) {
 		if (!s) { return }
 		shakeMag = Math.min(shakeMag + s.px, SHK.maxComposite)
 		if (s.frames > shakeFrames) { shakeFrames = s.frames }
+	}
+	// 任务2：屏震分档节流（真源 §2.2.1「严禁单一强度轰炸·防脱敏」）
+	//   rank: 1=T1 light / 2=T2 process / 3=T3 crit·death；gate 来自 SHK.gateSec
+	//   规则：间隔内同档或更低档丢弃；高档可越级覆盖（如 crit 覆盖 light）
+	function addTrauma(rank, s) {
+		if (GS.timeSec < _traumaGateUntil && rank <= _traumaLastRank) { return }
+		if (s && s.px) { trauma = Math.min(1, trauma + s.px / SHK.maxComposite) }
+		_traumaLastRank = rank
+		_traumaGateUntil = GS.timeSec + (SHK.gateSec[rank] || 0.5)
 	}
 
 	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); resize() }
@@ -91,16 +112,23 @@
 			if (e.type !== 'bossBullet' && e.type !== 'boss') { drawHpBar(e) }   // 小怪血条+数值（boss 用屏幕顶部大血条，bossBullet 不显示）
 		}
 	}
-	function drawHpBar(e) {                                           // 小怪世界血条：细条 + 血量数字（🟡 数字每怪一次 fillText，怪多时可考虑距离裁剪，perf 债待观察）
-		if (!e.maxHp) { return }
+	function inView(x, y, r) {                                        // 世界点是否在镜头视口内（含半径余量）
+		var hw = GAME.logicalWidth / 2, hh = GAME.logicalHeight / 2, m = (r || 0) + 20
+		return x > cam.x - hw - m && x < cam.x + hw + m && y > cam.y - hh - m && y < cam.y + hh + m
+	}
+	function drawHpBar(e) {                                           // 小怪世界血条：纯 rect（去 fillText 数字·省绘制）；仅受伤且在视口内才画；数字仅 elite/Boss
+		if (!e.maxHp || e.hp >= e.maxHp) { return }                   // 满血不画（省恒定 draw 成本）
+		if (!inView(e.x, e.y, e.radius)) { return }                  // 视口外不画
 		var ratio = M.clamp(e.hp / e.maxHp, 0, 1)
 		var w = Math.max(e.radius * 2, 16), hgt = 3
 		var bx = e.x - w / 2, by = e.y - e.radius - 9
 		ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, by, w, hgt)
 		ctx.fillStyle = ratio > 0.5 ? '#7CFC00' : (ratio > 0.25 ? '#ffd166' : '#ff5a5a')
 		ctx.fillRect(bx, by, w * ratio, hgt)
-		ctx.fillStyle = '#fff'; ctx.font = '600 9px monospace'; ctx.textAlign = 'center'
-		ctx.fillText(Math.ceil(e.hp) + '/' + e.maxHp, e.x, by - 2)
+		if (e.type === 'elite') {                                     // 数字仅精英（Boss 用顶部大血条）；普通小怪纯条，去掉每怪一次 fillText
+			ctx.fillStyle = '#fff'; ctx.font = '600 9px monospace'; ctx.textAlign = 'center'
+			ctx.fillText(Math.ceil(e.hp) + '/' + e.maxHp, e.x, by - 2)
+		}
 	}
 	function drawBurnMark(e) {                                        // ⑦ 燃烧可见：红脉动环 + 头顶火苗
 		var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 18)
@@ -188,22 +216,26 @@
 				ctx.beginPath(); ctx.arc(ox2, oy2, orbR * SKC.shield.orbitHitMul, 0, M.PI2); ctx.strokeStyle = 'rgba(255,225,140,0.20)'; ctx.lineWidth = 1.5; ctx.stroke()   // B-2 对齐修正：命中环=orbitRadius×orbitHitMul，让玩家看清烫区
 			}
 		}
-		// —— 冰：真·轨迹——蛇尾经过处滞留的地面冰区（读 Skill.getIceZones()，与 tickIce 判定严格一致；视觉=判定）——
+		// —— 冰：CD 自动索敌冰池（读 Skill.getIcePools()，与 tickIce 判定严格一致；视觉=判定）——
 		if (owned.ice > 0) {
-			var zones = (sk.getIceZones ? sk.getIceZones() : null)
-			if (zones) {
-				for (var zi = 0; zi < zones.length; zi++) {
-					var z = zones[zi]
-					var zremain = z.expire - GS.timeSec
-					var zlife = z.life > 0 ? z.life : 1
-					var zratio = zremain > 0 ? (zremain / zlife) : 0   // 剩余寿命占比 → 淡出
-					var za = (0.18 + 0.32 * zratio).toFixed(2)         // 冰区底色透明度随寿命衰减（不强到挡视线）
-					ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, M.PI2)
-					ctx.fillStyle = 'rgba(120,205,255,' + za + ')'; ctx.fill()   // 冰蓝霜区
-					ctx.fillStyle = 'rgba(225,243,255,0.5)'   // 霜点（固定亮，强调落点）
-					for (var fk = 0; fk < 3; fk++) {
-						var fa = fk * 2.1 + zi, fr2 = 4 + (fk % 2) * 3
-						ctx.beginPath(); ctx.arc(z.x + Math.cos(fa) * fr2, z.y + Math.sin(fa) * fr2, 1.3, 0, M.PI2); ctx.fill()
+			var pools = (sk.getIcePools ? sk.getIcePools() : null)
+			if (pools) {
+				for (var zi = 0; zi < pools.length; zi++) {
+					var p = pools[zi]
+					var premain = p.expire - GS.timeSec
+					var plife = p.life > 0 ? p.life : 1
+					var pratio = premain > 0 ? (premain / plife) : 0   // 剩余寿命占比 → 淡出
+					var pa = (0.18 + 0.32 * pratio).toFixed(2)         // 冰池底色透明度随寿命衰减（不强到挡视线）
+					var gr = (p.growDur > 0 && p.growT > 0) ? (1 - p.growT / p.growDur) : 1   // ⑥ 首测：生长 scale 0→1
+					var pr = p.r * gr                                                  // 生长中半径（看到的=打到的，与 tickIce effR 一致）
+					ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2)
+					ctx.fillStyle = 'rgba(120,205,255,' + pa + ')'; ctx.fill()   // 冰蓝霜池
+					ctx.strokeStyle = 'rgba(159,220,255,0.35)'; ctx.lineWidth = 2   // 冰池外环（强调大控制场边界，看到的=打到的）
+					ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2); ctx.stroke()
+					ctx.fillStyle = 'rgba(225,243,255,0.5)'   // 霜点（固定亮，沿半径撒布填充大霜池）
+					for (var fk = 0; fk < 6; fk++) {
+						var fa = fk * 1.05 + zi * 1.7, fr2 = pr * 0.32 + (fk % 3) * (pr * 0.22)   // 放大后铺满大范围，不糊不错位
+						ctx.beginPath(); ctx.arc(p.x + Math.cos(fa) * fr2, p.y + Math.sin(fa) * fr2, 1.3, 0, M.PI2); ctx.fill()
 					}
 				}
 			}
@@ -211,30 +243,41 @@
 		ctx.restore()
 	}
 
-	function draw() {
-		if (!ctx) { return }
-		var tnow = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
-		if (_fpsLast) { _fpsAcc += (tnow - _fpsLast) / 1000; _fpsFrames++ }
-		_fpsLast = tnow
-		if (_fpsAcc >= 0.5) { _fps = Math.round(_fpsFrames / _fpsAcc); _fpsAcc = 0; _fpsFrames = 0 }
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-		ctx.fillStyle = '#0d0f1a'; ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
-		updateCamera()
-		var ox = 0, oy = 0
-		if (shakeFrames > 0) { ox = M.rand(-shakeMag, shakeMag); oy = M.rand(-shakeMag, shakeMag); shakeFrames--; if (shakeFrames <= 0) { shakeMag = 0 } else { shakeMag *= 0.85 } }
-		ctx.save()
-		ctx.translate(GAME.logicalWidth / 2 - cam.x + ox, GAME.logicalHeight / 2 - cam.y + oy)
-		drawBounds()
-		var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
-		drawPickups(); drawEnemies(); drawSnake(); drawSkillAura()
-		if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
-		drawDebugHitboxes()
-		ctx.restore()
-		drawHurtVignette()
-		drawBossWarn()
-		drawBossHpBar()
-		drawDebugHud()
-	}
+function draw() {
+	if (!ctx) { return }
+	var tFrame0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+	var tnow = tFrame0
+	if (_fpsLast) { _fpsAcc += (tnow - _fpsLast) / 1000; _fpsFrames++ }
+	_fpsLast = tnow
+	if (_fpsAcc >= 0.5) { _fps = Math.round(_fpsFrames / _fpsAcc); _fpsAcc = 0; _fpsFrames = 0 }
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+	ctx.fillStyle = '#0d0f1a'; ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+	updateCamera()
+	// 任务2+❷：本帧蒸汽齐爆聚合 → T1 轻档一次（addTrauma 节流防常震脱敏）；单体(<manyMin)→T0 不震
+	_lastSteamCount = _steamThisFrame
+	if (_steamThisFrame >= SHK.steam.manyMin) { addTrauma(1, SHK.light) }
+	_steamThisFrame = 0
+	var mag = 0
+	if (shakeFrames > 0) { mag = Math.max(mag, shakeMag); shakeFrames--; if (shakeFrames <= 0) { shakeMag = 0 } else { shakeMag *= 0.85 } }
+	var traumaMag = trauma * SHK.maxComposite   // ④-B：trauma 通道折算成屏震幅度（≤maxComposite）
+	if (traumaMag > mag) { mag = traumaMag }
+	trauma = Math.max(0, trauma - SHK.steam.decayPerSec / GAME.fps)   // ④-B：trauma 时间窗衰减，多次引爆不线性叠加（N爆≠N震）
+	var ox = 0, oy = 0
+	if (mag > 0) { ox = M.rand(-mag, mag); oy = M.rand(-mag, mag) }
+	ctx.save()
+	ctx.translate(GAME.logicalWidth / 2 - cam.x + ox, GAME.logicalHeight / 2 - cam.y + oy)
+	drawBounds()
+	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
+	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura()
+	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
+	drawDebugHitboxes()
+	ctx.restore()
+	drawHurtVignette()
+	drawBossWarn()
+	drawBossHpBar()
+	drawDebugHud()
+	_frameMs = ((global.performance && global.performance.now) ? global.performance.now() : Date.now()) - tFrame0
+}
 	function drawBossHpBar() {                                       // Boss 屏幕顶部大血条：条 + 血量数值 + 阶段/无敌提示（无敌期说明伤害数字为何不跳）
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
 		var boss = null
@@ -283,27 +326,36 @@
 		}
 		ctx.restore()
 	}
-	function drawDebugHud() {
-		var En = Registry.get('enemy')
-		var en = (En && En.countMobs) ? En.countMobs() : 0
-		ctx.save()
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-		ctx.globalAlpha = 1
-		ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
-		ctx.font = '700 13px monospace'
-		ctx.textAlign = 'left'
-		ctx.fillText('FPS ' + _fps + '  敌 ' + en + '  节 ' + GS.segments, 8, 16)
-		ctx.restore()
-	}
+function drawDebugHud() {
+	var En = Registry.get('enemy')
+	var en = (En && En.countMobs) ? En.countMobs() : 0
+	var pa = Registry.get('particle')
+	var pc = pa && pa.particles ? pa.particles.length : 0
+	var tc = pa && pa.texts ? pa.texts.length : 0
+	var pcMax = RT('PERF.maxParticles', CONFIG.PERF.maxParticles)
+	var tcMax = RT('PERF.maxTexts', CONFIG.PERF.maxTexts)
+	ctx.save()
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+	ctx.globalAlpha = 1
+	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
+	ctx.font = '700 13px monospace'
+	ctx.textAlign = 'left'
+	ctx.fillText('FPS ' + _fps + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  敌 ' + en + '  节 ' + GS.segments + '  粒 ' + pc + '/' + pcMax + '  字 ' + tc + '/' + tcMax + '  蒸汽 ' + _lastSteamCount, 8, 16)
+	ctx.restore()
+}
 
 	Bus.on('snake:wall', function () { addShake(SHK.light) })
-	Bus.on('enemy:hit', function (d) { if (d && d.crit) { addShake(SHK.crit) } })
+	Bus.on('enemy:hit', function (d) { if (d && d.crit && d.src !== 'steam') { addShake(SHK.crit) } })   // ④-B：蒸汽命中不再逐敌触发 crit 震（改由 fx:steamblast 门控 trauma 统一处理，避免 N 敌=N 震）
 	Bus.on('snake:hurt', function () { addShake(SHK.death); hurtVignetteUntil = GS.timeSec + HURT_VIGNETTE_SEC })   // 受击强震复用 shakeDeath（不新增魔法数字）+ 红闪
 	Bus.on('enemy:phase', function () { addShake(SHK.crit) })
 	Bus.on('wave:boss_warn', function (d) { bossWarnUntil = GS.timeSec + (d && d.leadSec ? d.leadSec : 0); addShake(SHK.crit) })   // ⑤ Boss 预警：红边+震屏
 	Bus.on('snake:dead', function () { addShake(SHK.death) })
 	Bus.on('combo:found', function () { addShake(SHK.process) })
-	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2 })
+	Bus.on('fx:steamblast', function (d) {   // 任务2+❷：仅计数；屏震改由 draw() 帧末聚合（≥manyMin→T1 轻档一次，单体 T0 不震）
+		if (!d) { return }
+		_steamThisFrame++
+	})
+	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零
 
 	var Render = { init: init, resize: resize, draw: draw, camera: cam }
 	Registry.register('render', Render)
