@@ -63,6 +63,7 @@
 	var darts = []
 	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 96)   // b9：闪核池 32→96（蒸汽白闪/电磁辉光峰值）
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
+	var DBG = { ignite: 0, fireDot: 0, flashDrawn: 0, steamBlasts: 0, steamAoeCmp: 0 }   // b9-diag/measure：诊断计数器（仅 HUD，零 gameplay；不进 caps/伤害管线）；steamBlasts=本帧真引爆次数(未被 steamFxCap 门控)、steamAoeCmp=蒸汽 AOE 邻居比较总次数
 	// b9：VFX 输出硬上限（门控所有进池写入，治"怪多+combo 多"draw 爆炸掉帧）
 	//   maxParticles/maxTexts=活跃上限；spawnBudgetPerFrame=每帧生成预算（削平齐爆单帧尖峰）
 	//   优先级：high=死亡爆点/蒸汽VFX/combo爆环/玩家受击（尽量保留）；low=enemy:hit 逐次命中火花+伤害飘字/冰减速标签（满时先丢）
@@ -150,8 +151,10 @@
 	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
 	var Particle = {
-		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText,
+		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
 		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
+		DBG: DBG,   // b9-diag：诊断计数器暴露给 render HUD 读取
+		incIgnite: function () { DBG.ignite++ },   // b9-diag：灼烧弹幕点燃直计（替代 Bus 事件，免热路径观察者效应；零 gameplay）
 		update: function (dt) {
 			var i
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
@@ -243,6 +246,8 @@
 		},
 		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上，仅作爆发高光，不长时间盖核心信息（JUICE）
 		drawOverlay: function (ctx) {
+			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
+			if (RT('PERF.suppressWhiteBurst', 0) > 0) { return }   // b9-diag T1：关白爆 overlay（伤害结算照常，仅不绘此层）
 			for (var i = 0; i < flashCores.length; i++) {
 				var fc = flashCores[i]
 				var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }
@@ -269,6 +274,7 @@
 		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
 		var ty = d.y - 6 - (d.r || 0)   // 飘字生成在精灵上方（按命中体半径抬升，修 boss 大精灵盖住伤害数字）
 		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字 + 小爆点，与瞬伤大白字明显区分；enemy:hit 逐次火花→low 优先丢
+			if (d.src === 'fire') { DBG.fireDot++ }               // b9-diag：火墙 DOT 命中计数（仅 HUD，零 gameplay）
 			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
 			spawnBurst(d.x, d.y, 3, dc, 120, 2, 0.25, 'low')
 			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'low')
@@ -341,6 +347,7 @@
 			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, '#9fdcff', 0.9, 'high')
 		}
 	})
+	// b9-diag：灼烧弹幕点燃计数改为 direct DBG.ignite++（见 incIgnite），不在热路径发 Bus 事件（已确认无 gameplay listener，纯诊断噪声）
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {
 		if (!d || d.x == null || d.y == null) { return }

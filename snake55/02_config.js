@@ -73,7 +73,8 @@
 			steamBurstCapPerFrame: 10,  // 🟡 蒸汽齐爆同帧 VFX 上限（仅门控视觉 fx:steamblast 的 Bus.emit，伤害 hurtCombo 始终结算）；候选 8 / 10 / 12，实测再收。保住"大 AOE 齐爆"读感
 			maxParticles: 350,          // 🟡 全局粒子活跃上限（门控所有进池写入，含 fx:steamblast 直 push 旁路，否则齐爆打爆池）；候选 300/350/400，RT 热调，HUD「粒子」实测下调
 			maxTexts: 48,              // 🟡 全局飘字活跃上限（门控最贵的 fillText 飘字）；候选 40/48/60，RT 热调
-			spawnBudgetPerFrame: 120   // 🟡 每帧 VFX 生成预算（削平齐爆单帧尖峰，覆盖 burst/text/blast/beam/flash/dart）；候选 100/120/150，RT 热调
+			spawnBudgetPerFrame: 120,  // 🟡 每帧 VFX 生成预算（削平齐爆单帧尖峰，覆盖 burst/text/blast/beam/flash/dart）；候选 100/120/150，RT 热调
+			debugHud: false            // b9-diag：性能诊断 HUD（FPS/粒子/数组计数/T1-T4 开关态）默认关闭；GM 面板「性能HUD」一键开（仅 dev 用，零 gameplay）
 		},
 
 		// —— §2.3 JUICE 手感基因（新增） ——

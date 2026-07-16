@@ -98,6 +98,7 @@
 	}
 	function drawEnemies() {
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
+		var T3 = RT('PERF.suppressFireVisual', 0) > 0   // b9-diag T3：关火焰系 per-enemy 视觉（点火演出+火焰光环+蓝环），零 gameplay
 		var l = En.list
 		for (var i = 0; i < l.length; i++) {
 			var e = l[i]; if (!e.active) { continue }
@@ -107,8 +108,8 @@
 				circle(e.x, e.y, e.radius, blink ? COL.enemyChaser : e.color)
 				drawChargeArrow(e)
 			} else { circle(e.x, e.y, e.radius, e.color) }
-			if (e.burnT > 0) { drawBurnMark(e) }       // ⑦ 燃烧标记：红脉动环 + 火苗
-			if (e.slowT > 0) { drawSlowMark(e) }       // 冰冻/减速标记：蓝染环 + 冰晶
+			if (e.burnT > 0 && !T3) { drawBurnMark(e) }       // ⑦ 燃烧标记：红脉动环 + 火苗（T3 关火焰系 per-enemy 视觉时跳过，零 gameplay）
+			if (e.slowT > 0 && !T3) { drawSlowMark(e) }       // 冰冻/减速标记：蓝染环 + 冰晶（T3 一并关，零 gameplay）
 			if (e.type !== 'bossBullet' && e.type !== 'boss') { drawHpBar(e) }   // 小怪血条+数值（boss 用屏幕顶部大血条，bossBullet 不显示）
 		}
 	}
@@ -177,13 +178,15 @@
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
+		var T3 = RT('PERF.suppressFireVisual', 0) > 0   // b9-diag T3：关火焰系 per-enemy 视觉（火焰光环），零 gameplay
+		var T4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure T4：冰池只描边不填充（零 gameplay，验证 fill-rate/overdraw 是否主因）
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		var segs = s.segments || []
 		var flick = 0.7 + 0.3 * Math.sin(GS.timeSec * FIRE_FLICKER_HZ)   // 火跳动
 		ctx.save()
 		// —— 火：沿整条蛇身成火墙（与 tickFire 同 segStep 采样；视觉=判定）——
-		if (owned.fire > 0) {
+		if (owned.fire > 0 && !T3) {   // b9-diag T3：关火焰光环（仅视觉，零 gameplay；伤害结算照常）
 			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
 			for (var sf = 0; sf < segs.length; sf += stepF) {
 				var sg = segs[sf]
@@ -228,8 +231,8 @@
 					var pa = (0.18 + 0.32 * pratio).toFixed(2)         // 冰池底色透明度随寿命衰减（不强到挡视线）
 					var gr = (p.growDur > 0 && p.growT > 0) ? (1 - p.growT / p.growDur) : 1   // ⑥ 首测：生长 scale 0→1
 					var pr = p.r * gr                                                  // 生长中半径（看到的=打到的，与 tickIce effR 一致）
-					ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2)
-					ctx.fillStyle = 'rgba(120,205,255,' + pa + ')'; ctx.fill()   // 冰蓝霜池
+				ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2)
+				if (!T4) { ctx.fillStyle = 'rgba(120,205,255,' + pa + ')'; ctx.fill() }   // 冰蓝霜池：T4 关填充只留描边（纯视觉，零 gameplay）
 					ctx.strokeStyle = 'rgba(159,220,255,0.35)'; ctx.lineWidth = 2   // 冰池外环（强调大控制场边界，看到的=打到的）
 					ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2); ctx.stroke()
 					ctx.fillStyle = 'rgba(225,243,255,0.5)'   // 霜点（固定亮，沿半径撒布填充大霜池）
@@ -261,6 +264,7 @@ function draw() {
 	if (shakeFrames > 0) { mag = Math.max(mag, shakeMag); shakeFrames--; if (shakeFrames <= 0) { shakeMag = 0 } else { shakeMag *= 0.85 } }
 	var traumaMag = trauma * SHK.maxComposite   // ④-B：trauma 通道折算成屏震幅度（≤maxComposite）
 	if (traumaMag > mag) { mag = traumaMag }
+	if (RT('PERF.suppressShake', 0) > 0) { mag = 0 }   // b9-diag T2：关屏震（仅视觉偏移归零，零 gameplay）
 	trauma = Math.max(0, trauma - SHK.steam.decayPerSec / GAME.fps)   // ④-B：trauma 时间窗衰减，多次引爆不线性叠加（N爆≠N震）
 	var ox = 0, oy = 0
 	if (mag > 0) { ox = M.rand(-mag, mag); oy = M.rand(-mag, mag) }
@@ -276,6 +280,7 @@ function draw() {
 	drawBossWarn()
 	drawBossHpBar()
 	drawDebugHud()
+	if (p && p.DBG) { p.DBG.ignite = 0; p.DBG.fireDot = 0; p.DBG.flashDrawn = 0; p.DBG.steamBlasts = 0; p.DBG.steamAoeCmp = 0 }   // b9-diag/measure：计数器按帧归零（HUD 已读本帧值）
 	_frameMs = ((global.performance && global.performance.now) ? global.performance.now() : Date.now()) - tFrame0
 }
 	function drawBossHpBar() {                                       // Boss 屏幕顶部大血条：条 + 血量数值 + 阶段/无敌提示（无敌期说明伤害数字为何不跳）
@@ -327,11 +332,20 @@ function draw() {
 		ctx.restore()
 	}
 function drawDebugHud() {
+	if (!RT('PERF.debugHud', CONFIG.PERF.debugHud)) { return }   // 收起 b9 诊断脚手架：默认关闭，GM 面板「性能HUD」一键开；正常运行不显示
 	var En = Registry.get('enemy')
 	var en = (En && En.countMobs) ? En.countMobs() : 0
 	var pa = Registry.get('particle')
 	var pc = pa && pa.particles ? pa.particles.length : 0
 	var tc = pa && pa.texts ? pa.texts.length : 0
+	var bc = pa && pa.beams ? pa.beams.length : 0        // b9-measure：光束活跃数
+	var blc = pa && pa.blasts ? pa.blasts.length : 0     // b9-measure：爆环活跃数
+	var dc = pa && pa.darts ? pa.darts.length : 0        // b9-measure：飞镖活跃数
+	var fcc = pa && pa.flashCores ? pa.flashCores.length : 0   // b9-measure：闪核活跃数
+	var fc = pa && pa.DBG ? pa.DBG.flashDrawn : 0           // 白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
+	var ig = pa && pa.DBG ? pa.DBG.ignite : 0              // 灼烧 ignite 数
+	var fd = pa && pa.DBG ? pa.DBG.fireDot : 0             // 火墙 DOT 命中数
+	var ov = (GS.timeSec < hurtVignetteUntil) ? 1 : 0      // 全屏 overlay（受击红 vignette）本帧 draw 数
 	var pcMax = RT('PERF.maxParticles', CONFIG.PERF.maxParticles)
 	var tcMax = RT('PERF.maxTexts', CONFIG.PERF.maxTexts)
 	ctx.save()
@@ -340,7 +354,14 @@ function drawDebugHud() {
 	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
 	ctx.font = '700 13px monospace'
 	ctx.textAlign = 'left'
-	ctx.fillText('FPS ' + _fps + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  敌 ' + en + '  节 ' + GS.segments + '  粒 ' + pc + '/' + pcMax + '  字 ' + tc + '/' + tcMax + '  蒸汽 ' + _lastSteamCount, 8, 16)
+	ctx.fillText('FPS ' + _fps + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  敌 ' + en + '  节 ' + GS.segments + '  p ' + pc + '/' + pcMax + '  t ' + tc + '/' + tcMax, 8, 16)
+	ctx.fillStyle = (fc > pcMax * 0.3) ? '#ff8c5b' : '#fff'   // 白爆偏多时高亮告警
+	ctx.fillText('蒸汽(VFX) ' + _lastSteamCount + '  引爆(真) ' + (pa && pa.DBG ? pa.DBG.steamBlasts : 0) + '  AOE比较 ' + (pa && pa.DBG ? pa.DBG.steamAoeCmp : 0) + '  白爆(闪核) ' + fc + '  灼烧ignite ' + ig + '  火DOT ' + fd + '  全屏overlay ' + ov, 8, 34)
+	var t1 = RT('PERF.suppressWhiteBurst', 0) > 0, t2 = RT('PERF.suppressShake', 0) > 0, t3 = RT('PERF.suppressFireVisual', 0) > 0, t4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure：T4 冰池只描边开关态（录屏可见，零 gameplay）
+	ctx.fillStyle = '#9fe'
+	ctx.fillText('T1白爆:' + (t1 ? '关' : '开') + '  T2震:' + (t2 ? '关' : '开') + '  T3火视:' + (t3 ? '关' : '开') + '  T4冰描:' + (t4 ? '关' : '开'), 8, 52)
+	ctx.fillStyle = '#9fe'   // b9-measure：6 数组活跃数拆行（看哪个飙到上千）
+	ctx.fillText('p ' + pc + '  t ' + tc + '  beam ' + bc + '  blast ' + blc + '  dart ' + dc + '  flash ' + fcc, 8, 70)
 	ctx.restore()
 }
 

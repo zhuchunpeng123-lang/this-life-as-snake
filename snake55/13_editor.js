@@ -11,7 +11,7 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5]
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], steamCap: [1, 24, 1]   // b9-diag：蒸汽齐爆同帧上限滑条范围
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -53,6 +53,7 @@
 	var dirty = false
 
 	var panel = null, open = false, tuneTimer = null   // tuneTimer：面板打开时定时刷新等级显示（dev 实时）
+	var diagWhiteOn = false, diagShakeOn = false, diagFireOn = false, diagIceFillOn = false, diagHudOn = false   // b9-diag：T1 关白爆 / T2 关屏震 / T3 关火焰系视觉 / T4 冰池只描边 / 性能HUD 开关态
 	var SLIDERS = []   // { id, path, kind:'config' } kind 仅 config（GS 用按钮即时改，不存 override）
 	// —— 实时标定（dev）：运行时覆盖层，拖动即时生效、免重载；不持久、不写 config 默认 ——
 	var TUNING_ARR = [
@@ -70,7 +71,8 @@
 	var TUNING_SLIDERS = []
 	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
 	var TUNING_SCALAR = [
-		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' }
+		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
+		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' }   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
 	]
 	var TUNING_SCALAR_SLIDERS = []
 
@@ -194,6 +196,15 @@
 		// 冰系手感（冰区滞留 / 减速跟随窗）已统一收口到「实时标定（手感沙盒）」，GM 指令只保留即时动作指令，避免重复控制、归类更清晰
 		gm += '<div style="font:600 11px system-ui;opacity:.55;margin:6px 0 2px;border-top:1px dashed #2a3358;padding-top:6px">冰系手感滑条见「实时标定（手感沙盒）」</div>'
 		secs.push({ title: 'GM 指令', body: gm, open: false })
+		// —— 性能诊断（b9 对照实验）：关白爆/关屏震 + 蒸汽上限（运行时即时，零 gameplay）——
+		var diag = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">对照实验开关（运行时即时，零 gameplay）：分离火焰掉帧主因</div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t1" style="flex:1;padding:8px;border:1px solid #ff6a6a;border-radius:6px;background:transparent;color:#ff6a6a;cursor:pointer;font:700 12px system-ui">T1 关白爆overlay：关</button>'
+		diag += '<button id="diag_t2" style="flex:1;padding:8px;border:1px solid #c9a8ff;border-radius:6px;background:transparent;color:#c9a8ff;cursor:pointer;font:700 12px system-ui">T2 关屏震：关</button></div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t3" style="flex:1;padding:8px;border:1px solid #ff9a3c;border-radius:6px;background:transparent;color:#ff9a3c;cursor:pointer;font:700 12px system-ui">T3 关火焰系视觉：关</button>'
+		diag += '<button id="diag_t4" style="flex:1;padding:8px;border:1px solid #5fd0ff;border-radius:6px;background:transparent;color:#5fd0ff;cursor:pointer;font:700 12px system-ui">T4 冰池只描边：关</button></div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_hud" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">性能HUD：关</button></div>'
+		diag += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 0">T3 关「火焰系 per-enemy 视觉」（点火演出+火焰光环+蓝环），与 T1/T2 配合一次录屏 isolate 全部嫌疑。蒸汽齐爆上限/帧 滑条见「实时标定（手感沙盒）」底部；拉到 <b>1</b> = 白爆骤减</div>'
+		secs.push({ title: '性能诊断（b9 对照实验）', body: diag, open: true })
 		// —— 阶段跳转（测试）：按 STAGE.segments 生成，点击即把 GS.timeSec 写到目标段起点，免手动熬时间 ——
 		var jp = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">点击直接跳到该阶段（写运行时 GS.timeSec，即时生效）</div>'
 		var segsCfg = (CONFIG.STAGE && CONFIG.STAGE.segments) ? CONFIG.STAGE.segments : []
@@ -369,6 +380,16 @@
 				Log.info('[GM] 阶段跳转 → timeSec=' + t.toFixed(1) + 's')
 			}
 		}
+		// b9-diag：T1/T2 对照实验开关（rtSet 即时，零 gameplay）
+		var t1 = panel.querySelector('#diag_t1'), t2 = panel.querySelector('#diag_t2')
+		if (t1) { t1.onclick = function () { diagWhiteOn = !diagWhiteOn; Editor.rtSet('PERF.suppressWhiteBurst', diagWhiteOn ? 1 : 0); this.textContent = 'T1 关白爆overlay：' + (diagWhiteOn ? '开' : '关'); this.style.color = diagWhiteOn ? '#7CFC00' : '#ff6a6a'; this.style.borderColor = diagWhiteOn ? '#7CFC00' : '#ff6a6a' } }
+		if (t2) { t2.onclick = function () { diagShakeOn = !diagShakeOn; Editor.rtSet('PERF.suppressShake', diagShakeOn ? 1 : 0); this.textContent = 'T2 关屏震：' + (diagShakeOn ? '开' : '关'); this.style.color = diagShakeOn ? '#7CFC00' : '#c9a8ff'; this.style.borderColor = diagShakeOn ? '#7CFC00' : '#c9a8ff' } }
+		var t3 = panel.querySelector('#diag_t3')
+		if (t3) { t3.onclick = function () { diagFireOn = !diagFireOn; Editor.rtSet('PERF.suppressFireVisual', diagFireOn ? 1 : 0); this.textContent = 'T3 关火焰系视觉：' + (diagFireOn ? '开' : '关'); this.style.color = diagFireOn ? '#7CFC00' : '#ff9a3c'; this.style.borderColor = diagFireOn ? '#7CFC00' : '#ff9a3c' } }
+	var t4 = panel.querySelector('#diag_t4')
+	if (t4) { t4.onclick = function () { diagIceFillOn = !diagIceFillOn; Editor.rtSet('PERF.suppressIceFill', diagIceFillOn ? 1 : 0); this.textContent = 'T4 冰池只描边：' + (diagIceFillOn ? '开' : '关'); this.style.color = diagIceFillOn ? '#7CFC00' : '#5fd0ff'; this.style.borderColor = diagIceFillOn ? '#7CFC00' : '#5fd0ff' } }   // b9-measure T4：冰池只描边不填充（零 gameplay）
+		var dh = panel.querySelector('#diag_hud')
+		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD：' + (diagHudOn ? '开' : '关') } }   // b9-diag：默认关，开=显示 FPS/粒子/数组计数/T1-T4 开关态 HUD（零 gameplay，美术复查用）
 		// 手动输入
 		panel.querySelector('#mi_apply').onclick = function () {
 			var p = panel.querySelector('#mi_path').value.trim(), msg = panel.querySelector('#mi_msg')
