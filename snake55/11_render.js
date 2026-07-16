@@ -52,8 +52,10 @@
 	function resize() {
 		if (!canvas) { return }
 		dpr = global.devicePixelRatio || 1
-		canvas.width = GAME.logicalWidth * dpr; canvas.height = GAME.logicalHeight * dpr
-		canvas.style.width = GAME.logicalWidth + 'px'; canvas.style.height = GAME.logicalHeight + 'px'
+		canvas.width = GAME.logicalWidth * dpr; canvas.height = GAME.logicalHeight * dpr   // backing 永远逻辑分辨率×dpr（逻辑分辨率/相机/碰撞坐标不变）
+		var scale = Math.min(global.innerWidth / GAME.logicalWidth, global.innerHeight / GAME.logicalHeight)   // contain 等比：窗口内最大化、16:9 不裁切、比例不符留 letterbox（#game-wrap flex 居中）；禁用 cover 裁切边缘 HUD
+		canvas.style.width = (GAME.logicalWidth * scale) + 'px'
+		canvas.style.height = (GAME.logicalHeight * scale) + 'px'
 	}
 
 	function updateCamera() {

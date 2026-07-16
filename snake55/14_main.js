@@ -12,6 +12,7 @@
 	Bus.on('combo:found', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
 	Bus.on('enemy:die', function (d) { if (d && (d.kind === 'elite' || d.kind === 'boss') && HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
 	Bus.on('core:run_reset', function () { hitStop = 0 })
+	Bus.on('game:toggle_pause', togglePause)   // 暂停按钮/遮罩经 Bus 触发（事件名全小写过断言）
 
 	function startIfMenu() {
 		if (GS.status === 'menu') {
@@ -42,10 +43,16 @@
 
 	function callSys(name, dt) { var s = Registry.get(name); if (s && s.update) { s.update(dt) } }
 
+	function togglePause() {   // 仅 playing↔paused 切换；菜单/死亡态忽略，不触碰任何 gameplay 数值
+		if (GS.status === 'playing') { GS.status = 'paused' }
+		else if (GS.status === 'paused') { GS.status = 'playing' }
+	}
+
 	function step(dt) {
+		if (GS.status !== 'playing') { return }   // 暂停/菜单/死亡：冻结世界（render/ui 仍每帧跑，镜头与逻辑分辨率不变）
 		var inp = readInput()
 		var sn = Registry.get('snake'); if (sn && sn.setInput) { sn.setInput(inp.x, inp.y, inp.active) }
-		if (GS.status === 'playing') { GS.timeSec += dt; GS.frame++ }
+		GS.timeSec += dt; GS.frame++
 		callSys('collision', dt)
 		callSys('skill', dt)
 		callSys('snake', dt)
@@ -91,14 +98,15 @@
 		canvas.addEventListener('pointerdown', function (e) { startIfMenu() })
 		canvas.addEventListener('pointermove', function (e) {
 			var rect = canvas.getBoundingClientRect()
-			var mx = e.clientX - rect.left, my = e.clientY - rect.top
+			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height   // contain 缩放：CSS px → 逻辑 px 反算（瞄准点对齐缩放后画布）
+			var mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy
 			var cam = Registry.get('render').camera
 			cursor.wx = mx - CONFIG.GAME.logicalWidth / 2 + cam.x
 			cursor.wy = my - CONFIG.GAME.logicalHeight / 2 + cam.y
 			cursor.on = true
 		})
 		canvas.addEventListener('pointerleave', function () { cursor.on = false })
-		global.addEventListener('keydown', function (e) { keys[e.key] = true; if (e.key !== '`' && e.key !== '~') { startIfMenu() } })
+		global.addEventListener('keydown', function (e) { keys[e.key] = true; if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return } if (e.key !== '`' && e.key !== '~') { startIfMenu() } })
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
 		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
 

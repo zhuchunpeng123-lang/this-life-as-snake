@@ -9,7 +9,7 @@
 	var COMBO_COLOR = { steamExplosion: '#ff9a3c', electroTurret: '#9fd0ff', burningBarrage: '#ff5a4c' }   // TODO: 横幅配色待 UX 复核
 
 	var root = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
-	var comboBanner = null
+	var comboBanner = null, pauseBtn = null, pauseOverlay = null
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var seqId = 0
 	var timers = []
@@ -29,6 +29,12 @@
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18', root)
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30', root)
 		comboBanner = mk('div', 'position:absolute;left:50%;top:14%;transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 22px system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s', root)
+		pauseBtn = mk('div', 'position:absolute;right:12px;top:10px;padding:6px 12px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 13px system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
+		pauseBtn.textContent = '⏸ 暂停'
+		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
+		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', root)
+		pauseOverlay.innerHTML = '<div>⏸ 已暂停</div><div style="font:500 14px system-ui;opacity:.8">点此 / 按 P 或 Esc 继续</div>'
+		pauseOverlay.onclick = function () { Bus.emit('game:toggle_pause') }
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前“全显示”实现已超设计边界）') }
@@ -308,6 +314,8 @@
 		init: init,
 		update: function () {
 			refreshHUD()
+			if (pauseBtn) { pauseBtn.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'block' : 'none' }
+			if (pauseOverlay) { pauseOverlay.style.display = (GS.status === 'paused') ? 'flex' : 'none' }
 			if (GS.status === 'playing') {
 				if (GS.segments > GS.maxSegments) { GS.maxSegments = GS.segments }
 				if (GS.stageId > GS.maxStageId) { GS.maxStageId = GS.stageId }

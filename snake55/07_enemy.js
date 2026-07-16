@@ -91,11 +91,16 @@
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
 	function spawnDummy(count, hp) {                   // B-GM 标定沙盒：训练假人（超高血 / 不秒 / 站着），便于看 DOT 逐跳 / 减速时长 / 护盾扫敌
 		count = count || 1; hp = hp || 5000
+		var sn = Registry.get('snake'), h = sn && sn.head
+		var hx = h ? h.x : GAME.worldWidth / 2, hy = h ? h.y : GAME.worldHeight / 2
+		var hang = (h && typeof h.angle === 'number') ? h.angle : 0
+		var frontDist = 130   // 🟡 假人前置距离(px)，候选 110/130/160，待量化（dev 摆放，非平衡值）
 		for (var n = 0; n < count; n++) {
 			var e = pool.acquire()
-			pickSpawnPos(_pos, 24)
 			e.active = true; e.id = ++_id; e.type = 'dummy'
-			e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = 24
+			e.x = M.clamp(hx + Math.cos(hang) * frontDist, 24, GAME.worldWidth - 24)
+			e.y = M.clamp(hy + Math.sin(hang) * frontDist, 24, GAME.worldHeight - 24)
+			e.vx = 0; e.vy = 0; e.radius = 24
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
