@@ -64,7 +64,7 @@
 				death: { px: 16, frames: 30 },
 			maxComposite: 18,
 			gateSec: { 1: 0.35, 2: 0.5, 3: 0.5 },   // 任务2：屏震分档最小重触发间隔(s)·T1=0.35(蒸汽齐爆轻档)/T2=0.5(process)/T3=0.5(crit·death，仅 coreHp/Boss/大招)；间隔内同/低档丢弃、高档越级覆盖
-			steam: { manyMin: 3, decayPerSec: 1.6 }   // ④-B+任务2：蒸汽引爆屏震门控·真源 §2.2.1「严禁单一强度轰炸·防脱敏」。本帧齐爆数≥manyMin→T1 轻档(light)一次(禁映射 crit/T3)；单体(<manyMin)→T0 不震；decayPerSec=trauma 衰减(每秒)，多次引爆不线性叠加(N爆≠N震)
+			steam: { manyMin: 4, decayPerSec: 1.6 }   // ④-B+任务2：蒸汽引爆屏震门控·真源 §2.2.1「严禁单一强度轰炸·防脱敏」。本帧齐爆数≥manyMin→T1 轻档(light)一次(禁映射 crit/T3)；单体(<manyMin)→T0 不震；decayPerSec=trauma 衰减(每秒)，多次引爆不线性叠加(N爆≠N震)；manyMin 3→4 对齐"≥N,N>3"
 		}
 		},
 

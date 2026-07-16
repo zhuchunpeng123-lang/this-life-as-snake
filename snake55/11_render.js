@@ -33,11 +33,6 @@
 		return fb
 	}
 
-	function addShake(s) {
-		if (!s) { return }
-		shakeMag = Math.min(shakeMag + s.px, SHK.maxComposite)
-		if (s.frames > shakeFrames) { shakeFrames = s.frames }
-	}
 	// 任务2：屏震分档节流（真源 §2.2.1「严禁单一强度轰炸·防脱敏」）
 	//   rank: 1=T1 light / 2=T2 process / 3=T3 crit·death；gate 来自 SHK.gateSec
 	//   规则：间隔内同档或更低档丢弃；高档可越级覆盖（如 crit 覆盖 light）
@@ -367,13 +362,15 @@ function drawDebugHud() {
 	ctx.restore()
 }
 
-	Bus.on('snake:wall', function () { addShake(SHK.light) })
-	Bus.on('enemy:hit', function (d) { if (d && d.crit && d.src !== 'steam') { addShake(SHK.crit) } })   // ④-B：蒸汽命中不再逐敌触发 crit 震（改由 fx:steamblast 门控 trauma 统一处理，避免 N 敌=N 震）
-	Bus.on('snake:hurt', function () { addShake(SHK.death); hurtVignetteUntil = GS.timeSec + HURT_VIGNETTE_SEC })   // 受击强震复用 shakeDeath（不新增魔法数字）+ 红闪
-	Bus.on('enemy:phase', function () { addShake(SHK.crit) })
-	Bus.on('wave:boss_warn', function (d) { bossWarnUntil = GS.timeSec + (d && d.leadSec ? d.leadSec : 0); addShake(SHK.crit) })   // ⑤ Boss 预警：红边+震屏
-	Bus.on('snake:dead', function () { addShake(SHK.death) })
-	Bus.on('combo:found', function () { addShake(SHK.process) })
+	// —— 屏震四档统一（单一入口 addTrauma；rank:1=T1轻/2=T2中/3=T3强，gating 见 addTrauma）——
+	// T0 不震：撞墙滑行（反馈走刮擦火花）/ 普通命中 / 暴击 / 电磁·闪电每次命中（避免 N 敌=N 震）
+	Bus.on('snake:hurt', function () { addTrauma(3, SHK.death); hurtVignetteUntil = GS.timeSec + HURT_VIGNETTE_SEC })   // 掉 coreHp → T3 强震 + 红闪
+	Bus.on('snake:dead', function () { addTrauma(3, SHK.death) })   // game over → T3
+	Bus.on('enemy:phase', function () { addTrauma(3, SHK.crit) })   // Boss 换阶段 → T3
+	Bus.on('wave:boss_warn', function (d) { bossWarnUntil = GS.timeSec + (d && d.leadSec ? d.leadSec : 0); addTrauma(3, SHK.crit) })   // ⑤ Boss 预警：红边 + T3
+	Bus.on('boss:defeated', function () { addTrauma(3, SHK.death) })   // 击败 Boss → T3 通关强震
+	Bus.on('enemy:die', function (d) { if (d && d.kind === 'elite') { addTrauma(2, SHK.process) } })   // 精英死 → T2
+	Bus.on('combo:found', function () { addTrauma(2, SHK.process) })   // combo 首触 → T2
 	Bus.on('fx:steamblast', function (d) {   // 任务2+❷：仅计数；屏震改由 draw() 帧末聚合（≥manyMin→T1 轻档一次，单体 T0 不震）
 		if (!d) { return }
 		_steamThisFrame++
