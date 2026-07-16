@@ -124,7 +124,8 @@
 			food: { screenCap: 6, refreshIntervalSec: 2.5, segCap: 25, gainSegments: 1, safeDistance: 180, minSpacing: 80, radius: 10 },
 			skill: { baseDropRate: 0.12, perOwnedPenalty: 0.02, floorRate: 0.03 },
 			skillPity: { killStreakGuarantee: 15, firstSkillGuaranteeSec: 9 },   // P0-1 裁定：≤10s（9s）内给首技能
-			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 45, perRunMin: 2, perRunMax: 3, screenCap: 1 }
+			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 45, perRunMin: 2, perRunMax: 3, screenCap: 1 },
+			dangerBias: { ringMin: 40, ringMax: 150 }   // 🟡 补给危险偏向：敌身周围偏移环带(px)，落点钳视野内且不贴脸；候选 ringMin 30/40 · ringMax 120/150/180，待实测量化回写 §9
 		},
 
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——

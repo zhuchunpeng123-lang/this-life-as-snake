@@ -32,6 +32,35 @@
 		}
 		return false
 	}
+	// C-lite 张力·补给危险偏向：回血/技能补给刻意刷在敌群附近，制造"要不要贪"的抉择。
+	// 取随机活跃敌(非弹幕/非假人)附近落点：随机偏移环带 + 钳在视野内 + 离蛇头≥safeDistance 防贴脸；无敌人则回退安全采样。
+	function sampleDangerPos(out) {
+		var En = Registry.get('enemy')
+		if (En && En.list) {
+			var cand = []
+			for (var i = 0; i < En.list.length; i++) {
+				var e = En.list[i]
+				if (!e.active || e.type === 'bossBullet' || e.type === 'dummy') { continue }
+				cand.push(e)
+			}
+			if (cand.length) {
+				var src = cand[(Math.random() * cand.length) | 0], h = head(), r = PK.food.radius
+				var halfW = GAME.logicalWidth / 2 - 30, halfH = GAME.logicalHeight / 2 - 30
+				var safe2 = PK.food.safeDistance * PK.food.safeDistance, min2 = PK.food.minSpacing * PK.food.minSpacing
+				var rb = PK.dangerBias
+				for (var t = 0; t < 30; t++) {
+					var ang = Math.random() * M.PI2, off = M.rand(rb.ringMin, rb.ringMax)
+					var x = M.clamp(src.x + Math.cos(ang) * off, h.x - halfW + r, h.x + halfW - r)
+					var y = M.clamp(src.y + Math.sin(ang) * off, h.y - halfH + r, h.y + halfH - r)
+					if (M.distSq(x, y, h.x, h.y) < safe2) { continue }
+					var ok = true
+					for (var f = 0; f < foods.length; f++) { var o = foods[f]; if (o.active && M.distSq(x, y, o.x, o.y) < min2) { ok = false; break } }
+					if (ok) { out.x = x; out.y = y; return true }
+				}
+			}
+		}
+		return sampleViewPos(out)   // 无敌人或附近采样失败 → 回退安全采样（保持可达）
+	}
 	var _p = { x: 0, y: 0 }
 	function spawnOrb(kind) {
 		if (!sampleViewPos(_p)) { return false }
@@ -83,7 +112,7 @@
 			if (healTimer <= 0) {                         // 治疗：自然刷新，单屏 cap，整局上限 perRunMax
 				healTimer = PK.heal.naturalRefreshSec
 				if (activeKind('heal') < PK.heal.screenCap && healsThisRun < PK.heal.perRunMax) {
-					if (spawnOrb('heal')) { healsThisRun++ }
+					if (sampleDangerPos(_p)) { spawnOrbAt('heal', _p.x, _p.y); healsThisRun++ }   // C-lite 张力：回血球偏向敌群/弹幕密集区（贪心抉择）；无敌人回退安全位
 				}
 			}
 		}
