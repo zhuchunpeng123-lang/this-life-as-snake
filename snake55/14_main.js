@@ -65,16 +65,20 @@
 	var last = 0, acc = 0
 	function frame(now) {
 		global.requestAnimationFrame(frame)
+		var cpu0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 		if (!last) { last = now }
 		var elapsed = (now - last) / 1000; last = now
-		if (elapsed > 0.25) { elapsed = 0.25 }   // 防卡顿后追帧爆炸
-		acc += elapsed
+		if (global.document && global.document.hidden) { acc = 0; return }   // 标签页隐藏(最小化/切后台)：跳过 step+draw，保持 last 新鲜，恢复瞬间不追帧爆发（治最小化再点开卡顿）
+		if (elapsed > 0.1) { elapsed = 0; acc = 0 }   // 大间隔(卡顿/恢复/切后台残帧)：直接丢弃追帧，避免 while 连跑 ~15 步突发 stutter（原 clamp 0.25 仍会爆 15 步）
+		else { acc += elapsed }
 		while (acc >= STEP) {
 			if (hitStop > 0 && GS.status === 'playing') { hitStop--; acc -= STEP; continue }   // ⑥ 冻帧：仅 playing 态消费时间不推进
 			step(STEP); acc -= STEP
 		}
 		var r = Registry.get('render'); if (r && r.draw) { r.draw() }
 		var ui = Registry.get('ui'); if (ui && ui.update) { ui.update() }
+		var cpu1 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+		if (r && r.setCpuMs) { r.setCpuMs(cpu1 - cpu0) }   // 诊断：整帧主线程 JS 耗时(step+draw+ui)，与 HUD「帧」(仅 draw 命令下发) 对比 → 定 GPU 合成 / DOM 回流 / 逻辑 瓶颈归属
 	}
 
 	function buildStart(wrap) {
@@ -100,10 +104,10 @@
 			var rect = canvas.getBoundingClientRect()
 			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height   // contain 缩放：CSS px → 逻辑 px 反算（瞄准点对齐缩放后画布）
 			var mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy
-			var cam = Registry.get('render').camera
-			cursor.wx = mx - CONFIG.GAME.logicalWidth / 2 + cam.x
-			cursor.wy = my - CONFIG.GAME.logicalHeight / 2 + cam.y
-			cursor.on = true
+	var render = Registry.get('render'); var cam = render.camera; var ws = (render && render.getWorldScale) ? render.getWorldScale() : 1
+	cursor.wx = cam.x + (mx - CONFIG.GAME.logicalWidth / 2) / ws   // 世界坐标 = cam + (逻辑点-中心)/worldScale；视图缩放后瞄准点须反除缩放，否则飞镖/锁敌偏位
+	cursor.wy = cam.y + (my - CONFIG.GAME.logicalHeight / 2) / ws
+		cursor.on = true
 		})
 		canvas.addEventListener('pointerleave', function () { cursor.on = false })
 		global.addEventListener('keydown', function (e) { keys[e.key] = true; if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return } if (e.key !== '`' && e.key !== '~') { startIfMenu() } })
@@ -118,5 +122,8 @@
 
 })(typeof window !== 'undefined' ? window : this)
 
-// 📝 修改日志
-// 2025-07-10 · 鼠标绝对瞄准 · joy 相对摇杆 → cursor 世界坐标绝对瞄准 + deadZone(CONFIG.PLAYER.deadZoneRadius=12) + pointermove 免按住 · 不动 §9
+	// 📝 修改日志
+	// 2025-07-10 · 鼠标绝对瞄准 · joy 相对摇杆 → cursor 世界坐标绝对瞄准 + deadZone(CONFIG.PLAYER.deadZoneRadius=12) + pointermove 免按住 · 不动 §9
+	// 2026-07-20 · 性能根治第二轮 · 主循环：大间隔(>0.1s，卡顿/恢复/切后台)直接丢弃追帧(原 clamp 0.25 仍爆 ~15 步)，+ 标签页隐藏时跳过 step/draw 保持 last 新鲜 → 治最小化再点开卡顿；不动 core/collision
+	// 2026-07-20 · 性能根治第六轮(还原) · pointermove 还原 1:1 世界坐标反算（视图缩放 worldScale 已移除，无需除）
+	// 2026-07-20 · 视图缩放恢复 · pointermove 重新反除 worldScale（render.getWorldScale 取当前缩放），缩放下飞镖/锁敌瞄准点仍对准世界坐标

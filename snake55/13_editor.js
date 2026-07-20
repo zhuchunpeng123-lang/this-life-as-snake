@@ -11,7 +11,7 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], steamCap: [1, 24, 1]   // b9-diag：蒸汽齐爆同帧上限滑条范围
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], steamCap: [1, 24, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -71,6 +71,8 @@
 	var TUNING_SLIDERS = []
 	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
 	var TUNING_SCALAR = [
+		{ path: 'RENDER.maxBackW', label: '渲染分辨率上限W', rng: 'maxBackW', def: 1600, dec: 0 },   // 实时标定：拖动即改 backing 宽上限（RT 桥），触发 render.resize 重算画布；默认 1600 降填充成本治卡顿；注：只控渲染分辨率/填充率，不改实体尺寸
+		{ path: 'RENDER.worldScale', label: '视图缩放(纯视觉)', rng: 'worldScale', def: 0.8, dec: 2 },   // 视图缩放：默认0.8 还原「更小更精致」蛇/怪画面；0.6–1.0 实时可调；纯渲染缩放，碰撞/世界坐标不变
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
 		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' }   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
 	]
@@ -87,7 +89,7 @@
 		return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font:600 12px system-ui"><span>' + label + '</span><span id="' + pref + 'v_' + id + '">' + v + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + def + '</span></span></div>' +
 			'<input type="range" id="' + pref + '_' + id + '" min="' + mn + '" max="' + mx + '" step="' + st + '" value="' + v + '" style="width:100%"></div>'
 	}
-	function fmtTune(path, val) { return (path.indexOf('slowPct') >= 0) ? Number(val).toFixed(2) : String(Math.round(val)) }   // 减速% 2 位小数，半径/宽度取整
+	function fmtTune(path, val, dec) { if (path.indexOf('slowPct') >= 0) { return Number(val).toFixed(2) } if (dec) { return Number(val).toFixed(dec) } return String(Math.round(val)) }   // 减速% 2 位小数；有 dec 按位小数（相机缩放 0.6–1.0 显示 2 位，否则被 Math.round 全显成 1）；其余半径/宽度取整
 	function refreshTuneLevels() {   // 实时等级显示 + 高亮当前等级对应的标定滑条行（dev 辅助，便于知道该拖哪一级）
 		if (!panel) { return }
 		var el = panel.querySelector('#tune_levels'); if (el) {
@@ -231,11 +233,11 @@
 		// ❄ 冰系手感·标量（运行时 rtSet）：减速跟随窗（离开冰区后减速残留时长）；与「技能数值」持久版 slowLingerSec 区分——此处为运行时即时
 		tb += '<div style="font:700 11px system-ui;opacity:.85;margin:10px 0 2px;color:#2ad4ff">❄ 冰系手感（标量 · 运行时）</div>'
 		for (var tsa = 0; tsa < TUNING_SCALAR.length; tsa++) {
-			var tsar = TUNING_SCALAR[tsa], tsbase = getPath(tsar.path)
-			var tsdef = isNum(tsbase) ? tsbase : 0
-			var tscur = (rtGet(tsar.path) !== undefined) ? rtGet(tsar.path) : tsdef
-			var tsid = TUNING_SCALAR_SLIDERS.length; TUNING_SCALAR_SLIDERS.push({ id: tsid, path: tsar.path, def: tsdef })
-			tb += '<div style="margin:2px 0">' + tuningRow(tsid, tsar.label, fmtTune(tsar.path, tscur), tsdef, tsar.rng, 'sc') + '</div>'
+		var tsar = TUNING_SCALAR[tsa], tsbase = getPath(tsar.path)
+		var tsdef = (tsar.def !== undefined) ? tsar.def : (isNum(tsbase) ? tsbase : 0)   // 优先用条目自带 def，再回退 getPath
+		var tscur = (rtGet(tsar.path) !== undefined) ? rtGet(tsar.path) : tsdef
+		var tsid = TUNING_SCALAR_SLIDERS.length; TUNING_SCALAR_SLIDERS.push({ id: tsid, path: tsar.path, def: tsdef, dec: tsar.dec })
+		tb += '<div style="margin:2px 0">' + tuningRow(tsid, tsar.label, fmtTune(tsar.path, tscur, tsar.dec), tsdef, tsar.rng, 'sc') + '</div>'
 		}
 		tb += '<button id="tune_reset" style="width:100%;padding:8px;margin:6px 0;border:1px solid #2de1a8;border-radius:6px;background:transparent;color:#2de1a8;cursor:pointer;font:700 12px system-ui">复位本组默认</button>'
 		tb += '<div style="margin-top:8px;border-top:1px solid #2a3358;padding-top:8px">'
@@ -309,9 +311,10 @@
 			tsinp.oninput = function () {
 				var t = TUNING_SCALAR_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
 				if (!t) { return }
-				rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 08_skill RT() 即时生效
-				var tvl = document.getElementById('scv_' + t.id)
-				if (tvl) { tvl.innerHTML = fmtTune(t.path, val) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
+			rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 08_skill RT() 即时生效
+			if (t.path === 'RENDER.maxBackW') { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } }   // 改 backing 上限需重算画布尺寸才生效
+		var tvl = document.getElementById('scv_' + t.id)
+			if (tvl) { tvl.innerHTML = fmtTune(t.path, val, t.dec) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
 			}
 		}
 		panel.querySelector('#tune_reset').onclick = function () { rtResetGroup(); render() }   // 复位本组：仅清实时覆盖，不动其他 override
@@ -471,3 +474,4 @@
 // 2026-07-13 · B-GM · GM 面板系统性梳理 + B-1/B-2/B-3 修复 · ①冰系手感收口：移除 GM 指令里与「实时标定」重复的 冰区滞留/减速跟随窗 滑条，冰系统一到「实时标定（手感沙盒）」（默认展开），新增 TUNING_SCALAR 运行时标量滑条承载 减速跟随窗s（即时 rtSet，08_skill RT() 生效）；②去重：移除实时标定内重复的「单技能激活/生成假人」按钮（仅留 GM 指令），提示指路；③B-3 修复：实时标定滑条读 rtTuning 回显当前值（前缀 ts/sc 区分，重开面板不再回到默认）；④rtResetGroup 一并清冰系标量覆盖；⑤持久版 减速跟随窗s·持久 保留在「技能数值」（config override 范式，与运行时版区分）· 不动 §9 / core / collision
 // 2026-07-12 · B-GM · editor 升级为分类 GM 测试面板 · 重写 13_editor.js：怪物/蛇/技能伤害分类 slider（沿 override+重载机制，路径自动生成，boss.hpTotal 单独处理）+ 单 Combo 激活按钮（debugActivateCombo）+ GM 指令（无限无敌/满级/清敌/碰撞盒）+ coreHp ±1 按钮 + 手动路径输入（GS. 即时 / config 重载）；08_skill.js 暴露 debugActivateCombo/debugMaxAll · 不动 §9 / core / collision
 // 2025-07-10 · editor 解锁 Combo 测试按钮 · 调参面板新增「🔓 解锁全部 Combo（测试）」按钮（set fire/ice/bolt/lightning + pick→checkCombos） · 不动 §9
+// 2026-07-20 · view-scale-and-dot · TUNING_SCALAR 加「视图缩放(纯视觉)」滑条(默认0.8，0.6–1.0)；「画布上限W」改名为「渲染分辨率上限W」并注明只控分辨率不改实体尺寸

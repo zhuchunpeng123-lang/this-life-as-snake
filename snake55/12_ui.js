@@ -11,6 +11,7 @@
 	var root = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
 	var comboBanner = null, pauseBtn = null, pauseOverlay = null
 	var heartBreakUntil = 0, lostHeartIndex = -1
+	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0
 	var timers = []
 	var usedChoiceIds = {}
@@ -313,7 +314,8 @@
 	var UI = {
 		init: init,
 		update: function () {
-			refreshHUD()
+			var hn = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+			if (hn - _lastHudRefresh >= 100) { refreshHUD(); _lastHudRefresh = hn }   // ~10Hz 节流：分数/时间/蛇长慢变，10Hz 足够；消除每帧 innerHTML 重建的 DOM 重排回流（原每帧执行，未计入帧时间）
 			if (pauseBtn) { pauseBtn.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'block' : 'none' }
 			if (pauseOverlay) { pauseOverlay.style.display = (GS.status === 'paused') ? 'flex' : 'none' }
 			if (GS.status === 'playing') {

@@ -150,6 +150,26 @@
 	}
 	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
+	// 火墙余烬：视觉绑定「火源=蛇身」而非「敌数」——第三轮误删火 DOT 逐次火花后火墙无粒子感(用户反馈表现力弱)，
+	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：每 fixed-step 沿蛇身随机取点喷 n 颗余烬，
+	//   数量随火阶微增但受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌=5 敌)，零 gameplay
+	function spawnFireEmbers() {
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }   // 仅火墙激活
+		if (particles.length >= maxParticles() * 0.5) { return }   // 余量门控：池忙(≥半满)时停喷余烬，留 GPU 呼吸低谷，治"焊死 240/240 常载拖帧"
+		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length === 0) { return }
+		var segs = s.segments, fi = owned.fire - 1
+		var n = Math.min(4, 2 + fi)   // 余烬数：1阶≈2 / 2阶≈3 / 3阶≈4，封顶 4
+		for (var ei = 0; ei < n; ei++) {
+			var sg = segs[(Math.random() * segs.length) | 0]   // 蛇身随机点（整条火墙燃烧，非单点）
+			var a = Math.random() * M.PI2, sp = 30 + Math.random() * 50
+			emitParticle(sg.x + (Math.random() * 2 - 1) * 6, sg.y + (Math.random() * 2 - 1) * 6,
+				Math.cos(a) * sp, Math.sin(a) * sp - 30,        // 略带上飘：火苗上窜感
+				0.35 + Math.random() * 0.2, 1.5 + Math.random() * 1.5,
+				Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low')   // low 优先：池满让位死亡/蒸汽/伤害 VFX
+		}
+	}
+
 	var Particle = {
 		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
 		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
@@ -158,6 +178,7 @@
 		update: function (dt) {
 			var i
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
+			spawnFireEmbers()   // 火墙余烬：每 fixed-step 沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
 			for (i = particles.length - 1; i >= 0; i--) {
 				var p = particles[i]
 				p.life -= dt
@@ -234,26 +255,28 @@
 				ctx.beginPath(); ctx.arc(bl.x, bl.y, Math.max(1, bl.radius * prog), 0, M.PI2); ctx.stroke()
 			}
 			ctx.globalAlpha = 1
+		},
+		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
+		drawOverlay: function (ctx) {
+			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
+			if (!(RT('PERF.suppressWhiteBurst', 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字
+				for (var i = 0; i < flashCores.length; i++) {
+					var fc = flashCores[i]
+					var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }
+					ctx.globalAlpha = a * 0.85
+					ctx.fillStyle = fc.color
+					ctx.beginPath(); ctx.arc(fc.x, fc.y, fc.radius * (1.25 - a * 0.25), 0, M.PI2); ctx.fill()
+				}
+			}
+			// 伤害飘字绘于白闪之上（永远不被白闪/实体遮挡）
+			ctx.globalAlpha = 1
 			ctx.textAlign = 'center'
-			for (i = 0; i < texts.length; i++) {
-				var t = texts[i]
+			for (var ti = 0; ti < texts.length; ti++) {
+				var t = texts[ti]
 				ctx.globalAlpha = M.clamp(t.life / t.maxLife * 1.5, 0, 1)
 				ctx.fillStyle = t.color
 				ctx.font = '700 ' + t.size + 'px system-ui, sans-serif'
 				ctx.fillText(t.text, t.x, t.y)
-			}
-			ctx.globalAlpha = 1
-		},
-		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上，仅作爆发高光，不长时间盖核心信息（JUICE）
-		drawOverlay: function (ctx) {
-			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
-			if (RT('PERF.suppressWhiteBurst', 0) > 0) { return }   // b9-diag T1：关白爆 overlay（伤害结算照常，仅不绘此层）
-			for (var i = 0; i < flashCores.length; i++) {
-				var fc = flashCores[i]
-				var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }
-				ctx.globalAlpha = a * 0.85
-				ctx.fillStyle = fc.color
-				ctx.beginPath(); ctx.arc(fc.x, fc.y, fc.radius * (1.25 - a * 0.25), 0, M.PI2); ctx.fill()
 			}
 			ctx.globalAlpha = 1
 		},
@@ -273,16 +296,15 @@
 		if (dmg <= 0) { return }                                  // 过滤 ≤0 伤害：绝不显示「0」飘字（防小数/无效伤害刷屏）
 		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
 		var ty = d.y - 6 - (d.r || 0)   // 飘字生成在精灵上方（按命中体半径抬升，修 boss 大精灵盖住伤害数字）
-		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字 + 小爆点，与瞬伤大白字明显区分；enemy:hit 逐次火花→low 优先丢
+		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字（伤害必显）；停喷逐次火花粒子——火墙 MULTI-敌叠加会把粒子池顶爆→GPU overdraw 主因（5 敌 350/350 数据定因）；火墙光环+飘字已足够反馈，零 gameplay
 			if (d.src === 'fire') { DBG.fireDot++ }               // b9-diag：火墙 DOT 命中计数（仅 HUD，零 gameplay）
 			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
-			spawnBurst(d.x, d.y, 3, dc, 120, 2, 0.25, 'low')
-			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'low')
+			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'high')   // 提权 high：火墙/灼烧飘字优先必显（用户要求「伤害一定要表现」），满池时不让位低优先
 		} else {
 			var col = d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText)   // 暴击金优先，其次来源色
 			var lbl = st ? st.label : ''
 			spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3, 'low')
-			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14, 'low')
+			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14, 'high')   // 瞬伤/蒸汽飘字提权 high：满池时不让位 low 标签（冰减速等），确保伤害数字必现（修"假人无数字/蒸汽飘字不全"）
 		}
 	})
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || COLORS.enemyChaser, 220, 4, 0.5) })
@@ -333,7 +355,7 @@
 	// 需求B：steamExplosion 等的周期爆闪（爆心由调用方传入真实坐标）
 	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
-		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.92)', 0.22)   // 实心白闪核（绘于实体之上，不被盖）
+		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.92)', 0.22)   // 实心白闪核（绘于实体之上，不被盖；round6 稳定版，纯表现，零 gameplay）
 		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.8)', 0.55)              // 白色蒸汽云扩张≈r90（亮度上调）
 		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
 		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
@@ -371,5 +393,10 @@
 
 	Registry.register('particle', Particle)
 	Log.info('particle 就绪：池 粒子512/字32/束64/爆96/镖32/闪96')
+
+	// 📝 修改日志
+	// 2026-07-20 · 性能根治第四轮 · 新增 spawnFireEmbers()：火墙余烬改绑定"火源=蛇身"(每 fixed-step 沿蛇身随机喷 n 颗，n=min(4,2+火阶))，受 spawnBudget+low 优先门控，总量恒定不随敌数膨胀(修第三轮删火 DOT 粒子后"火墙无粒子感/表现力弱"的反馈)；第三轮保留项：isDot 伤害飘字提权 high(伤害必显)、瞬伤/死亡/蒸汽/电磁/闪电 VFX 全保留；不动 §9/伤害管线
+	// 2026-07-20 · view-scale-and-dot · enemy:hit 非DOT 瞬伤/蒸汽飘字提权 high(满池必现)；飘字绘制从 drawWorld 移至 drawOverlay 白闪之后(永远不被白闪遮挡，修假人无数字)；不动 §9/伤害管线
+	// 2026-07-20 · 性能根治第六轮(还原) · 回退第五轮 spawnFlashCore 并发上限 FLASH_CORE_CAP 与 fx:steamblast 白闪核半径/alpha 收窄；还原 round6 闪核表现；余烬门控(round6 FPS 主修复)保留；不动 §9/伤害管线/判定
 
 })(typeof window !== 'undefined' ? window : this)
