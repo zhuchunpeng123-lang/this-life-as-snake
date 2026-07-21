@@ -127,12 +127,19 @@
 		clearTimeout(fullscreenToast._t)
 		fullscreenToast._t = setTimeout(function () { fullscreenToast.style.display = 'none' }, 3200)
 	}
+	function isStandalone() {   // 检测已从主屏打开的 PWA（iOS navigator.standalone / 标准 display-mode:standalone）
+		var nm = global.matchMedia && global.matchMedia('(display-mode: standalone)').matches
+		var nav = global.navigator && global.navigator.standalone === true
+		return !!nm || !!nav
+	}
 	function toggleFullscreen() {
 		var doc = global.document, ua = (global.navigator && global.navigator.userAgent) || ''
 		var isIOS = /iPhone|iPad|iPod/i.test(ua)
 		var fsEl = doc.fullscreenElement || doc.webkitFullscreenElement
 		if (fsEl) { var ex = doc.exitFullscreen || doc.webkitExitFullscreen; if (ex) { try { ex.call(doc) } catch (e) {} } return }
-		if (isIOS) { showFsToast('iPhone：请把本页「添加到主屏幕」，从主屏打开即可全屏无网址栏'); return }
+		if (isIOS) {
+			if (isStandalone()) { showFsToast('已在全屏（主屏模式）'); return }   // 已是从主屏打开：本就无网址栏全屏，不再误导「加到主屏」
+			showFsToast('iPhone：请把本页「添加到主屏幕」，从主屏打开即可全屏无网址栏'); return }
 		var el = doc.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen
 		if (req) { try { req.call(el) } catch (e) { showFsToast('当前浏览器不支持全屏，可尝试「添加到主屏幕」') } }
 		else { showFsToast('当前浏览器不支持全屏，可尝试「添加到主屏幕」') }

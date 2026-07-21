@@ -6,6 +6,18 @@
 
 
 
+## 2026-07-22 · fix(mobile): 修主屏模式点全屏误提示「加到主屏」
+
+- **改动文件**：`14_main.js`（`toggleFullscreen` 新增 `isStandalone()` 检测：`navigator.standalone === true`（iOS 主屏 PWA）或 `matchMedia('(display-mode: standalone)').matches`；主屏模式点「⛶ 全屏」不再弹「请把本页添加到主屏幕」误导提示，改为「已在全屏（主屏模式）」；Safari 浏览器内仍提示加主屏）
+- **一句话**：修 iPhone 主屏 PWA 下点全屏仍误弹「加到主屏」的提示（本就已无网址栏全屏）；按用户选择**不做** CSS 旋转强制横屏，横屏仍需手动旋转手机 / 解锁旋转锁（iOS 不支持 Fullscreen API 与 `screen.orientation.lock`，无法像视频播放器那样编程自动横屏全屏）。
+- **是否动 §9**：否（纯全屏按钮提示逻辑，无平衡数值）
+- **验收**：
+  - iPhone 加主屏后打开 → 点「⛶ 全屏」：提示「已在全屏（主屏模式）」，不再误导「加到主屏」
+  - iPhone Safari 浏览器内打开 → 点「⛶ 全屏」：仍提示「加到主屏」（正确）
+  - 横屏玩法不变：需手动转横屏 / 解锁旋转锁；未动 core/collision/§9/`02_config`
+
+---
+
 ## 2026-07-22 · fix(mobile): 修选技能崩溃(_rotateHandler) + 蛇头双球视觉
 
 - **改动文件**：`12_ui.js`（模块作用域新增 `var _rotateHandler = null`；原仅在 `showRotateChoice` 内赋值、未声明，非竖屏选技能路径不经过该赋值，`hideChoose→hideRotateChoice` 读未声明变量在严格模式下抛 `ReferenceError: Can't find variable: _rotateHandler`，导致手机选技能后整段 UI 报错）、`11_render.js`（`drawSnake` body 循环由 `i >= 0` 改为 `i >= 1`，跳过 `segments[0]` 头节；该节已在 `06_snake.js` 注释「含头节(index 0)」且由头圆 `headRadius`(14) 单独绘制，原循环又用 `bodyRadius`(12) 画一次，因 `segmentSpacing`(24) < 14+12 紧贴头圆后方重叠成「两球」，1 血时头变红尤其明显）
