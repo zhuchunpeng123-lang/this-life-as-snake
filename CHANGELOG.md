@@ -6,6 +6,19 @@
 
 
 
+## 2026-07-22 · fix(mobile): 修选技能崩溃(_rotateHandler) + 蛇头双球视觉
+
+- **改动文件**：`12_ui.js`（模块作用域新增 `var _rotateHandler = null`；原仅在 `showRotateChoice` 内赋值、未声明，非竖屏选技能路径不经过该赋值，`hideChoose→hideRotateChoice` 读未声明变量在严格模式下抛 `ReferenceError: Can't find variable: _rotateHandler`，导致手机选技能后整段 UI 报错）、`11_render.js`（`drawSnake` body 循环由 `i >= 0` 改为 `i >= 1`，跳过 `segments[0]` 头节；该节已在 `06_snake.js` 注释「含头节(index 0)」且由头圆 `headRadius`(14) 单独绘制，原循环又用 `bodyRadius`(12) 画一次，因 `segmentSpacing`(24) < 14+12 紧贴头圆后方重叠成「两球」，1 血时头变红尤其明显）
+- **一句话**：修两处移动端异常——①手机横屏吃技能食物→选技能不再崩溃（补 `_rotateHandler` 声明）；②蛇头恢复单一干净圆形，头后不再有重叠小球（1 血仅头变红、身后无第二球）。
+- **是否动 §9**：否（纯变量声明 + 渲染循环边界，无平衡数值；`headRadius`/`bodyRadius`/`segmentSpacing` 均保持原值，仅跳过重复绘制）
+- **验收**：
+  - 手机/iOS 横屏：吃技能食物→选卡→选技能，无红框、技能正常获得、选卡 UI 关闭
+  - 竖屏（iOS 主屏）吃技能：仍弹「请横屏」遮罩且「仍用竖屏继续」可关闭；横屏后正常选卡不崩
+  - 桌面：Ctrl+Z 撤销、~ GM 等不受影响；蛇头为单圆、1 血时仅头变红
+  - 未动 `03_core.js`/`04_collision.js`/伤害管线；`02_config` 未改
+
+---
+
 ## 2026-07-21 · fix(mobile): 修启动红错误报 + 竖屏选卡卡死 + 移动端 GM 按钮
 
 - **改动文件**：`index.html`（全局错误兜底：忽略跨域脱敏 `'Script error.'` 与资源加载失败 `e.target` 非 window 的情况，不再误弹红框；真实同域错误仍显示并附 `e.error.stack`）、`12_ui.js`（`isPortrait()` 改视口宽高比 `innerHeight > innerWidth` 判定，iOS standalone/横竖屏滞后更可靠；`showRotateChoice` 同时监听 `orientationchange`+`resize` 并加「仍用竖屏继续」兜底按钮，解决竖屏选卡卡死；`init` 内仅触屏设备显示「⚙ GM」按钮，经 `Bus('editor:toggle')` 开面板）、`13_editor.js`（监听 `Bus('editor:toggle')` 支持移动端按钮开 GM；面板 `z-index` 40→60 置于 `#ui-full`(50) 之上；头部加可点击 `×` 关闭，移动端无 `~` 键也能关）

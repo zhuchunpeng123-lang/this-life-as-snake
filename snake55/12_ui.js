@@ -10,6 +10,7 @@
 
 	var root = null, froot = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
 	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null
+	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0

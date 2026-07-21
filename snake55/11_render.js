@@ -198,7 +198,7 @@
 	function drawSnake() {
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var segs = s.segments || []
-		for (var i = segs.length - 1; i >= 0; i--) { circle(segs[i].x, segs[i].y, PLAYER.bodyRadius, SNAKE_BODY) }
+		for (var i = segs.length - 1; i >= 1; i--) { circle(segs[i].x, segs[i].y, PLAYER.bodyRadius, SNAKE_BODY) }  // 跳过 index 0（头节）：已由头圆单独绘制，避免头后重叠成「双球」
 		var h = s.head, sq = s.squash || { sx: 1, sy: 1 }
 		var inv = GS.invincibleUntil > GS.timeSec
 		var blink = inv && (Math.floor(GS.timeSec * 16) % 2 === 0)   // 无敌帧：蛇头闪烁，直观「这 1 秒安全」
