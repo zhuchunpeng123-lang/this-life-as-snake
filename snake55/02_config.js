@@ -23,6 +23,11 @@
 			wallScrapeGrace: 0.2            // 离墙后维持减速的宽限秒数
 		},
 
+		// —— §0.1 输入（触控手感，非 §9 平衡值）——
+		INPUT: {
+			touch: { deadZone: 18 }   // 🟡 触控死区(px 逻辑)：触控精度低于鼠标，略大于 PLAYER.deadZoneRadius(12) 防抖；纯输入手感，不进 §9
+		},
+
 		// —— §1 PLAYER ——
 		PLAYER: {
 			snakeSpeed: 200,

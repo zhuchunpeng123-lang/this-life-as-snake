@@ -11,12 +11,19 @@
   #boot-error { position: fixed; left: 0; top: 0; right: 0; z-index: 9999; display: none;
     color: #ff6b6b; font: 14px/1.6 monospace; padding: 12px; white-space: pre-wrap;
     background: rgba(10,14,26,.95); }
+  #rotate-hint { display: none; }
+  @media (orientation:portrait) {
+    #rotate-hint { display: flex; position: fixed; left: 0; right: 0; top: 0; justify-content: center;
+      padding: calc(env(safe-area-inset-top) + 8px) 14px 8px; background: rgba(8,10,20,.82);
+      color: #ffd76b; font: 600 13px/1.4 system-ui; z-index: 40; pointer-events: none; text-align: center; }
+  }
 </style>
 </head>
 <body>
   <div id="game-wrap">
     <canvas id="game-canvas" width="960" height="540"></canvas>
   </div>
+  <div id="rotate-hint">横屏视野更宽，体验更佳（竖屏也可玩）</div>
   <div id="boot-error"></div>
 
   <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口 -->

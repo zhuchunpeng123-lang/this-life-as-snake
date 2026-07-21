@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-21 · feat(mobile): 手机端触控 + 小屏适配（输入 A + 竖屏 A+B）
+
+- **改动文件**：`index.html`（viewport 加 `viewport-fit=cover` + 竖屏横屏提示层 `#rotate-hint`（不阻操作））、`14_main.js`（新增 `aimFromEvent` 统一触屏/鼠标→世界瞄准点；`pointerdown/move` 加 `preventDefault` 阻 iOS 双击缩放/滚动；`pointerup`/`pointercancel` 松手保持末向不丢输入；`orientationchange` 旋屏重算；`readInput` 触控用 `CONFIG.INPUT.touch.deadZone` 防抖）、`12_ui.js`（HUD/暂停按钮/连击横幅加 `env(safe-area-inset-*)` 安全区 + `clamp()` 响应式字号；升级三选一卡片 `width:min(220px,78vw)` 窄屏不溢出）、`02_config.js`（新增 `INPUT.touch.deadZone` 触控死区，非 §9 平衡值）
+- **一句话**：手机端可玩——竖屏 contain 完整显示（已就位）+ 横屏轻提示引导；触控拖动绝对瞄准（指哪打哪）+ 松手保向 + 阻浏览器手势；HUD/升级卡窄屏自适应 + 刘海安全区；性能由封版 `PerfTier` 分级保流畅。桌面零回归。
+- **是否动 §9**：否（纯输入/UI/渲染表现，无平衡数值；新增 `INPUT.touch` 为触控手感非强度值）
+- **验收**：
+  - 桌面 Chrome：显示/操作与封版前零差异（viewport/touch-action 已存在不变）
+  - 手机竖屏（如 375×667）打开：canvas contain 完整显示不溢出；拖动蛇平滑转向；点开始/暂停可点；松手蛇按末向续行
+  - 升级三选一：窄屏卡片不溢出/不重叠；HUD 不被刘海遮挡
+  - 横屏：提示层隐藏，全屏游玩
+  - 未动 `03_core.js`/`04_collision.js`/伤害管线；`02_config` 仅扩展 `INPUT` 区
+
+---
+
 ## 2026-07-21 · perf(auto-tier): 自适应画质分级 + 跨端 FPS 根治（封版）
 
 - **改动文件**：`02_config.js`（新增 `PERF.autoScale` 总开关 + `deviceSeed` 设备初判 + `tiers` 四档质量预设 + `flashCoreCap`/`fillDown*`/`fillLockSec`/`fillRecoverSec` 护栏阈值）、`14_main.js`（新增 `PerfTier` 系统：`seedTier` 设备初判 + `stepDown`/`stepUp` 实时 FPS 自动升降档 + `forceTier` GM 强制固定档 + `pointerdown`/`pointermove` 兼容触控 + `resize` 重算）、`11_render.js`（RT 回退源改读 `PerfTier` 当前档 `perfFB` + backing 宽封顶 `maxBackW` + `worldScale` 视图缩放 + `simpleVignette` POTATO 档 + 画质档位 HUD 角标）、`13_editor.js`（GM「性能分级」面板：自动开关 + 强制固定档 + 关火抑制手动 + 护栏实时读数）、`15_profiler.js`（采样加 `tier`/`auto`/瞬时 `fpsMin` + 采样后清零窗口 min）、`05_particle.js`（`flashCoreCap` 并发闪核硬上限 + `suppressFire` 驱动余烬停喷）

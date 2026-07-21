@@ -25,12 +25,12 @@
 
 	function init(container) {
 		root = container || document.body
-		hud = mk('div', 'position:absolute;left:12px;top:10px;font:600 15px/1.5 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:10', root)
+		hud = mk('div', 'position:absolute;left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top));font:600 clamp(12px,3.6vw,15px)/1.5 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:10', root)
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,0.72);z-index:20', root)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18', root)
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30', root)
-		comboBanner = mk('div', 'position:absolute;left:50%;top:14%;transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 22px system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s', root)
-		pauseBtn = mk('div', 'position:absolute;right:12px;top:10px;padding:6px 12px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 13px system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
+		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s', root)
+		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
 		pauseBtn.textContent = '⏸ 暂停'
 		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
 		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', root)
@@ -185,7 +185,7 @@
 		mk('div', 'width:100%;text-align:center;color:#fff;font:700 22px system-ui;margin-bottom:14px', box).textContent = '三选一 · 升级'
 		for (var i = 0; i < choices.length; i++) {
 			(function (c) {
-				var card = mk('button', 'width:220px;padding:18px;border-radius:14px;border:2px solid #2de1a8;background:#11203a;color:#fff;cursor:pointer;font:600 16px system-ui', box)
+				var card = mk('button', 'width:min(220px,78vw);padding:18px;border-radius:14px;border:2px solid #2de1a8;background:#11203a;color:#fff;cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui', box)
 				card.innerHTML = '<div style="font-size:20px;margin-bottom:8px">' + (SKILL_LABEL[c.id] || c.id) + '</div><div style="color:#9fe">' + (c.isNew ? '新技能' : '升级 → Lv' + c.level) + '</div>'
 				card.onclick = function () { var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
 			})(choices[i])

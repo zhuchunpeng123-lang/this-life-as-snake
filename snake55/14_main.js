@@ -105,7 +105,7 @@
 	var HITSTOP_FRAMES = CONFIG.COMBAT.hitStopFrames   // ⑥ 命中冻帧（真理源 §2.2 hitStop 2帧）
 	var hitStop = 0
 
-	var keys = {}, cursor = { on: false, wx: 0, wy: 0 }
+	var keys = {}, cursor = { on: false, wx: 0, wy: 0, touch: false }
 	var startEl = null
 	Bus.on('snake:hurt', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
 	Bus.on('enemy:phase', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
@@ -128,7 +128,8 @@
 			if (h) {
 				var dx = cursor.wx - h.x, dy = cursor.wy - h.y
 				var len = Math.sqrt(dx * dx + dy * dy)
-				if (len > CONFIG.PLAYER.deadZoneRadius) { return { x: dx / len, y: dy / len, active: true } }
+				var dz = cursor.touch ? CONFIG.INPUT.touch.deadZone : CONFIG.PLAYER.deadZoneRadius
+			if (len > dz) { return { x: dx / len, y: dy / len, active: true } }
 			}
 			return { x: 0, y: 0, active: false }
 		}
@@ -204,17 +205,28 @@
 		var ui = Registry.get('ui'); if (ui && ui.init) { ui.init(wrap) }
 		buildStart(wrap)
 
-		canvas.addEventListener('pointerdown', function (e) { startIfMenu() })
-		canvas.addEventListener('pointermove', function (e) {
+		function aimFromEvent(e) {   // 触控/鼠标统一：屏幕坐标 → 世界瞄准点（contain 反算 + worldScale 反除）
 			var rect = canvas.getBoundingClientRect()
-			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height   // contain 缩放：CSS px → 逻辑 px 反算（瞄准点对齐缩放后画布）
+			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height
 			var mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy
-	var render = Registry.get('render'); var cam = render.camera; var ws = (render && render.getWorldScale) ? render.getWorldScale() : 1
-	cursor.wx = cam.x + (mx - CONFIG.GAME.logicalWidth / 2) / ws   // 世界坐标 = cam + (逻辑点-中心)/worldScale；视图缩放后瞄准点须反除缩放，否则飞镖/锁敌偏位
-	cursor.wy = cam.y + (my - CONFIG.GAME.logicalHeight / 2) / ws
-		cursor.on = true
+			var r = Registry.get('render'); var cam = r && r.camera; var ws = (r && r.getWorldScale) ? r.getWorldScale() : 1
+			cursor.wx = cam.x + (mx - CONFIG.GAME.logicalWidth / 2) / ws
+			cursor.wy = cam.y + (my - CONFIG.GAME.logicalHeight / 2) / ws
+			cursor.on = true; cursor.touch = (e.pointerType === 'touch')
+		}
+		canvas.addEventListener('pointerdown', function (e) {
+			if (e.cancelable) { e.preventDefault() }   // 阻 iOS 双击缩放/滚动默认手势
+			startIfMenu()
+			aimFromEvent(e)   // 点哪朝哪：菜单→playing 首帧即对齐点击方向
+		})
+		canvas.addEventListener('pointermove', function (e) {
+			if (e.cancelable) { e.preventDefault() }
+			aimFromEvent(e)
 		})
 		canvas.addEventListener('pointerleave', function () { cursor.on = false })
+		canvas.addEventListener('pointerup', function () { cursor.on = false })       // 松手保持最后方向（蛇按末向续行，不丢输入）
+		canvas.addEventListener('pointercancel', function () { cursor.on = false })
+		global.addEventListener('orientationchange', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸
 		global.addEventListener('keydown', function (e) { keys[e.key] = true; if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return } if (e.key !== '`' && e.key !== '~') { startIfMenu() } })
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
 		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
