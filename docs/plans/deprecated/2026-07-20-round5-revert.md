@@ -21,7 +21,7 @@
 - `02_config.js` `PERF.maxParticles:240`（第三轮基线，安全）。
 - `14_main.js` 主循环丢追帧 + 标签页隐藏跳过（治"最小化再打开"）；`z=1` 时瞄准=原始。
 - `11_render.js` 火墙火管 alpha0.16/热边加粗、敌人无 pop-in 剔除、resize scale>0 兜底、第四轮删蛇头火舌。
-- `15_profiler.js` + `01_index.html`（诊断工具）。
+- `15_profiler.js` + `index.html`（诊断工具）。
 - `03_core.js` / `04_collision.js`：不动。伤害管线：`Core.Formula.damage` / `applyDamage` 不动。
 
 ## 5. 验收标准

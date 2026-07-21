@@ -17,11 +17,11 @@
 - L3 引擎 `03_core.js`（Bus/Registry/Formula/GS/对象池）、`04_collision.js`（空间哈希碰撞）
 - L5 系统 `05_particle` / `06_snake` / `07_enemy` / `08_skill` / `09_wave(+pickup)` / `10_audio` / `12_ui`
 - L6 渲染 `11_render.js`；L7 调试 `13_editor.js`（~ 键调参）；入口 `14_main.js`（fixed-step 主循环）
-- 加载顺序由 `01_index.html` 硬性规定，**禁止 import/export，全部挂 window 全局**。
+- 加载顺序由 `index.html` 硬性规定，**禁止 import/export，全部挂 window 全局**。
 
 ## 二、🔒 锁死清单（绝对不可动，其余章节均不可覆盖此节）
 
-- 脚本加载顺序（`01_index.html` 的 `<script>` 顺序）；禁止 import/export，全部挂 window 全局。
+- 脚本加载顺序（`index.html` 的 `<script>` 顺序）；禁止 import/export，全部挂 window 全局。
 - `02_config.js` 的数值结构：改数值走内置调参器（~ 键）或明确申请，禁止在业务代码里写裸数字。
 - `03_core.js` / `04_collision.js` 默认不动；必须动时先走 §三 流程并告知我确认。
 

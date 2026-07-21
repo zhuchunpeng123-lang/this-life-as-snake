@@ -20,7 +20,7 @@
 | 12_ui.js | HUD 节流 ~10Hz | ✅ 良性 |
 | 14_main.js | 大间隔丢追帧+隐藏跳过+CPU 计时 | ✅ 良性（治最小化卡顿） |
 | 14_main.js | 瞄准反算 /z | 🔁 随 viewZoom 还原而还原 |
-| 15_profiler.js+01_index.html | 诊断工具 | ✅ 保留 |
+| 15_profiler.js+index.html | 诊断工具 | ✅ 保留 |
 
 ## 3. 三问题根因（明确结论）
 

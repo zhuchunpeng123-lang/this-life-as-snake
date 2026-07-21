@@ -8,7 +8,7 @@
 
 ## 2026-07-21 · perf(view): 视图缩放恢复 + 相机跟随修复 + profiler 可见敌数反算 worldScale
 
-- **改动文件**：`15_profiler.js`（新增：自动性能日志，profiler 可见敌数反算 `worldScale` + 帧性能观测字段 external gap）、`11_render.js`（相机跟随修复 + `worldScale` 反算 + 视图缩放恢复）、`01_index.html`（挂 `15_profiler.js`）、`02_config.js`、`05_particle.js`、`08_skill.js`、`12_ui.js`、`13_editor.js`、`14_main.js`（fixed-step 主循环帧观测）、`docs/plans/*.md`（新增 6 份诊断/清理计划）
+- **改动文件**：`15_profiler.js`（新增：自动性能日志，profiler 可见敌数反算 `worldScale` + 帧性能观测字段 external gap）、`11_render.js`（相机跟随修复 + `worldScale` 反算 + 视图缩放恢复）、`index.html`（挂 `15_profiler.js`）、`02_config.js`、`05_particle.js`、`08_skill.js`、`12_ui.js`、`13_editor.js`、`14_main.js`（fixed-step 主循环帧观测）、`docs/plans/*.md`（新增 6 份诊断/清理计划）
 - **一句话**：恢复被 round5 误回滚的视图缩放；修正相机跟随；新增 `15_profiler.js` 自动性能日志，profiler 可见敌数反算 `worldScale`，明确区分"实体缩放(worldScale)"与"填充率(maxBackW)"（呼应 RETRO §7）
 - **是否动 §9**：否（视图/观测层，无平衡数值）
 - **验收**：
