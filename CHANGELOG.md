@@ -6,6 +6,57 @@
 
 
 
+## 2026-07-21 · perf(view): 视图缩放恢复 + 相机跟随修复 + profiler 可见敌数反算 worldScale
+
+- **改动文件**：`15_profiler.js`（新增：自动性能日志，profiler 可见敌数反算 `worldScale` + 帧性能观测字段 external gap）、`11_render.js`（相机跟随修复 + `worldScale` 反算 + 视图缩放恢复）、`01_index.html`（挂 `15_profiler.js`）、`02_config.js`、`05_particle.js`、`08_skill.js`、`12_ui.js`、`13_editor.js`、`14_main.js`（fixed-step 主循环帧观测）、`docs/plans/*.md`（新增 6 份诊断/清理计划）
+- **一句话**：恢复被 round5 误回滚的视图缩放；修正相机跟随；新增 `15_profiler.js` 自动性能日志，profiler 可见敌数反算 `worldScale`，明确区分"实体缩放(worldScale)"与"填充率(maxBackW)"（呼应 RETRO §7）
+- **是否动 §9**：否（视图/观测层，无平衡数值）
+- **验收**：
+  - 视图缩放恢复，蛇身/敌人大小随 `worldScale` 变化且相机跟随正确不漂移
+  - `15_profiler.js` 自动记录 FPS/敌数/`worldScale`，无需手动测量脚本
+  - 未动 `03_core.js`/`04_collision.js`；`02_config.js` 仅挂接、不改动数值结构
+
+---
+
+## 2026-07-17 · perf(b9) 收口 + 玩法补充（6 提交）
+
+- **改动文件**：`08_skill.js`（闪电内圈死区 bc01a11 + 每帧敌列快照 b6b380d + 收脚手架 270056d）、`09_wave.js`（补给危险偏向 0a5d871）、`07_enemy.js`/`11_render.js`/`12_ui.js`/`14_main.js`（测试基建 897d92b：暂停/等比缩放/指针反算/假人前置）、`11_render.js`/`02_config.js`（屏震四档映射 e5d3f7f）、`13_editor.js`/`05_particle.js`/`02_config.js`（收 b9 脚手架 270056d，dev 门控 + 删 auto-log）
+- **一句话**：b9 性能专项收口——①闪电内圈死区（跳过蛇头火环半径内索敌，省无效链）；②每帧敌列快照消除重复 `allEnemies` 分配（零行为变化）；③屏震四档统一 `addTrauma`（删 `addShake`，补精英死/Boss 击败/蒸汽齐爆阈值 4）；④补给危险偏向（回血球刷敌群附近，制造贪心抉择）；⑤测试基建（暂停/缩放/指针反算/假人前置）；⑥收起 b9 诊断脚手架
+- **是否动 §9**：是（屏震四档阈值、补给危险偏向相关数值已回写 §9；其余纯工程）
+- **验收**：
+  - 闪电不再对火环内敌人无效索敌；敌列每帧只算一次（快照），行为无变化
+  - 屏震四档统一经 `addTrauma`；精英死/Boss 击败/蒸汽齐爆(≥4) 有震
+  - 回血球出现在敌群附近而非安全区；dev 下可见诊断、release 无 auto-log
+  - 未动 `03_core.js`/`04_collision.js` 行为；`02_config.js` 仅新增 b9 门控与少量数值
+
+---
+
+## 2026-07-15 · perf(b9) 三连：VFX 硬上限 + 小怪血条去 fillText + ⑥冰冻重做
+
+- **改动文件**：`02_config.js`/`05_particle.js`（VFX 硬上限 937a87e：粒子/飘字活跃上限 + 每帧 spawn 预算 + 优先级门控覆盖所有池写入含 steamblast 直推；保死亡爆/伤害字）、`11_render.js`（小怪血条去 fillText 016d2b3：纯 rect + 仅 hp<maxHp 且视口内才画 + 数字仅 elite/Boss；HUD 拆显 粒/字 计数与上限）、`05_particle.js`/`08_skill.js`/`13_editor.js` + 数值真理源（⑥冰冻重做 5777395：CD 自动索敌冰池 + 蒸汽齐爆同帧上限 `steamBurstCapPerFrame` 仅门控视觉 Bus.emit 伤害始终结算 + 屏震分档节流 T1 + 优先级细化 + 冰调参滑块；数值回写 §9）
+- **一句话**：b9 性能三连——①VFX 输出硬上限（优先级保死亡爆/伤害字，低优飘字先丢）；②小怪血条去 `fillText` 数字（纯 rect，仅 elite/Boss 显数字）；③⑥冰冻重做：trail→CD 自动索敌冰池 + 蒸汽齐爆同帧上限（只控视觉 emit，伤害恒结算）+ 屏震分档 + 冰调参滑块，数值回写 §9
+- **是否动 §9**：是（VFX 硬上限数、冰 CD/索敌、蒸汽齐爆上限、屏震档位、冰调参滑块均回写 §9）
+- **验收**：
+  - 满屏粒子/飘字不超硬上限；死亡爆/伤害字优先保留，低优飘字超限被丢
+  - 小怪血条无数字纯色条、仅受伤且在视口内画；elite/Boss 才显数字
+  - ⑥ 冰冻：CD 自动索敌冰池生效；蒸汽齐爆同帧上限只控视觉、伤害不漏结算
+  - 未动 `03_core.js`/`04_collision.js`；`02_config.js` 数值结构仅扩展（b9 上限 + 冰字段）
+
+---
+
+## 2026-07-14 · ④蒸汽状态引爆 + B-4 收尾建账 + 文档地图修正 + 真理源重命名
+
+- **改动文件**：`07_enemy.js`/`08_skill.js`（④蒸汽状态引爆 13c2e53：火墙扫到带冰敌 `e.slowT>0` 按敌 2.0s 冷却在该敌位置引爆蒸汽 AOE；移除全局 `timer.steam`；零新数值、不碰 core/collision/config/闪电；用户浏览器实测绿）、`CHANGELOG.md`/`docs/DEBT.md`/`05_particle.js`/`07_enemy.js`/`08_skill.js`/`11_render.js`/`13_editor.js`（B-4 收尾 e72f884：VFX 区分 + DOT 分源 + 电磁/闪电演出增强 + P1/P2 修复——即 07-13 CHANGELOG 已登记的 B-4 条目，此处仅补全建账不重复）、`AGENTS.md`/`docs/workflow.md`（文档地图路径修正 01a8e1b：根《GDD/数值真理源》→ `docs/`）、`03_core.js`（version 0.3-b9→0.3-b11，991e5ac）、数值真理源镜像文件重命名（49eb69c：前缀「数值真理源」→「此生为蛇」，hash 后缀不变）
+- **一句话**：④蒸汽状态引爆落地（火墙扫冰敌引爆蒸汽 AOE，实测绿）；B-4 收尾建账（与 07-13 CHANGELOG 已登记条目同源不重复）；文档地图路径修正；version bump；数值真理源文件重命名
+- **是否动 §9**：④ 否（零新数值，无需 §9 回写——早期计划"待 Notion 回写触发口径"预判已证伪）；其余为文档/版本/路径，不涉及平衡数值
+- **验收**：
+  - ④：火墙扫过被冰缓/冻的敌人时，按敌 2.0s 冷却在该敌位置引爆蒸汽 AOE；无全局 timer
+  - ④：零新数值、未碰 `03_core.js`/`04_collision.js`；用户浏览器实测已绿
+  - 文档地图路径修正生效（AGENTS 指向 `docs/` 下文件）；真理源重命名后链接可达
+  - `03_core.js` 仅 version 字符串变更
+
+---
+
 ## 2026-07-13 · feat(combo-vfx): combo视觉可见性+GM单combo预览+视觉身份统一(Commit B-4)
 
 - **改动文件**：`05_particle.js`（主：新增 `flashCores` 叠加闪核池 + `spawnFlashCore` + `drawOverlay`（绘于实体之上）；`fx:steamblast` 加实心白闪核+提亮蒸汽云+浅蓝冰晶碎屑；`fx:electroarc` 加蛇头紫辉光+节点放射紫电芒爆；`fx:burndart` 命中处加大加亮橙焰爆点；`SRC_STYLE` 修正：基础闪电 `lightning` 色板由紫 #c9a8ff 改蓝白 #9fd0ff（对齐 `fx:lightning` 电链色 LIGHTNING_COLOR），新增 `electro` 紫 #c9a8ff 独立来源标识（B-4 验收①a））、`11_render.js`（draw 实体绘制后调 `Particle.drawOverlay` 叠加闪核层）、`13_editor.js`（新增「单 Combo 视觉预览」分区：每 combo 一按钮，`previewCombo` 直接 `Bus.emit` 对应 fx: 事件+蛇头附近 `spawnDummy` 供链/镖瞄准，完全绕过 gameplay/冷却/敌人条件；`spawnDummiesNearHead` 排布 dummy）、`08_skill.js`（次：三 combo VFX 事件改名发射方联动——`fx:bolt→fx:burndart` / `fx:lightning→fx:electroarc` / `fx:blast→fx:steamblast`；`doLightningChain` 新增 `vfxEvent`/`srcTag` 形参，电磁连锁伤害走独立 `src='electro'` 来源标识，纯表现零 gameplay）、`03_core.js`（version 0.3-b10→0.3-b11）
