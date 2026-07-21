@@ -6,6 +6,19 @@
 
 
 
+## 2026-07-21 · fix(mobile): 修启动红错误报 + 竖屏选卡卡死 + 移动端 GM 按钮
+
+- **改动文件**：`index.html`（全局错误兜底：忽略跨域脱敏 `'Script error.'` 与资源加载失败 `e.target` 非 window 的情况，不再误弹红框；真实同域错误仍显示并附 `e.error.stack`）、`12_ui.js`（`isPortrait()` 改视口宽高比 `innerHeight > innerWidth` 判定，iOS standalone/横竖屏滞后更可靠；`showRotateChoice` 同时监听 `orientationchange`+`resize` 并加「仍用竖屏继续」兜底按钮，解决竖屏选卡卡死；`init` 内仅触屏设备显示「⚙ GM」按钮，经 `Bus('editor:toggle')` 开面板）、`13_editor.js`（监听 `Bus('editor:toggle')` 支持移动端按钮开 GM；面板 `z-index` 40→60 置于 `#ui-full`(50) 之上；头部加可点击 `×` 关闭，移动端无 `~` 键也能关）
+- **一句话**：修三处移动端问题——①桌面/iPhone 误显 `[启动错误] Script error.` 红框（实为浏览器扩展/跨域脱敏噪声，非本游戏错误）已抑制；②竖屏升级/事件选择从「卡死」改为可靠检测横屏+「竖屏继续」兜底；③移动端点「⚙ GM」即可开/关 GM 测试面板（替代桌面 `~` 键）。
+- **是否动 §9**：否（纯 UI/错误处理，无平衡数值）
+- **验收**：
+  - 桌面 Chrome / iPhone：不再误显 `[启动错误] Script error.`；若确有真实 JS 报错，仍会红框显示并带 stack（可开控制台看细节）
+  - iPhone 竖屏触发升级/事件：弹「请横屏」遮罩；旋转到横屏自动显示选项；或点「仍用竖屏继续」直接选（不卡死）
+  - 移动端点「⚙ GM」打开 GM 面板，点面板右上 `×` 关闭；桌面仍用 `~` 键
+  - 未动 `03_core.js`/`04_collision.js`/伤害管线；`02_config` 未改
+
+---
+
 ## 2026-07-21 · feat(mobile): 全屏(PWA+按钮)+角落HUD贴框+竖屏选卡强制横屏
 
 - **改动文件**：`index.html`（`<head>` 加 PWA meta：`apple-mobile-web-app-capable`/`mobile-web-app-capable`/`status-bar-style` + `<link rel="manifest">`；DOM 重构：`#stage` 包 canvas、`#ui-stage`（贴 canvas 角标层）、`#ui-full`（全屏遮罩层））、`manifest.webmanifest`（**新增** PWA 清单：`display:standalone`、`orientation:landscape`）、`11_render.js`（`resize()` 末尾同步 `#stage` 的 CSS 宽高 = canvas 显示尺寸，使角标层精确贴合游戏框）、`12_ui.js`（`init` 改双 root：角落 HUD `hud/pauseBtn/choiceBox/comboBanner/fullscreenBtn` → `#ui-stage`，遮罩 `choose/result/pauseOverlay/rotateChoice` → `#ui-full`；HUD/连击横幅 `white-space:nowrap` 防竖屏折行；新增「⛶全屏」按钮经 `Bus('ui:fullscreen_toggle')` 触发；升级三选一与事件选择在竖屏时盖「请横屏」遮罩，监听 `orientationchange` 转横屏后自动显示）、`14_main.js`（`Bus.on('ui:fullscreen_toggle')` → 安卓/桌面 `requestFullscreen`；iPhone 检测不支持则 `showFsToast` 提示「添加到主屏幕」）
