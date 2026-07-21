@@ -68,6 +68,7 @@
 	function rtGet(path) { return rtTuning.hasOwnProperty(path) ? rtTuning[path] : undefined }
 	function rtSet(path, val) { if (val == null) { delete rtTuning[path] } else { rtTuning[path] = val } }
 	function rtResetGroup() { for (var k = 0; k < TUNING_ARR.length; k++) { var a = TUNING_ARR[k], base = getPath(a.path); if (Array.isArray(base)) { for (var lv = 0; lv < a.levels; lv++) { delete rtTuning[a.path + '.' + lv] } } } for (var ks = 0; ks < TUNING_SCALAR.length; ks++) { delete rtTuning[TUNING_SCALAR[ks].path] } }   // 同时清冰系标量（减速跟随窗）运行时覆盖
+	Bus.on('perf:tier', function () { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } })   // 自适应分级：档位变化即时刷新 GM 面板读数
 	var TUNING_SLIDERS = []
 	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
 	var TUNING_SCALAR = [
@@ -198,6 +199,18 @@
 		// 冰系手感（冰区滞留 / 减速跟随窗）已统一收口到「实时标定（手感沙盒）」，GM 指令只保留即时动作指令，避免重复控制、归类更清晰
 		gm += '<div style="font:600 11px system-ui;opacity:.55;margin:6px 0 2px;border-top:1px dashed #2a3358;padding-top:6px">冰系手感滑条见「实时标定（手感沙盒）」</div>'
 		secs.push({ title: 'GM 指令', body: gm, open: false })
+		// —— 性能自适应（跨端 FPS 根治）：自动档位开关 + 强制固定档位（GM 调试；运行时即时）——
+		var pa = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">自动档位（按实时 FPS 升降，保可玩）：</div>'
+		pa += '<div style="display:flex;gap:6px;margin:4px 0"><button id="perf_auto_on" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">自动：开</button>'
+		pa += '<button id="perf_auto_off" style="flex:1;padding:8px;border:1px solid #ff6a6a;border-radius:6px;background:transparent;color:#ff6a6a;cursor:pointer;font:700 12px system-ui">自动：关</button></div>'
+		pa += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 2px">强制固定档位（关自动后生效）：</div>'
+		pa += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">'
+		pa += '<button id="perf_h" style="flex:1;padding:8px;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">HIGH</button>'
+		pa += '<button id="perf_m" style="flex:1;padding:8px;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">MED</button>'
+		pa += '<button id="perf_l" style="flex:1;padding:8px;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">LOW</button>'
+		pa += '<button id="perf_p" style="flex:1;padding:8px;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">POTATO</button></div>'
+		pa += '<div style="font:600 11px system-ui;opacity:.7;margin-top:4px">当前：<span id="perf_cur">—</span></div>'
+		secs.push({ title: '性能自适应（跨端 FPS）', body: pa, open: false })
 		// —— 性能诊断（b9 对照实验）：关白爆/关屏震 + 蒸汽上限（运行时即时，零 gameplay）——
 		var diag = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">对照实验开关（运行时即时，零 gameplay）：分离火焰掉帧主因</div>'
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t1" style="flex:1;padding:8px;border:1px solid #ff6a6a;border-radius:6px;background:transparent;color:#ff6a6a;cursor:pointer;font:700 12px system-ui">T1 关白爆overlay：关</button>'
@@ -393,6 +406,16 @@
 	if (t4) { t4.onclick = function () { diagIceFillOn = !diagIceFillOn; Editor.rtSet('PERF.suppressIceFill', diagIceFillOn ? 1 : 0); this.textContent = 'T4 冰池只描边：' + (diagIceFillOn ? '开' : '关'); this.style.color = diagIceFillOn ? '#7CFC00' : '#5fd0ff'; this.style.borderColor = diagIceFillOn ? '#7CFC00' : '#5fd0ff' } }   // b9-measure T4：冰池只描边不填充（零 gameplay）
 		var dh = panel.querySelector('#diag_hud')
 		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD：' + (diagHudOn ? '开' : '关') } }   // b9-diag：默认关，开=显示 FPS/粒子/数组计数/T1-T4 开关态 HUD（零 gameplay，美术复查用）
+		// 性能自适应：自动开关 + 强制固定档位（运行时即时，零 gameplay）
+		function updPerfCur() { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } }
+		if (panel.querySelector('#perf_auto_on')) { panel.querySelector('#perf_auto_on').onclick = function () { if (global.PerfTier) { global.PerfTier.setAuto(true); updPerfCur() } } }
+		if (panel.querySelector('#perf_auto_off')) { panel.querySelector('#perf_auto_off').onclick = function () { if (global.PerfTier) { global.PerfTier.setAuto(false); updPerfCur() } } }
+		var perfForce = function (n) { if (global.PerfTier) { global.PerfTier.forceTier(n); updPerfCur() } }
+		if (panel.querySelector('#perf_h')) { panel.querySelector('#perf_h').onclick = function () { perfForce('HIGH') } }
+		if (panel.querySelector('#perf_m')) { panel.querySelector('#perf_m').onclick = function () { perfForce('MED') } }
+		if (panel.querySelector('#perf_l')) { panel.querySelector('#perf_l').onclick = function () { perfForce('LOW') } }
+		if (panel.querySelector('#perf_p')) { panel.querySelector('#perf_p').onclick = function () { perfForce('POTATO') } }
+		updPerfCur()
 		// 手动输入
 		panel.querySelector('#mi_apply').onclick = function () {
 			var p = panel.querySelector('#mi_path').value.trim(), msg = panel.querySelector('#mi_msg')

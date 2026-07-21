@@ -15,25 +15,20 @@
 		return fb
 	}
 	function getDiag() {
-		var r = Registry && Registry.get('render')
-		var d = (r && r.diag) ? r.diag() : { fps: 0, cpuMs: 0, frameMs: 0 }
+	var r = Registry && Registry.get('render')
+	var d = (r && r.diag) ? r.diag() : { fps: 0, cpuMs: 0, frameMs: 0, overdraw: 0 }
+	// overdraw 估算(px²)：单一真相源在 render.diag().overdraw（draw 每帧算好，tick 关火判定同源共用），此处直接读取，不再重复计算（修「单位错配/重复估算」）；画布 1600x900=1440k px²，≥~320k 即显著
+	var ov = (d && typeof d.overdraw === 'number') ? d.overdraw : 0
 	var p = Registry && Registry.get('particle')
-	// overdraw 估算（px²）：叠加层半透明填充总面，直接反映 GPU 填充率负载（诊断用，零 gameplay；画布 1600x900=1440k px²，overdraw≥~300k 即显著）
-	var ov = 0
-	if (p) {
-		var _ps = p.particles, _fc = p.flashCores, _bl = p.blasts, _bm = p.beams, _i, _a, _r
-		for (_i = 0; _i < _ps.length; _i++) { _a = _ps[_i].life / _ps[_i].maxLife; if (_a < 0) _a = 0; _r = _ps[_i].size * _a; ov += Math.PI * _r * _r }                 // Σ πr²(粒子)
-		for (_i = 0; _i < _fc.length; _i++) { _a = _fc[_i].life / _fc[_i].maxLife; if (_a < 0) _a = 0; _r = _fc[_i].radius * (1.25 - 0.25 * _a); ov += Math.PI * _r * _r } // Σ πr²(闪核/白爆，最大项)
-		for (_i = 0; _i < _bl.length; _i++) { _a = _bl[_i].life / _bl[_i].maxLife; if (_a < 0) _a = 0; _r = _bl[_i].radius * (1 - _a); ov += 2 * Math.PI * _r * (_bl[_i].ringWidth || 4) } // 环带面积≈2πr·宽
-		for (_i = 0; _i < _bm.length; _i++) { var _dx = _bm[_i].x2 - _bm[_i].x1, _dy = _bm[_i].y2 - _bm[_i].y1; ov += Math.sqrt(_dx * _dx + _dy * _dy) * (_bm[_i].width || 2) * 3 } // 束长×宽×3(双描边近似)
-	}
 	var en = Registry && Registry.get('enemy')
 		var sk = Registry && Registry.get('skill')
 		var G = gs()
 		var cv = (global.document && global.document.getElementById('game-canvas'))
+		var pt = global.PerfTier
+		var fireSupp = (pt && pt.suppressFire) ? true : false   // 读自动关火态(perfFB 回退源与 render 一致)，日志可观测是否真关火
 		var owned = (sk && sk.owned) ? sk.owned() : null
-		var embersOn = (owned && owned.fire > 0) ? 'on' : 'off'
-		var flameOn = rtVal('PERF.suppressFireVisual', 0) > 0 ? 'off(T3)' : 'on'
+		var embersOn = fireSupp ? 'off(关火)' : (owned && owned.fire > 0 ? 'on' : 'off')   // 余烬指标反映真实抑制态（非仅"是否拥有火技能"）
+		var flameOn = rtVal('PERF.suppressFireVisual', fireSupp ? 1 : 0) > 0 ? 'off(T3)' : 'on'
 		// 可见敌数（镜头视口内，含 20px 余量；与 render.inView 同口径）：掉帧归因此值可判断是否"同屏实体过多"
 		var vis = 0
 		if (r && r.camera && en && en.list) {
@@ -41,7 +36,7 @@
 			for (var i = 0; i < en.list.length; i++) { var e = en.list[i]; if (!e.active) { continue }; if (e.x > cam.x - hw - m && e.x < cam.x + hw + m && e.y > cam.y - hh - m && e.y < cam.y + hh + m) { vis++ } }
 		}
 		return {
-			fps: d.fps, cpuMs: d.cpuMs, frameMs: d.frameMs,
+			fps: d.fps, fpsMin: (d && typeof d.fpsMin === 'number') ? d.fpsMin : 0, cpuMs: d.cpuMs, frameMs: d.frameMs,
 			presentGap: d.fps > 0 ? Math.max(0, 1000 / d.fps - d.cpuMs) : 0,   // 呈现gap=帧间隔(1000/fps)−主线程JS(cpuMs)；高 FPS≈vsync 空闲，掉帧时>0=JS 外等待(环境)，坐实"非代码"掉帧
 			particles: (p && p.particles) ? p.particles.length : 0,
 			texts: (p && p.texts) ? p.texts.length : 0,
@@ -52,12 +47,14 @@
 			flame: flameOn,
 			flash: (p && p.flashCores) ? p.flashCores.length : 0,   // b9+diag：白爆/闪核活跃数（瞬时 overdraw 尖峰主因）
 			t1: rtVal('PERF.suppressWhiteBurst', 0) > 0 ? '关' : '开',   // T1 关白爆 overlay 开关态
-			t3: rtVal('PERF.suppressFireVisual', 0) > 0 ? '关' : '开',   // T3 关火焰系视觉开关态
+			t3: rtVal('PERF.suppressFireVisual', fireSupp ? 1 : 0) > 0 ? '关' : '开',   // T3 关火焰系视觉开关态（回退源=自动关火态 fireSupp，与 render 一致）
 			overlay: (d && d.overlay) ? 1 : 0,   // 受击全屏红 vignette 本帧激活（全屏 overdraw 尖峰）
 			overdraw: ov,   // Σ πr² 估算（px²）；画布 1600x900=1440k，≥~300k 即显著
 			drawCalls: (d && d.dc) ? (d.dc.fill + d.dc.stroke + d.dc.fillText + d.dc.drawImage + d.dc.fillRect) : 0,   // b9+diag：本帧绘制调用总数（fill/stroke/fillText/drawImage/fillRect）；GPU 前端开销≈调用数，非填充面积
 			dcDetail: (d && d.dc) ? (d.dc.fill + '/' + d.dc.stroke + '/' + d.dc.fillText + '/' + d.dc.drawImage + '/' + d.dc.fillRect) : '-',   // 各类型明细 fill/stroke/fillText/drawImage/fillRect
 			segments: G ? G.segments : 0,
+			tier: (global.PerfTier ? global.PerfTier.tier : '-'),
+			auto: (global.PerfTier ? global.PerfTier.auto : true),
 			canvas: cv ? (cv.width + 'x' + cv.height) : '-'
 		}
 	}
@@ -68,11 +65,14 @@
 	}
 	function sample() {
 		var s = getDiag()
-		push('FPS ' + s.fps + ' | CPU ' + s.cpuMs.toFixed(1) + 'ms | 帧 ' + s.frameMs.toFixed(1) + 'ms | 外部 ' + s.presentGap.toFixed(1) + 'ms | 绘制 ' + s.drawCalls + '(' + s.dcDetail + ') | 粒子 ' + s.particles + '/' + s.pmax + ' | 白爆 ' + s.flash + ' | 全屏 ' + s.overlay + ' | 飘字 ' + s.texts + ' | 敌 ' + s.enemies + '(可见 ' + s.visEnemies + ') | 余烬 ' + s.embers + ' | 火焰 ' + s.flame + ' | T1 ' + s.t1 + ' | T3 ' + s.t3 + ' | overdraw≈' + (s.overdraw / 1000 | 0) + 'k | 节 ' + s.segments + ' | 画布 ' + s.canvas)
-		if (s.fps > 0 && s.fps < FPS_DROP && !dropping) { dropping = true; push('⚠ FPS 掉至 ' + s.fps + '（敌 ' + s.enemies + ' 可见 ' + s.visEnemies + ' 粒子 ' + s.particles + '/' + s.pmax + ' 白爆 ' + s.flash + ' 全屏 ' + s.overlay + ' 绘制 ' + s.drawCalls + ' 余烬 ' + s.embers + ' 火焰 ' + s.flame + ' overdraw≈' + (s.overdraw / 1000 | 0) + 'k CPU ' + s.cpuMs.toFixed(1) + 'ms）') }
+		push('FPS ' + s.fps + '/min' + s.fpsMin + ' | CPU ' + s.cpuMs.toFixed(1) + 'ms | 帧 ' + s.frameMs.toFixed(1) + 'ms | 外部 ' + s.presentGap.toFixed(1) + 'ms | 绘制 ' + s.drawCalls + '(' + s.dcDetail + ') | 粒子 ' + s.particles + '/' + s.pmax + ' | 白爆 ' + s.flash + ' | 全屏 ' + s.overlay + ' | 飘字 ' + s.texts + ' | 敌 ' + s.enemies + '(可见 ' + s.visEnemies + ') | 余烬 ' + s.embers + ' | 火焰 ' + s.flame + ' | T1 ' + s.t1 + ' | T3 ' + s.t3 + ' | 档 ' + s.tier + (s.auto ? '自动' : '固定') + ' | overdraw≈' + (s.overdraw / 1000 | 0) + 'k | 节 ' + s.segments + ' | 画布 ' + s.canvas)
+		if (s.fps > 0 && s.fps < FPS_DROP && !dropping) { dropping = true; push('⚠ FPS 掉至 ' + s.fps + '(瞬时 min ' + s.fpsMin + ')（敌 ' + s.enemies + ' 可见 ' + s.visEnemies + ' 粒子 ' + s.particles + '/' + s.pmax + ' 白爆 ' + s.flash + ' 全屏 ' + s.overlay + ' 绘制 ' + s.drawCalls + ' 余烬 ' + s.embers + ' 火焰 ' + s.flame + ' overdraw≈' + (s.overdraw / 1000 | 0) + 'k CPU ' + s.cpuMs.toFixed(1) + 'ms）') }
 		else if (dropping && s.fps >= FPS_RECOVER) { dropping = false; push('✓ FPS 恢复至 ' + s.fps) }
 		if (lastEnemies >= 0 && Math.abs(s.enemies - lastEnemies) >= ENEMY_DELTA) { push('➤ 敌数 ' + lastEnemies + ' → ' + s.enemies) }
 		lastEnemies = s.enemies
+		// 采样后清零窗口内瞬时最低 FPS（与 render.resetFpsMin 配对），使下一窗口从干净起点重新计 min
+		var r = Registry && Registry.get('render')
+		if (r && r.resetFpsMin) { r.resetFpsMin() }
 	}
 	function legacyCopy(txt) {
 		try {

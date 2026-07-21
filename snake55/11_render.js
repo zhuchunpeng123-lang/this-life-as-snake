@@ -28,10 +28,11 @@
 	var _lastSteamCount = 0    // HUD：上帧蒸汽齐爆数
 	var _frameMs = 0           // HUD：本帧绘制耗时(ms)
 	var _cpuMs = 0            // HUD：整帧主线程 JS 耗时(ms)，由 main 经 setCpuMs 写入（含 step+draw+ui，不含 GPU 合成）
-	var _fpsLast = 0, _fpsAcc = 0, _fpsFrames = 0, _fps = 0
+	var _fpsLast = 0, _fpsAcc = 0, _fpsFrames = 0, _fps = 0, _fpsMin = Infinity   // b9+diag：_fpsMin=当前采样窗口内瞬时最低 FPS（防短暂掉帧被平均吃掉，漏采见 2026-07-21 对话）
 	// b9+diag：绘制调用计数器（包 ctx 方法自增；每帧 draw 首清零、末快照→diag 暴露；坐实"绘制调用数/状态切换"是否 GPU 瓶颈，零 gameplay）
 	var _dc = { fill: 0, stroke: 0, fillText: 0, drawImage: 0, fillRect: 0, beginPath: 0, arc: 0 }
 	var _lastDc = { fill: 0, stroke: 0, fillText: 0, drawImage: 0, fillRect: 0, beginPath: 0, arc: 0 }
+	var _lastOv = 0           // overdraw 估算(px²)：统一由 render 计算，作为唯一真相源，profiler(tick 关火判定) 与 日志 共用（零重复计算/单位错配；画布 1600x900=1440k px²，≥~320k 即显著）
 	function wrapDc(c) {
 		var names = ['fill', 'stroke', 'fillText', 'drawImage', 'fillRect', 'beginPath', 'arc']
 		for (var _w = 0; _w < names.length; _w++) { (function (nm) { var o = c[nm]; if (typeof o === 'function') { c[nm] = function () { _dc[nm]++; return o.apply(c, arguments) } } })(names[_w]) }
@@ -41,6 +42,7 @@
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
 	}
+	function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
 
 	// 任务2：屏震分档节流（真源 §2.2.1「严禁单一强度轰炸·防脱敏」）
 	//   rank: 1=T1 light / 2=T2 process / 3=T3 crit·death；gate 来自 SHK.gateSec
@@ -60,7 +62,7 @@
 		if (!(scale > 0)) { return }   // 窗口极小/最小化瞬间 scale 可能为 0 → 跳过，避免 backing 0 尺寸退化（恢复后真实 resize 重算；治"缩小再打开"偶发 0 尺寸帧）
 		dpr = dprMon * scale   // 合成缩放：逻辑坐标 → 设备像素（HUD/世界文字 1:1 清晰，不再 2x 上采样糊字）
 		// 🟡 性能护栏：backing 宽封顶 MAX_BACK_W，避免大屏/retina 下 dpr 乘积失控→每帧光栅(∝分辨率²)拖帧（fire 墙/冰池/粒子每帧绘制成本随 backing 放大）
-		var MAX_BACK_W = RT('RENDER.maxBackW', 1600)   // GM 可热调 backing 宽上限（默认 1600：上一轮 2200 在你设备仍卡→下调降填充成本；滑条 1000–2400 自定清晰/帧率权衡，纯渲染表现）
+		var MAX_BACK_W = RT('RENDER.maxBackW', perfFB('maxBackW', 1600))   // 自适应分级：回退源=PerfTier.maxBackW（HIGH 默认 1600）；GM 经 editor.rtSet 仍优先
 		if (GAME.logicalWidth * dpr > MAX_BACK_W) { dpr = MAX_BACK_W / GAME.logicalWidth }
 		canvas.width = Math.round(GAME.logicalWidth * dpr)   // backing 宽 ≤ MAX_BACK_W（= CSS 显示尺寸 × 设备像素比，仍清晰，但封顶控 fill 成本）
 		canvas.height = Math.round(GAME.logicalHeight * dpr)
@@ -74,7 +76,7 @@
 		var tx = h.x + Math.cos(h.angle) * CAM.lookAhead, ty = h.y + Math.sin(h.angle) * CAM.lookAhead
 		var dx = tx - cam.x, dy = ty - cam.y, d = Math.sqrt(dx * dx + dy * dy)
 		if (d > CAM.deadZone) { cam.x += dx * CAM.followLerp; cam.y += dy * CAM.followLerp }
-	var ws = M.clamp(RT('RENDER.worldScale', 0.8), 0.5, 1.0)
+	var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0)
 	var halfW = GAME.logicalWidth / 2 / ws, halfH = GAME.logicalHeight / 2 / ws   // 缩放后可见半幅=半宽/worldScale（ws<1 时看得更广→clamp 边界更宽，避免视图越出世界）；ws=1 退化为原值
 	cam.x = M.clamp(cam.x, halfW, GAME.worldWidth - halfW)
 	cam.y = M.clamp(cam.y, halfH, GAME.worldHeight - halfH)
@@ -111,7 +113,7 @@
 	}
 	function drawEnemies() {
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
-		var T3 = RT('PERF.suppressFireVisual', 0) > 0   // b9-diag T3：关火焰系 per-enemy 视觉（点火演出+火焰光环+蓝环），零 gameplay
+		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉；GM 经 editor.rtSet 仍优先
 		var l = En.list
 		// 第一遍：普通本体按色批量 fill（同色假人 → 1 次 fill）；远敌不再视口剔除 → 回视/冲堆不 pop-in（灭"加载感"）；GPU 自动裁剪视口外几何，1 path 成本极低
 		var byColor = {}
@@ -209,8 +211,8 @@
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
-		var T3 = RT('PERF.suppressFireVisual', 0) > 0   // b9-diag T3：关火焰系 per-enemy 视觉（火焰光环），零 gameplay
-		var T4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure T4：冰池只描边不填充（零 gameplay，验证 fill-rate/overdraw 是否主因）
+		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉（含蛇身火墙）；GM 经 editor.rtSet 仍优先
+		var T4 = RT('PERF.suppressIceFill', perfFB('suppressIceFill', false) ? 1 : 0) > 0   // 自适应分级：POTATO 档冰池只描边；GM 经 editor.rtSet 仍优先
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		var segs = s.segments || []
@@ -278,7 +280,13 @@ function draw() {
 	_dc.fill = 0; _dc.stroke = 0; _dc.fillText = 0; _dc.drawImage = 0; _dc.fillRect = 0; _dc.beginPath = 0; _dc.arc = 0   // b9+diag：绘制调用计数清零（每帧）
 	var tFrame0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 	var tnow = tFrame0
-	if (_fpsLast) { _fpsAcc += (tnow - _fpsLast) / 1000; _fpsFrames++ }
+	if (_fpsLast) {
+		var _dt = tnow - _fpsLast
+		_fpsAcc += _dt / 1000
+		_fpsFrames++
+		// 瞬时 FPS = 1000/帧间隔；_dt>0 且 <1000ms 才计入（跳过 tab 切后台/暂停造成的伪长帧，避免把"切窗口"误记成 gameplay 掉帧）
+		if (_dt > 0 && _dt < 1000) { var _inst = 1000 / _dt; if (_inst < _fpsMin) { _fpsMin = _inst } }
+	}
 	_fpsLast = tnow
 	if (_fpsAcc >= 0.5) { _fps = Math.round(_fpsFrames / _fpsAcc); _fpsAcc = 0; _fpsFrames = 0 }
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -292,13 +300,13 @@ function draw() {
 	if (shakeFrames > 0) { mag = Math.max(mag, shakeMag); shakeFrames--; if (shakeFrames <= 0) { shakeMag = 0 } else { shakeMag *= 0.85 } }
 	var traumaMag = trauma * SHK.maxComposite   // ④-B：trauma 通道折算成屏震幅度（≤maxComposite）
 	if (traumaMag > mag) { mag = traumaMag }
-	if (RT('PERF.suppressShake', 0) > 0) { mag = 0 }   // b9-diag T2：关屏震（仅视觉偏移归零，零 gameplay）
+	if (RT('PERF.suppressShake', perfFB('suppressShake', false) ? 1 : 0) > 0) { mag = 0 }   // 自适应分级：POTATO 档关屏震；GM 经 editor.rtSet 仍优先
 	trauma = Math.max(0, trauma - SHK.steam.decayPerSec / GAME.fps)   // ④-B：trauma 时间窗衰减，多次引爆不线性叠加（N爆≠N震）
 	var ox = 0, oy = 0
 	if (mag > 0) { ox = M.rand(-mag, mag); oy = M.rand(-mag, mag) }
 	ctx.save()
 	ctx.translate(GAME.logicalWidth / 2 + ox, GAME.logicalHeight / 2 + oy)   // 屏幕中心为锚（shake 在屏幕空间，不随缩放变）
-	var ws = M.clamp(RT('RENDER.worldScale', 0.8), 0.5, 1.0); worldScale = ws
+	var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0); worldScale = ws
 	ctx.scale(ws, ws)                       // ① 先缩放（围绕屏幕中心）：worldScale 仅改显示尺寸，不掺入相机平移
 	ctx.translate(-cam.x, -cam.y)           // ② 再按世界坐标平移相机→cam=蛇世界坐标时蛇恒居屏幕中心（修复 round6 误撤后「缩放掺进平移→蛇不居中/视图不跟随」）；指针反算/ inView 已按此顺序对齐
 	drawBounds()
@@ -310,9 +318,21 @@ function draw() {
 	drawHurtVignette()
 	drawBossWarn()
 	drawBossHpBar()
+	drawPerfBadge()
 	drawDebugHud()
 	if (p && p.DBG) { p.DBG.ignite = 0; p.DBG.fireDot = 0; p.DBG.flashDrawn = 0; p.DBG.steamBlasts = 0; p.DBG.steamAoeCmp = 0 }   // b9-diag/measure：计数器按帧归零（HUD 已读本帧值）
 	_lastDc.fill = _dc.fill; _lastDc.stroke = _dc.stroke; _lastDc.fillText = _dc.fillText; _lastDc.drawImage = _dc.drawImage; _lastDc.fillRect = _dc.fillRect; _lastDc.beginPath = _dc.beginPath; _lastDc.arc = _dc.arc   // b9+diag：快照本帧绘制调用数供 profiler
+	// overdraw 估算(px²)：叠加层半透明填充总面，直接反映 GPU 填充率负载（单一真相源；profiler 与 tick 关火判定共用，避免单位错配）。火墙已优化为单 path+2 stroke（不贡献 fill），故真实瓶颈在粒子/白爆/爆环/光束
+	var ovk = 0
+	var pp = Registry.get('particle')
+	if (pp) {
+		var _ps = pp.particles, _fc = pp.flashCores, _bl = pp.blasts, _bm = pp.beams, _i, _a, _r
+		for (_i = 0; _i < _ps.length; _i++) { _a = _ps[_i].life / _ps[_i].maxLife; if (_a < 0) _a = 0; _r = _ps[_i].size * _a; ovk += Math.PI * _r * _r }                 // Σ πr²(粒子)
+		for (_i = 0; _i < _fc.length; _i++) { _a = _fc[_i].life / _fc[_i].maxLife; if (_a < 0) _a = 0; _r = _fc[_i].radius * (1.25 - 0.25 * _a); ovk += Math.PI * _r * _r } // Σ πr²(闪核/白爆，最大项)
+		for (_i = 0; _i < _bl.length; _i++) { _a = _bl[_i].life / _bl[_i].maxLife; if (_a < 0) _a = 0; _r = _bl[_i].radius * (1 - _a); ovk += 2 * Math.PI * _r * (_bl[_i].ringWidth || 4) } // 环带面积≈2πr·宽
+		for (_i = 0; _i < _bm.length; _i++) { var _dx = _bm[_i].x2 - _bm[_i].x1, _dy = _bm[_i].y2 - _bm[_i].y1; ovk += Math.sqrt(_dx * _dx + _dy * _dy) * (_bm[_i].width || 2) * 3 } // 束长×宽×3(双描边近似)
+	}
+	_lastOv = ovk
 	_frameMs = ((global.performance && global.performance.now) ? global.performance.now() : Date.now()) - tFrame0
 }
 	function drawBossHpBar() {                                       // Boss 屏幕顶部大血条：条 + 血量数值 + 阶段/无敌提示（无敌期说明伤害数字为何不跳）
@@ -331,15 +351,30 @@ function draw() {
 		ctx.fillText('BOSS  ' + Math.ceil(boss.hp) + ' / ' + boss.maxHp + '  (阶段 ' + boss.phase + ')' + inv, GAME.logicalWidth / 2, y + 11)
 		ctx.restore()
 	}
+	var _vignetteGrad = null   // 受击 vignette 径向渐变缓存：几何仅依赖逻辑分辨率(恒定)，建一次复用，免每帧 createRadialGradient 分配
+	function getVignetteGrad() {
+		if (_vignetteGrad) { return _vignetteGrad }
+		var iw = GAME.logicalWidth, ih = GAME.logicalHeight
+		var g = ctx.createRadialGradient(iw / 2, ih / 2, Math.min(iw, ih) * 0.3, iw / 2, ih / 2, Math.max(iw, ih) * 0.65)
+		g.addColorStop(0, 'rgba(255,30,60,0)')
+		g.addColorStop(1, 'rgba(255,30,60,1)')   // 边缘全不透明，运行时经 globalAlpha 调制峰值(≤0.5)
+		_vignetteGrad = g
+		return g
+	}
 	function drawHurtVignette() {                                    // 受击全屏红闪 vignette（屏幕空间，叠在实体之上）
 		if (GS.timeSec >= hurtVignetteUntil) { return }
 		var remain = hurtVignetteUntil - GS.timeSec
 		var a = Math.min(1, remain / HURT_VIGNETTE_SEC) * 0.5       // 最大 0.5 透明度，避免过曝
 		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-		var g = ctx.createRadialGradient(GAME.logicalWidth / 2, GAME.logicalHeight / 2, Math.min(GAME.logicalWidth, GAME.logicalHeight) * 0.3, GAME.logicalWidth / 2, GAME.logicalHeight / 2, Math.max(GAME.logicalWidth, GAME.logicalHeight) * 0.65)
-		g.addColorStop(0, 'rgba(255,30,60,0)')
-		g.addColorStop(1, 'rgba(255,30,60,' + a.toFixed(2) + ')')
-		ctx.fillStyle = g; ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+		if (global.PerfTier && global.PerfTier.simpleVignette) {    // 自适应分级 POTATO：纯色块替代每帧 createRadialGradient，省分配（零 gameplay）
+			ctx.fillStyle = 'rgba(255,30,60,' + (a * 0.6).toFixed(2) + ')'
+			ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+		} else {
+			ctx.globalAlpha = a   // 复用缓存渐变，经 globalAlpha 调制峰值透明度(≤0.5)，免每帧分配
+			ctx.fillStyle = getVignetteGrad()
+			ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+			ctx.globalAlpha = 1
+		}
 		ctx.restore()
 	}
 	function drawBossWarn() {
@@ -378,8 +413,8 @@ function drawDebugHud() {
 	var ig = pa && pa.DBG ? pa.DBG.ignite : 0              // 灼烧 ignite 数
 	var fd = pa && pa.DBG ? pa.DBG.fireDot : 0             // 火墙 DOT 命中数
 	var ov = (GS.timeSec < hurtVignetteUntil) ? 1 : 0      // 全屏 overlay（受击红 vignette）本帧 draw 数
-	var pcMax = RT('PERF.maxParticles', CONFIG.PERF.maxParticles)
-	var tcMax = RT('PERF.maxTexts', CONFIG.PERF.maxTexts)
+	var pcMax = RT('PERF.maxParticles', perfFB('maxParticles', CONFIG.PERF.maxParticles))
+	var tcMax = RT('PERF.maxTexts', perfFB('maxTexts', CONFIG.PERF.maxTexts))
 	var gap = _fps > 0 ? Math.max(0, 1000 / _fps - _cpuMs) : 0   // 呈现gap=实际帧间隔(1000/fps)−主线程JS(cpuMs)；高 FPS(达刷新率上限)时≈vsync 空闲，掉帧时>0 即 JS 之外的等待(GPU 呈现/合成器/GC/系统调度)，坐实"非代码"掉帧
 	ctx.save()
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -387,10 +422,10 @@ function drawDebugHud() {
 	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
 	ctx.font = '700 13px monospace'
 	ctx.textAlign = 'left'
-	ctx.fillText('FPS ' + _fps + '  CPU ' + _cpuMs.toFixed(1) + 'ms' + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  外部 ' + gap.toFixed(1) + 'ms' + '  画布 ' + canvas.width + 'x' + canvas.height + '  敌 ' + en + '  节 ' + GS.segments + '  p ' + pc + '/' + pcMax + '  t ' + tc + '/' + tcMax, 8, 16)
+	ctx.fillText('FPS ' + _fps + ' (min ' + (_fpsMin === Infinity ? '-' : Math.round(_fpsMin)) + ')  CPU ' + _cpuMs.toFixed(1) + 'ms' + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  外部 ' + gap.toFixed(1) + 'ms' + '  画布 ' + canvas.width + 'x' + canvas.height + '  敌 ' + en + '  节 ' + GS.segments + '  p ' + pc + '/' + pcMax + '  t ' + tc + '/' + tcMax, 8, 16)
 	ctx.fillStyle = (fc > pcMax * 0.3) ? '#ff8c5b' : '#fff'   // 白爆偏多时高亮告警
 	ctx.fillText('蒸汽(VFX) ' + _lastSteamCount + '  引爆(真) ' + (pa && pa.DBG ? pa.DBG.steamBlasts : 0) + '  AOE比较 ' + (pa && pa.DBG ? pa.DBG.steamAoeCmp : 0) + '  白爆(闪核) ' + fc + '  灼烧ignite ' + ig + '  火DOT ' + fd + '  全屏overlay ' + ov, 8, 34)
-	var t1 = RT('PERF.suppressWhiteBurst', 0) > 0, t2 = RT('PERF.suppressShake', 0) > 0, t3 = RT('PERF.suppressFireVisual', 0) > 0, t4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure：T4 冰池只描边开关态（录屏可见，零 gameplay）
+	var t1 = RT('PERF.suppressWhiteBurst', perfFB('suppressWhiteBurst', false) ? 1 : 0) > 0, t2 = RT('PERF.suppressShake', 0) > 0, t3 = RT('PERF.suppressFireVisual', 0) > 0, t4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure：T1 白爆抑制开关态（录屏可见，零 gameplay；回退源=PerfTier.suppressWhiteBurst）
 	ctx.fillStyle = '#9fe'
 	ctx.fillText('T1白爆:' + (t1 ? '关' : '开') + '  T2震:' + (t2 ? '关' : '开') + '  T3火视:' + (t3 ? '关' : '开') + '  T4冰描:' + (t4 ? '关' : '开'), 8, 52)
 	ctx.fillStyle = '#9fe'   // b9-measure：6 数组活跃数拆行（看哪个飙到上千）
@@ -409,6 +444,20 @@ function drawDebugHud() {
 
 	// —— 屏震四档统一（单一入口 addTrauma；rank:1=T1轻/2=T2中/3=T3强，gating 见 addTrauma）——
 	// T0 不震：撞墙滑行（反馈走刮擦火花）/ 普通命中 / 暴击 / 电磁·闪电每次命中（避免 N 敌=N 震）
+	// —— 自适应性能分级：HUD 角标显示当前档位 + 换挡事件（不刷屏，仅一行，换挡后短暂高亮原因）——
+	var _tierName = 'HIGH', _tierFlashUntil = 0, _tierReason = ''
+	Bus.on('perf:tier', function (d) { if (!d) { return } _tierName = d.tier || _tierName; _tierFlashUntil = GS.timeSec + 2.5; _tierReason = d.reason || '' })
+	function drawPerfBadge() {
+		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+		ctx.font = '600 11px monospace'; ctx.textAlign = 'right'
+		ctx.fillStyle = 'rgba(159,223,255,0.7)'
+		ctx.fillText('画质 ' + _tierName, GAME.logicalWidth - 8, GAME.logicalHeight - 8)
+		if (GS.timeSec < _tierFlashUntil && _tierReason) {
+			ctx.fillStyle = 'rgba(255,209,102,0.9)'
+			ctx.fillText('→ ' + _tierName + '（' + _tierReason + '）', GAME.logicalWidth - 8, GAME.logicalHeight - 22)
+		}
+		ctx.restore()
+	}
 	Bus.on('snake:hurt', function () { addTrauma(3, SHK.death); hurtVignetteUntil = GS.timeSec + HURT_VIGNETTE_SEC })   // 掉 coreHp → T3 强震 + 红闪
 	Bus.on('snake:dead', function () { addTrauma(3, SHK.death) })   // game over → T3
 	Bus.on('enemy:phase', function () { addTrauma(3, SHK.crit) })   // Boss 换阶段 → T3
@@ -422,7 +471,7 @@ function drawDebugHud() {
 	})
 	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零
 
-	var Render = { init: init, resize: resize, draw: draw, camera: cam, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, diag: function () { return { fps: _fps, cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc } } }   // setCpuMs：main 每帧写入整帧主线程耗时；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因）；getWorldScale：main 指针反算还原视图缩放
+	var Render = { init: init, resize: resize, draw: draw, camera: cam, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
 	Registry.register('render', Render)
 	Log.info('render 就绪：镜头跟随 + 世界绘制 + 四档屏震')
 
@@ -432,5 +481,6 @@ function drawDebugHud() {
 	// 2026-07-20 · 性能根治第六轮(还原) · 回退第五轮：火墙软带回 fr*2/0.30(修"蛇身细线")；drawEnemies 复用桶还原 byColor；HUD 去「非JS」指标；并移除视图缩放 worldScale=0.8(还原 commit 1:1 原画面，相机清晰跟随蛇身、可见敌减少→填充率下降治偶发掉帧)；余烬门控(round6 FPS 主修复)保留；不动 core/collision/§9/伤害管线
 	// 2026-07-20 · 视图缩放恢复 · 重新应用 worldScale=0.8 纯视觉缩放（draw 内 ctx.scale(ws,ws) + GM「视图缩放」滑条 + 指针反算除 worldScale + inView 已含 worldScale）；修复 round6 误撤导致的蛇/怪变大变糙；FPS 已证为电池能效节流(非填充率)，0.8 反而降 36% 像素量有益无碍；不动 core/collision/§9/伤害管线/蛇画法
 	// 2026-07-20 · 视图缩放相机修复 · 变换顺序由「translate(-cam)→scale」改为「scale→translate(-cam)」（scale 在内层围绕屏幕中心）：旧序使 worldScale 掺入相机平移→蛇不居中、视图不紧跟随（下移时蛇被顶到屏幕顶）；新序 cam=蛇世界坐标即蛇恒居中心，且与 pointermove 反除公式、inView(ws 反算半幅) 完全一致；updateCamera clamp 半幅同步改 /ws；ws=1 退化为原行为零回归
+	// 2026-07-21 · overdraw 真相源 · draw() 末尾统一估算 overdraw(px²) 存 _lastOv，diag() 暴露 overdraw 字段；原 profiler 自行重算 → 改为共用此唯一真相源，修复「tick 误读 dc.fill 调用次数(量级200~400)当 overdraw(px²)」的单位错配 bug（火被同屏实体多误关且永久卡死）；火墙已优化为单 path+2 stroke 不贡献 fill，真实瓶颈在粒子/白爆/爆环/光束，overdraw 语义与之对齐；不动 core/collision/§9/伤害管线
 
 })(typeof window !== 'undefined' ? window : this)

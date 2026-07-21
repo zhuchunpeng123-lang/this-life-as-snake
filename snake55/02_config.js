@@ -74,7 +74,30 @@
 			maxParticles: 240,          // 🟡 全局粒子活跃上限（门控所有进池写入，含 fx:steamblast 直 push 旁路，否则齐爆打爆池）；350→240：火墙 DOT 粒子已停喷（见 05_particle），给余量，HUD「粒子」实测可调；候选 220/240/300，RT 热调
 			maxTexts: 48,              // 🟡 全局飘字活跃上限（门控最贵的 fillText 飘字）；候选 40/48/60，RT 热调
 			spawnBudgetPerFrame: 120,  // 🟡 每帧 VFX 生成预算（削平齐爆单帧尖峰，覆盖 burst/text/blast/beam/flash/dart）；候选 100/120/150，RT 热调
-			debugHud: false            // b9-diag：性能诊断 HUD（FPS/粒子/数组计数/T1-T4 开关态）默认关闭；GM 面板「性能HUD」一键开（仅 dev 用，零 gameplay）
+			debugHud: false,           // b9-diag：性能诊断 HUD（FPS/粒子/数组计数/T1-T4 开关态）默认关闭；GM 面板「性能HUD」一键开（仅 dev 用，零 gameplay）
+			// —— 自适应性能分级（跨端 FPS 根治）· 纯渲染/表现护栏，非 §9 平衡值；数值集中此处，~ 调参器/后续可热改 ——
+			autoScale: true,                 // 自适应总开关：false→恒 HIGH(=原默认，行为零回归)；true→设备初判 + 实时 FPS 自动升降档
+			tierDownFps: 48,                 // 实时均值 < 此值并持续 down stabilize 秒 → 降一档（45→48：覆盖高刷下持续 "50 多" 平均，治偶发掉档）
+			tierUpFps: 58,                   // 实时均值 > 此值并持续 stabilize 秒 → 升一档（目标 60，留余量防抖动）
+			tierStabilizeSec: 3,             // 升档防抖稳定时长(秒)：越阈须持续这么久才升档，防档位抖动(thrashing)
+			tierDownStabilizeSec: 1.5,       // 降档防抖稳定时长(秒)：比升档更短 → 掉帧秒级反应（治 26/30 尖峰），仍留余量防误降
+			flashCoreCap: 16,                // 🟡 并发闪核(白爆/辉光)硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰(suppressWhiteBurst 未接线时的根因)；候选 12/16/20，RT 热调
+			fillDownThreshold: 320,          // 🟡 火/余烬 fill 绘制调用量过载阈值：自动档下该值持续越阈且处于 HIGH/MED → 直跳 LOW 关火/余烬(压主因 fill 爆炸)；与 FPS 触发并存；候选 280/320/360，RT 热调
+			fillDownStableSec: 0.8,          // 🟡 fill 过载降 LOW 稳定时长(秒)：越阈须持续这么久才直跳 LOW，防误伤；候选 0.6/0.8/1.0，RT 热调
+			fillLockSec: 8,                   // 🟡 fill 关火后回升锁定时长(秒)：关火后锁定这么久才允许回升，避免「关火→回升重燃火→再关」乒乓；候选 6/8/10，RT 热调
+			fillRecoverSec: 5,                // 🟡 fill 关火后回升稳定时长(秒)：过锁定+fill 回落后须持续这么久才重燃火，防抖动；候选 4/5/6，RT 热调
+			deviceSeed: {                    // 启动设备初判（粗判，避免手机高档起步卡顿后再降）
+				mobileShortSide: 430,        // 手机短边 ≤ 此值 → POTATO 起步（小屏弱机）
+				mobileTier: 'LOW',           // 其余手机/平板 → LOW 起步（不从高档起步）
+				desktopShortSide: 720,       // 桌面短边 ≤ 此值 或 dpr ≤ desktopDprFloor → MED 起步（弱集显笔记本）
+				desktopDprFloor: 1           // devicePixelRatio ≤ 此值视为弱集显 → MED 起步
+			},
+			tiers: {                         // 四档质量预设（HIGH=原默认，零回归基准）；每档控制 backing 宽上限/粒子文字上限/视图缩放/火冰视觉抑制/白爆抑制/屏震/vignette 精度
+				HIGH:   { maxBackW: 1600, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
+				MED:    { maxBackW: 1280, worldScale: 0.80, maxParticles: 170, maxTexts: 40, spawnBudget: 90,  suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
+				LOW:    { maxBackW: 1024, worldScale: 0.78, maxParticles: 120, maxTexts: 32, spawnBudget: 70,  suppressFire: true,  suppressIceFill: false, suppressShake: false, suppressWhiteBurst: true,  simpleVignette: false },
+				POTATO: { maxBackW: 800,  worldScale: 0.72, maxParticles: 80,  maxTexts: 24, spawnBudget: 50,  suppressFire: true,  suppressIceFill: true,  suppressShake: true,  suppressWhiteBurst: true,  simpleVignette: true }
+			}
 		},
 		// —— 纯视觉渲染（非 §9 平衡值；视图缩放仅改世界显示尺寸，不影响碰撞/坐标/平衡）——
 		RENDER: {

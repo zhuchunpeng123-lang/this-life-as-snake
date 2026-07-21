@@ -73,9 +73,10 @@
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
 	}
-	function maxParticles() { return RT('PERF.maxParticles', CONFIG.PERF.maxParticles) }
-	function maxTexts() { return RT('PERF.maxTexts', CONFIG.PERF.maxTexts) }
-	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', CONFIG.PERF.spawnBudgetPerFrame) }
+	function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
+	function maxParticles() { return RT('PERF.maxParticles', perfFB('maxParticles', CONFIG.PERF.maxParticles)) }
+	function maxTexts() { return RT('PERF.maxTexts', perfFB('maxTexts', CONFIG.PERF.maxTexts)) }
+	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', perfFB('spawnBudget', CONFIG.PERF.spawnBudgetPerFrame)) }
 	var frameSpawn = 0   // 每帧 VFX 生成计数（Particle.update 帧首清零；与 fixed-step 对齐）
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
@@ -101,8 +102,12 @@
 		t.life = t.maxLife = 0.8; t.text = str; t.color = color; t.size = size || 14; t.prio = prio
 		texts.push(t); frameSpawn++; return true
 	}
+	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
 	function spawnFlashCore(x, y, radius, color, life) {
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆白闪核尖峰
+		if (flashCores.length >= flashCoreCap()) {    // 并发超上限 → 丢最旧(数组头最先老化)，保留最新视觉
+			var old = flashCores.shift(); if (old) { flashPool.release(old) }
+		}
 		var f = flashPool.acquire()
 		f.active = true; f.x = x; f.y = y; f.radius = radius; f.color = color
 		f.life = f.maxLife = life
@@ -154,6 +159,8 @@
 	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：每 fixed-step 沿蛇身随机取点喷 n 颗余烬，
 	//   数量随火阶微增但受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌=5 敌)，零 gameplay
 	function spawnFireEmbers() {
+		// 自动关火(suppressFire)/GM T3 关火视觉 → 真正停喷余烬（消除 fill 爆炸主因）；与 render 同款读法(perfFB('suppressFire') 为回退源)，零双份真相源
+		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var owned = sk.owned(); if (!(owned.fire > 0)) { return }   // 仅火墙激活
 		if (particles.length >= maxParticles() * 0.5) { return }   // 余量门控：池忙(≥半满)时停喷余烬，留 GPU 呼吸低谷，治"焊死 240/240 常载拖帧"
@@ -259,7 +266,7 @@
 		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
 		drawOverlay: function (ctx) {
 			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
-			if (!(RT('PERF.suppressWhiteBurst', 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字
+			if (!(RT('PERF.suppressWhiteBurst', (global.PerfTier && global.PerfTier.suppressWhiteBurst) ? 1 : 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字；回退源=PerfTier.suppressWhiteBurst(原写死 0→白爆永不关，本次接线)
 				for (var i = 0; i < flashCores.length; i++) {
 					var fc = flashCores[i]
 					var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }

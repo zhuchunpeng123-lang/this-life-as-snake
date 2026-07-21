@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-21 · perf(auto-tier): 自适应画质分级 + 跨端 FPS 根治（封版）
+
+- **改动文件**：`02_config.js`（新增 `PERF.autoScale` 总开关 + `deviceSeed` 设备初判 + `tiers` 四档质量预设 + `flashCoreCap`/`fillDown*`/`fillLockSec`/`fillRecoverSec` 护栏阈值）、`14_main.js`（新增 `PerfTier` 系统：`seedTier` 设备初判 + `stepDown`/`stepUp` 实时 FPS 自动升降档 + `forceTier` GM 强制固定档 + `pointerdown`/`pointermove` 兼容触控 + `resize` 重算）、`11_render.js`（RT 回退源改读 `PerfTier` 当前档 `perfFB` + backing 宽封顶 `maxBackW` + `worldScale` 视图缩放 + `simpleVignette` POTATO 档 + 画质档位 HUD 角标）、`13_editor.js`（GM「性能分级」面板：自动开关 + 强制固定档 + 关火抑制手动 + 护栏实时读数）、`15_profiler.js`（采样加 `tier`/`auto`/瞬时 `fpsMin` + 采样后清零窗口 min）、`05_particle.js`（`flashCoreCap` 并发闪核硬上限 + `suppressFire` 驱动余烬停喷）
+- **一句话**：跨端 FPS 根治——设备初判（手机 POTATO/LOW、弱集显 MED 起步，不从高档起步）+ 实时 FPS 自动升降档（HIGH/MED/LOW/POTATO 四档，掉帧秒级降档、回升防抖）+ 四档质量预设（backing 宽/粒子文字上限/视图缩放/火冰视觉抑制/白爆抑制/屏震/vignette 精度）+ fill 过载直跳 LOW / 白爆并发硬上限护栏；全部纯渲染/表现护栏，零 gameplay
+- **是否动 §9**：否（纯性能/渲染护栏，无平衡数值；新增阈值集中 `02_config` `PERF` 区，~ 调参器可热改）
+- **验收**：
+  - 桌面强机：auto 开 → 恒 HIGH，行为与之前零回归（`worldScale` 0.8 视图缩放保留）
+  - 手机/弱机：auto 开 → 设备初判 LOW/POTATO 起步；实战掉帧 < 48 持续 1.5s 自动降档，> 58 持续 3s 自动升档；档位角标 + 原因可见
+  - fill 绘制调用持续越阈 → 直跳 LOW 关火墙/余烬（锁定 8s + 回升 5s 防乒乓）；白爆并发超 `flashCoreCap` 丢最旧
+  - 手动档（GM `forceTier`）固定不自动；RT 覆盖仍优先（零双份真相源）
+  - 未动 `03_core.js`/`04_collision.js`/伤害管线；`02_config` 仅扩展 `PERF` 区
+
+---
+
 ## 2026-07-21 · perf(view): 视图缩放恢复 + 相机跟随修复 + profiler 可见敌数反算 worldScale
 
 - **改动文件**：`15_profiler.js`（新增：自动性能日志，profiler 可见敌数反算 `worldScale` + 帧性能观测字段 external gap）、`11_render.js`（相机跟随修复 + `worldScale` 反算 + 视图缩放恢复）、`index.html`（挂 `15_profiler.js`）、`02_config.js`、`05_particle.js`、`08_skill.js`、`12_ui.js`、`13_editor.js`、`14_main.js`（fixed-step 主循环帧观测）、`docs/plans/*.md`（新增 6 份诊断/清理计划）
