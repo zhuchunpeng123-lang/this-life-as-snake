@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-22 · fix(narrative): 叙事抉择弹窗点不动/关不掉（pointer-events 穿透）
+
+- **改动文件**：`12_ui.js`（第 32 行 `choiceBox` 样式补 `pointer-events:auto`）
+- **根因**：叙事不可逆抉择用 `choiceBox`（挂在 `#ui-stage`，`index.html` 第 18 行 `#ui-stage{pointer-events:none}` 让点击穿透到 canvas 做游戏操作）。`choiceBox` 自身未重开 `pointer-events:auto`，按钮继承 `none` → 点击穿透、选了无反应、也关不掉，只能等 `after(timeoutSec)` 定时器到点自动消失。对比技能卡 `choose`/`result` 样式末尾都带 `pointer-events:auto`（故技能卡能正常点）；`choiceBox` 漏了这条 → 电脑/手机两端都失效。
+- **一句话**：叙事抉择弹窗按钮点不动是因为 `#ui-stage` 的 `pointer-events:none` 被按钮继承；补 `choiceBox` 的 `pointer-events:auto` 即可（仅盒子区域捕获点击，#ui-stage 其余仍穿透，保持"非阻塞抉择"设计，不影响游戏中其他点击）。
+- **是否动 §9**：否（纯 UI 点击命中，无平衡数值）
+- **验收**：
+  - 电脑/手机：叙事事件弹「不可逆抉择」→ 点 A/B 任一 → 选项生效（加心/长节/记忆写入）、弹窗立即关闭（不再等超时）
+  - 点超时默认项：仍按 `ev.def` 生效并关闭
+  - 抉择弹窗出现期间，画面其余区域点击仍能操控蛇（非全屏遮挡）
+  - 未动 core/collision/§9/`02_config`；技能卡/结算/暂停点击不受影响
+
+---
+
 ## 2026-07-22 · fix(mobile): 手机端画面/文字模糊（backing 分辨率上限提升）
 
 - **改动文件**：`11_render.js`（`resize()` 中 `dprMon = Math.min(devicePixelRatio, 2) → 3`：retina 手机 dpr=3 原被压到 2× → 浏览器放大糊；桌面 dpr 通常≤2 不受影响）、`02_config.js`（`PERF.tiers.MED.maxBackW: 1280 → 1920`：MED 档 backing 宽上限提升，配合 dpr 上限 3，iPhone 横屏 backing≈1920 显示物理≈2292 → 仅 1.19× 放大，文字/画面接近清晰）
