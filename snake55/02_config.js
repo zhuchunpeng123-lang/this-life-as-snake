@@ -141,7 +141,7 @@
 		ice: { slowPct: [0.20, 0.30, 0.40, 0.50, 0.60], lv5FreezeSec: 1.0, freezeCd: 3.0, poolLingerSec: [4, 5, 6, 7, 8], maxActivePools: 2, poolRadius: [90, 110, 130, 150, 170], seekRange: [100, 140, 180, 220, 260] },  // ⑥ 系统性调整（大范围·持续控制场）：poolLingerSec 改按等级[4,5,6,7,8](冰池存续拉长·供敌群聚拢+火墙多次扫爆)·新增 maxActivePools=2(并发冰池上限·2片稳定大控制场)·poolRadius[5]=[90,110,130,150,170](全等级≥蒸汽90px·冰圈≥爆圈)·freezeCd=3.0不动·slowPct/Lv5冻结1s不动；蒸汽COMBO.steamExplosion.radius=90不动(选A·仅e.inIce防冰圈外凭空引爆)；真理源§4.2回写，③校验DPS/密度
 		bolt: { damage: [10, 13, 16, 20, 25], nodes: [1, 2, 3, 4, 5], fireRate: [2.0, 2.2, 2.5, 2.8, 3.2], maxRange: [100, 140, 180, 220, 260], lv5: 'pierce+1' },  // P1-1 射程门控（px）
 		shield: { count: [1, 2, 3, 4, 5], contactDamage: [8, 11, 14, 18, 22], orbitRadius: [30, 40, 50, 60, 70], orbitSec: 1.6, orbitHitMul: 0.5, lv5: 'reflect' },  // B-2：orbitRadius 收紧为贴头点防曲线 A[30,40,50,60,70]（headRadius=14，球落点刚好头外侧，不扩全身/不压火墙）；orbitSec 取代写死常量 1.6（§4.4 待实测回填）；orbitHitMul=护盾球命中半径占 orbitRadius 比例（🟡 几何因子，待标定回填 §9）
-			lightning: { damage: [9, 12, 15, 19, 24], chains: [2, 3, 4, 5, 7], intervalSec: [1.2, 1.1, 1.0, 0.9, 0.8], maxRange: [120, 155, 190, 225, 240], lv5: 'stun' }  // P1-1 首跳射程门控（px）
+			lightning: { damage: [9, 12, 15, 19, 24], chains: [2, 3, 4, 5, 7], intervalSec: [1.2, 1.1, 1.0, 0.9, 0.8], maxRange: [120, 155, 190, 225, 240], chainJumpRange: [80, 100, 120, 140, 160], lv5: 'stun' }  // P1-1 首跳射程门控（px）；chainJumpRange=每跳连敌半径门控（候选 A，防跨全场连锁，待③数值专项优化精调）
 		},
 
 		COMBO: {

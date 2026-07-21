@@ -154,23 +154,24 @@
 	}
 
 	function readInput() {
-		// 绝对瞄准：鼠标在 canvas 上时优先，死区用 CONFIG.PLAYER.deadZoneRadius
-		if (cursor.on) {
-			var sn = Registry.get('snake'), h = sn && sn.head
-			if (h) {
-				var dx = cursor.wx - h.x, dy = cursor.wy - h.y
-				var len = Math.sqrt(dx * dx + dy * dy)
-				var dz = cursor.touch ? CONFIG.INPUT.touch.deadZone : CONFIG.PLAYER.deadZoneRadius
-			if (len > dz) { return { x: dx / len, y: dy / len, active: true } }
-			}
-			return { x: 0, y: 0, active: false }
-		}
+		// #3 修复：键盘优先——任一移动键按下即用键盘方向，鼠标悬停不再永久屏蔽 WASD；无按键时回退鼠标绝对瞄准
 		var kx = 0, ky = 0
 		if (keys.ArrowLeft || keys.a || keys.A) { kx -= 1 }
 		if (keys.ArrowRight || keys.d || keys.D) { kx += 1 }
 		if (keys.ArrowUp || keys.w || keys.W) { ky -= 1 }
 		if (keys.ArrowDown || keys.s || keys.S) { ky += 1 }
 		if (kx !== 0 || ky !== 0) { var l = Math.sqrt(kx * kx + ky * ky); return { x: kx / l, y: ky / l, active: true } }
+		// 绝对瞄准：鼠标/触摸在 canvas 上且未用键盘时优先，死区用 CONFIG.PLAYER.deadZoneRadius
+		if (cursor.on) {
+			var sn = Registry.get('snake'), h = sn && sn.head
+			if (h) {
+				var dx = cursor.wx - h.x, dy = cursor.wy - h.y
+				var len = Math.sqrt(dx * dx + dy * dy)
+				var dz = cursor.touch ? CONFIG.INPUT.touch.deadZone : CONFIG.PLAYER.deadZoneRadius
+				if (len > dz) { return { x: dx / len, y: dy / len, active: true } }
+			}
+			return { x: 0, y: 0, active: false }
+		}
 		return { x: 0, y: 0, active: false }
 	}
 

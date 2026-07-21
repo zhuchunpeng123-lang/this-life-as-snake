@@ -6,6 +6,31 @@
 
 
 
+## 2026-07-22 · eval(perf): 2400 掉帧 + 自动降级真实行为澄清（零改动，保持现状）
+
+- **触发**：实测把 GM「渲染分辨率上限W」(`RENDER.maxBackW`) 拉到 2400 → 画布 2400×1350，FPS 偶降 30~95；同期「档 HIGH自动」看似"降画质没生效"。
+- **评估结论（用户确认 A 方向：保持现状，零改动）**：
+  - **2400 掉帧是物理性预期**：backing 像素 1600→2400 ≈ ×2.25，瓶颈在 GPU present 大画布。profiler 证据：掉帧帧 `外部`(presentGap) 飙到 9~25ms，而 `CPU`/`帧` 仅 0.5~1.3ms → 非 JS/逻辑/overdraw。默认封顶 1600 即为此设。
+  - **自动降级真实行为 = 仅"关火/余烬"二进制开关，绝不切档、绝不降分辨率**：`PerfTier.tick()` 注释白字"零档位切换"；`stepDown`/`stepUp` 为死函数（全仓无调用者）；`tierDownFps`/`tierUpFps`/`tierStabilizeSec`/`tierDownStabilizeSec` 为死配置（无代码读取）。
+  - **关火看门狗近乎休眠**：看 `overdraw(px²)/1000 ≥ fillDownThreshold(320)`，即 overdraw≥320k px²；实测 overdraw EMA≈3~10k(px²)、峰值 35k，离 320k 差一个数量级，永不触发。
+  - **即便触发关火也救不了 2400**：关火只压火焰 VFX，与"大画布基础像素 present"瓶颈无关。
+  - **GM 手动 `maxBackW=2400` 覆盖优先级高于任何档位** → 自动档想降分辨率也会被压住。
+- **决策**：2400 定位为「手动·清晰优先」实验旋钮（掉帧是预期取舍）；日常用 ≤1600 稳 60fps。不新增 FPS 自动降分辨率（方案 B：避免画布 realloc 闪烁 + 乒乓 + 与 GM 覆盖优先级冲突；未采纳，仍可作为 §八 待办）。
+- **是否动 §9**：否（纯评估，零代码改动）。
+- **验收**：无需复验；本文档已澄清真实行为，并修正 `docs/plans/mobile-touch-optim.md` 边界③ 的误导措辞。
+
+---
+
+## 2026-07-22 · fix(review): 对抗性审查隐患修复（#1/#2/#3/#4/#5/#7/#9；#6/#8 拆出）
+
+- **范围**：本批修 7 项 — #1 叙事抉择死后超时仍 resolve（涨节/加血/记记忆）、#2 对象池复用 invuln 残留致普通敌短暂无敌、#3 鼠标悬停永久屏蔽键盘 WASD、#4 tickBolt 原地排序共享快照、#5 闪电链跨全场连锁、#7 applyDamage/updateOne 缩进整理、#9 resetRun 未重置 tuningSandbox。#6（技能热路径 queryCircle 过多·perf 债）与 #8（03_core 池/Bus 防御硬化）按约定拆出单独走；#10（蒸汽屏震聚合）经复核非 bug 已撤回。
+- **数值改动**：新增 `SKILL.lightning.chainJumpRange:[80,100,120,140,160]`（候选 A，§4.5 真源已登记，见 §9 Changelog）。射程类平衡值，精调留待③数值专项优化。
+- **触碰底层声明**：#9 改动位于 `03_core.js` 的 `resetRun()`，仅新增一行状态重置 `GS.tuningSandbox=false`（运行态重置，非引擎逻辑）；未改动 `04_collision.js` 与池/Bus 引擎（#8 才涉及，本批未做）。
+- **§9 纪律**：真源优先 → config 镜像回填 → 本 CHANGELOG 仅作单向镜像（不当真源）。
+- **验收**：见随附测试用例。
+
+---
+
 ## 2026-07-22 · fix(narrative): 叙事抉择弹窗点不动/关不掉（pointer-events 穿透）
 
 - **改动文件**：`12_ui.js`（第 32 行 `choiceBox` 样式补 `pointer-events:auto`）

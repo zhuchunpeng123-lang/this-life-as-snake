@@ -146,6 +146,7 @@
 		GS.stageId = 1; GS.waveIndex = 0
 		GS.invincibleUntil = 0; GS.buildPauseUntil = 0; GS.comboScore = 0
 		GS.ownedSkills = {}; GS.shakeFrames = 0; GS.shakeMag = 0
+		GS.tuningSandbox = false   // #9 修复：标定沙盒(dev)不跨局残留；13_editor.js 初值 false，本行确保每局开局关闭（显式点名触碰 03_core：仅运行态重置，非引擎逻辑）
 		// 叙事结算态清空（防上局残留：memoryTokens 等）
 		GS.maxSegments = CONFIG.PLAYER.initSegments; GS.maxStageId = 1; GS.killStreakMax = 0
 		GS.memoryTokens = []; GS.buildSequence = []; GS.comboHighlights = []; GS.irreversibleChoices = []

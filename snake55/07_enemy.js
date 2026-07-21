@@ -65,7 +65,7 @@
 		e.active = true; e.id = ++_id; e.type = type
 		e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
-		e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
+		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
@@ -168,8 +168,8 @@
 		}
 		return
 	}
-		Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color, isDot: !!isDot, src: src, r: e.radius })   // r=命中体半径：飘字偏移到精灵上方，防大体型（boss）盖住数字
-		if (e.hp <= 0) { die(e) }
+	Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color, isDot: !!isDot, src: src, r: e.radius })   // r=命中体半径：飘字偏移到精灵上方，防大体型（boss）盖住数字
+	if (e.hp <= 0) { die(e) }
 	}
 	function applySlow(e, pct, dur) {
 		if (!e || !e.active || e.type === 'bossBullet') { return }
@@ -238,7 +238,7 @@
 		var hx = snake && snake.head ? snake.head.x : e.x
 		var hy = snake && snake.head ? snake.head.y : e.y
 		if (e.slowT > 0) { e.slowT -= dt }
-	if (e.steamCd > 0) { e.steamCd -= dt }   // ④ per-enemy 蒸汽引爆冷却（死亡经对象池复用复位）
+		if (e.steamCd > 0) { e.steamCd -= dt }   // ④ per-enemy 蒸汽引爆冷却（死亡经对象池复用复位）
 		if (e.flashT > 0) { e.flashT -= dt }   // ⑥ 闪白计时衰减
 		if (e.type === 'bossBullet') {
 			e.lifeT -= dt; e.x += e.vx * dt; e.y += e.vy * dt
