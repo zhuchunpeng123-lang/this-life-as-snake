@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-22 · perf(skill) #6: 消除每帧 queryCircle GC 抖动
+
+- **范围**：`08_skill.js` 的 `enemiesIn`（火墙/冰池/护盾球/蒸汽引爆共用的 AOE 索敌）原每帧每 AOE 中心一次 `collision.queryCircle`，每次含字符串 key 拼接 + map 查找 + 新数组分配的 GC 抖动（已登 DEBT 冰区扫描债）。改为复用每帧 `_enemySnap` 做 **cell 覆盖相交判定**，精确复刻 `SpatialHash.query` 返回集合（cell 级宽松、非精确圆），**零行为变化**。
+- **波及**：tickFire/tickIce/tickShield/tickCombos/doLightningChain 全部 AOE 索敌经同一 `enemiesIn` 统一受益；`04_collision.js` 未动；`CONFIG.SPATIAL.cellSize` 复用（§6 禁裸数字）。
+- **DEBT**：冰区扫描债（🔴→✅ 已还），见 docs/DEBT.md。
+- **验收**：见随附测试用例。
+
+## 2026-07-22 · fix(core) #8 §3: 对象池/Bus 防御硬化（补记）
+
+- **范围**：见 commit `af6eff7`（独立 §3 commit，密度标定前完成）。`createPool.release` 加 `_inPool` 标记防双 release/release(null) 污染池；`Bus.emit` 遍历前 `slice()` 快照防 emit 期间 on/off 本事件导致遍历错乱。正常路径零行为变化，下游无需改；未动 `04_collision.js` 与 `Bus.on/off/clear`。本 CHANGELOG 条目为补记（#8 落地时未同步文档）。
+- **验收**：见随附测试用例。
+
+---
+
 ## 2026-07-22 · eval(perf): 2400 掉帧 + 自动降级真实行为澄清（零改动，保持现状）
 
 - **触发**：实测把 GM「渲染分辨率上限W」(`RENDER.maxBackW`) 拉到 2400 → 画布 2400×1350，FPS 偶降 30~95；同期「档 HIGH自动」看似"降画质没生效"。
@@ -21,7 +35,7 @@
 
 ---
 
-## 2026-07-22 · fix(review): 对抗性审查隐患修复（#1/#2/#3/#4/#5/#7/#9；#6/#8 拆出）
+## 2026-07-22 · fix(review): 对抗性审查隐患修复（#1/#2/#3/#4/#5/#7/#9；#6/#8 已落地）
 
 - **范围**：本批修 7 项 — #1 叙事抉择死后超时仍 resolve（涨节/加血/记记忆）、#2 对象池复用 invuln 残留致普通敌短暂无敌、#3 鼠标悬停永久屏蔽键盘 WASD、#4 tickBolt 原地排序共享快照、#5 闪电链跨全场连锁、#7 applyDamage/updateOne 缩进整理、#9 resetRun 未重置 tuningSandbox。#6（技能热路径 queryCircle 过多·perf 债）与 #8（03_core 池/Bus 防御硬化）按约定拆出单独走；#10（蒸汽屏震聚合）经复核非 bug 已撤回。
 - **数值改动**：新增 `SKILL.lightning.chainJumpRange:[80,100,120,140,160]`（候选 A，§4.5 真源已登记，见 §9 Changelog）。射程类平衡值，精调留待③数值专项优化。
