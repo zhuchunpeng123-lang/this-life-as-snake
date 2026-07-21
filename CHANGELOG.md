@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-22 · fix(mobile): 手机端画面/文字模糊（backing 分辨率上限提升）
+
+- **改动文件**：`11_render.js`（`resize()` 中 `dprMon = Math.min(devicePixelRatio, 2) → 3`：retina 手机 dpr=3 原被压到 2× → 浏览器放大糊；桌面 dpr 通常≤2 不受影响）、`02_config.js`（`PERF.tiers.MED.maxBackW: 1280 → 1920`：MED 档 backing 宽上限提升，配合 dpr 上限 3，iPhone 横屏 backing≈1920 显示物理≈2292 → 仅 1.19× 放大，文字/画面接近清晰）
+- **一句话**：修手机端"糊"——根因是后台缓冲分辨率被 `dprMon≤2` + `MED.maxBackW=1280` 两道上限压到远低于手机物理像素(~2292)，浏览器双线性放大致糊；与技能特效开关/视图缩放无关。提升两上限让 retina 手机用足原生像素。填充率约 ×1.5，弱机由 fill/FPS 看门狗自动降 LOW/POTATO 兜底(其 maxBackW 仍 1024/800，会重新变糊——属性能取舍)。
+- **是否动 §9**：否（纯渲染分辨率/视图预设，无伤害/血量/速度/射程；worldScale 等不变）
+- **波及**：仅视觉层 backing 分配(`11_render.resize`)、所有 canvas 绘制清晰度；桌面 HIGH 档 `maxBackW=1600` 不变（用户桌面 2400 掉帧为他手动把 GM 滑条 `RENDER.maxBackW` 拉到 2400 绕过封顶所致，非默认）；伤害/碰撞/公式不动
+- **验收**：
+  - 手机：文字与画面明显变清晰（不再放大糊）；仍落 MED 档，火焰/蒸汽表现正常
+  - 桌面：默认 HIGH 仍 60fps；若之前把 GM `渲染分辨率上限W` 拉到 2400 致 30fps，调回 ≤1600 即恢复（大屏想更清晰可保留 2400 但接受掉帧）
+  - 弱机/小屏：若掉帧，HUD「档」自动降 LOW/POTATO，火焰自动关、画面可能略糊（看门狗自愈，伤害仍结算）
+  - 未动 `03_core.js`/`04_collision.js`/`02_config` §9 数值
+
+---
+
 ## 2026-07-22 · fix(mobile): 手机端技能表现缺失 + 蛇/怪放大（PerfTier 调参）
 
 - **改动文件**：`02_config.js`（纯 PerfTier 表现/视图预设，未动 §9 平衡、core/collision）

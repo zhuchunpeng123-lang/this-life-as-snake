@@ -57,7 +57,7 @@
 	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize() }   // b9+diag：包装 ctx 计数绘制调用
 	function resize() {
 		if (!canvas) { return }
-		var dprMon = Math.min(global.devicePixelRatio || 1, 2)   // 设备像素比安全上限 2
+		var dprMon = Math.min(global.devicePixelRatio || 1, 3)   // 设备像素比上限 3（retina 手机 dpr=3：用足原生像素→文字/画面清晰；桌面 dpr 通常≤2 不受此影响；填充率上升由 PerfTier 看门狗兜底）
 		var scale = Math.min(global.innerWidth / GAME.logicalWidth, global.innerHeight / GAME.logicalHeight)   // contain 等比：窗口内最大化、16:9 不裁切、比例不符留 letterbox（#game-wrap flex 居中）；禁用 cover 裁切边缘 HUD
 		if (!(scale > 0)) { return }   // 窗口极小/最小化瞬间 scale 可能为 0 → 跳过，避免 backing 0 尺寸退化（恢复后真实 resize 重算；治"缩小再打开"偶发 0 尺寸帧）
 		dpr = dprMon * scale   // 合成缩放：逻辑坐标 → 设备像素（HUD/世界文字 1:1 清晰，不再 2x 上采样糊字）
