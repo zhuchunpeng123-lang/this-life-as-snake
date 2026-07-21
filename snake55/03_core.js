@@ -68,12 +68,13 @@
 				var a = map[evt]; if (!a) { return }
 				var i = a.indexOf(fn); if (i >= 0) { a.splice(i, 1) }
 			},
-			emit: function (evt, payload) {
-				var a = map[evt]; if (!a) { return }
-				for (var i = 0; i < a.length; i++) {
-					try { a[i](payload) } catch (e) { Log.error('Bus[' + evt + '] 回调异常：' + (e && e.message)) }
-				}
-			},
+		emit: function (evt, payload) {
+			var a = map[evt]; if (!a) { return }
+			var snap = a.slice()   // #8 防御：快照副本遍历，emit 期间回调 on/off 本事件不污染本次遍历（防索引错乱/漏执行）
+			for (var i = 0; i < snap.length; i++) {
+				try { snap[i](payload) } catch (e) { Log.error('Bus[' + evt + '] 回调异常：' + (e && e.message)) }
+			}
+		},
 			clear: function () { map = {} }
 		}
 	})()
@@ -92,10 +93,14 @@
 	// ---------- ObjectPool（热路径零 new） ----------
 	function createPool(factory, reset, initial) {
 		var free = [], used = 0, n = initial || 0
-		for (var i = 0; i < n; i++) { free.push(factory()) }
+		for (var i = 0; i < n; i++) { var o = factory(); o._inPool = true; free.push(o) }   // #8：初始对象标记已在池中
 		return {
-			acquire: function () { var o = free.length ? free.pop() : factory(); used++; return o },
-			release: function (o) { if (reset) { reset(o) } free.push(o); if (used > 0) { used-- } },
+			acquire: function () { var o = free.length ? free.pop() : factory(); o._inPool = false; used++; return o },
+			release: function (o) {
+				if (!o || o._inPool) { return }   // #8 防御：双 release / 空引用 → 跳过，防 free 列表重复引用导致同对象被两使用者同时持有（数据污染）
+				if (reset) { reset(o) }
+				o._inPool = true; free.push(o); used--
+			},
 			activeCount: function () { return used },
 			freeCount: function () { return free.length }
 		}
