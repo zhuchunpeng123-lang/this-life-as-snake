@@ -1,0 +1,11 @@
+{
+  "name": "5.5 好玩基因融合版贪吃蛇",
+  "short_name": "5.5蛇",
+  "description": "贪吃蛇 + Roguelike + 叙事 融合玩法",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a"
+}

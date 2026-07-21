@@ -114,6 +114,31 @@
 	Bus.on('core:run_reset', function () { hitStop = 0 })
 	Bus.on('game:toggle_pause', togglePause)   // 暂停按钮/遮罩经 Bus 触发（事件名全小写过断言）
 
+	// 全屏：安卓/桌面调 requestFullscreen 一键生效；iPhone 的 Safari 不支持 JS 全屏 → 提示「添加到主屏幕」
+	var fullscreenToast = null
+	function showFsToast(msg) {
+		if (!fullscreenToast) {
+			fullscreenToast = document.createElement('div')
+			fullscreenToast.style.cssText = 'position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;padding:12px 18px;border-radius:12px;background:rgba(8,10,20,.94);color:#ffd76b;font:600 14px/1.5 system-ui;text-align:center;max-width:86vw;z-index:70;pointer-events:none'
+			document.body.appendChild(fullscreenToast)
+		}
+		fullscreenToast.textContent = msg
+		fullscreenToast.style.display = 'block'
+		clearTimeout(fullscreenToast._t)
+		fullscreenToast._t = setTimeout(function () { fullscreenToast.style.display = 'none' }, 3200)
+	}
+	function toggleFullscreen() {
+		var doc = global.document, ua = (global.navigator && global.navigator.userAgent) || ''
+		var isIOS = /iPhone|iPad|iPod/i.test(ua)
+		var fsEl = doc.fullscreenElement || doc.webkitFullscreenElement
+		if (fsEl) { var ex = doc.exitFullscreen || doc.webkitExitFullscreen; if (ex) { try { ex.call(doc) } catch (e) {} } return }
+		if (isIOS) { showFsToast('iPhone：请把本页「添加到主屏幕」，从主屏打开即可全屏无网址栏'); return }
+		var el = doc.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen
+		if (req) { try { req.call(el) } catch (e) { showFsToast('当前浏览器不支持全屏，可尝试「添加到主屏幕」') } }
+		else { showFsToast('当前浏览器不支持全屏，可尝试「添加到主屏幕」') }
+	}
+	Bus.on('ui:fullscreen_toggle', toggleFullscreen)   // 全屏按钮（#ui-stage 内）经 Bus 触发
+
 	function startIfMenu() {
 		if (GS.status === 'menu') {
 			if (startEl) { startEl.style.display = 'none' }
@@ -202,7 +227,7 @@
 
 		var render = Registry.get('render'); if (render && render.init) { render.init(canvas) }
 		if (global.PerfTier && global.PerfTier.init) { global.PerfTier.init() }   // 自适应分级：render.init 已建好画布 → 按设备初判设初档
-		var ui = Registry.get('ui'); if (ui && ui.init) { ui.init(wrap) }
+		var ui = Registry.get('ui'); if (ui && ui.init) { ui.init(document.getElementById('ui-stage'), document.getElementById('ui-full')) }
 		buildStart(wrap)
 
 		function aimFromEvent(e) {   // 触控/鼠标统一：屏幕坐标 → 世界瞄准点（contain 反算 + worldScale 反除）

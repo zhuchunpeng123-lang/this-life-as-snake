@@ -2,12 +2,21 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>5.5 好玩基因融合版贪吃蛇</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="5.5 蛇">
+<meta name="theme-color" content="#0a0e1a">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #0a0e1a; overflow: hidden; }
   #game-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  #game-canvas { background: #11162a; box-shadow: 0 0 40px rgba(0,0,0,.6); touch-action: none; }
+  #stage { position: relative; }   /* JS 同步为 canvas 显示尺寸，使 #ui-stage 角标精确贴游戏框（治暂停按钮掉框外） */
+  #game-canvas { display: block; background: #11162a; box-shadow: 0 0 40px rgba(0,0,0,.6); touch-action: none; }
+  #ui-stage { position: absolute; inset: 0; pointer-events: none; }   /* 角落 HUD 层：贴 canvas 显示区 */
+  #ui-full { position: fixed; inset: 0; pointer-events: none; z-index: 50; }   /* 全屏遮罩层：升级/结算/暂停/请横屏 */
   #boot-error { position: fixed; left: 0; top: 0; right: 0; z-index: 9999; display: none;
     color: #ff6b6b; font: 14px/1.6 monospace; padding: 12px; white-space: pre-wrap;
     background: rgba(10,14,26,.95); }
@@ -21,8 +30,12 @@
 </head>
 <body>
   <div id="game-wrap">
-    <canvas id="game-canvas" width="960" height="540"></canvas>
+    <div id="stage">
+      <canvas id="game-canvas" width="960" height="540"></canvas>
+      <div id="ui-stage"></div>
+    </div>
   </div>
+  <div id="ui-full"></div>
   <div id="rotate-hint">横屏视野更宽，体验更佳（竖屏也可玩）</div>
   <div id="boot-error"></div>
 

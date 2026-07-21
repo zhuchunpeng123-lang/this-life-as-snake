@@ -68,6 +68,9 @@
 		canvas.height = Math.round(GAME.logicalHeight * dpr)
 		canvas.style.width = (GAME.logicalWidth * scale) + 'px'
 		canvas.style.height = (GAME.logicalHeight * scale) + 'px'
+		// 同步 #stage 尺寸 = canvas 显示尺寸（contain 居中后的实际区域），使 #ui-stage 角标精确贴游戏框（治暂停按钮掉黑边外）
+		var st = global.document && global.document.getElementById('stage')
+		if (st) { st.style.width = canvas.style.width; st.style.height = canvas.style.height }
 	}
 
 	function updateCamera() {

@@ -8,8 +8,8 @@
 	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
 	var COMBO_COLOR = { steamExplosion: '#ff9a3c', electroTurret: '#9fd0ff', burningBarrage: '#ff5a4c' }   // TODO: 横幅配色待 UX 复核
 
-	var root = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
-	var comboBanner = null, pauseBtn = null, pauseOverlay = null
+	var root = null, froot = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
+	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0
@@ -23,19 +23,27 @@
 	function after(ms, fn) { var my = seqId; var t = global.setTimeout(function () { if (my === seqId) { fn() } }, ms); timers.push(t); return t }
 	function clearTimers() { for (var i = 0; i < timers.length; i++) { global.clearTimeout(timers[i]); global.clearInterval(timers[i]) } timers.length = 0 }
 
-	function init(container) {
-		root = container || document.body
-		hud = mk('div', 'position:absolute;left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top));font:600 clamp(12px,3.6vw,15px)/1.5 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:10', root)
-		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,0.72);z-index:20', root)
+	function init(stageRoot, fullRoot) {
+		root = stageRoot || document.body   // 角落 HUD 层（贴 canvas 显示区）
+		froot = fullRoot || document.body   // 全屏遮罩层（升级/结算/暂停/请横屏）
+		hud = mk('div', 'position:absolute;left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top));font:600 clamp(12px,3.6vw,15px)/1.5 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:10;white-space:nowrap', root)
+		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,0.72);z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18', root)
-		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30', root)
-		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s', root)
+		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30;pointer-events:auto', froot)
+		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
 		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
 		pauseBtn.textContent = '⏸ 暂停'
 		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
-		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', root)
+		// 全屏按钮：安卓/桌面一键全屏（经 Bus 由 main 调 API）；iPhone 不支持 JS 全屏→main 提示「添加到主屏幕」
+		fullscreenBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(56px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+		fullscreenBtn.textContent = '⛶ 全屏'
+		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
+		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
 		pauseOverlay.innerHTML = '<div>⏸ 已暂停</div><div style="font:500 14px system-ui;opacity:.8">点此 / 按 P 或 Esc 继续</div>'
 		pauseOverlay.onclick = function () { Bus.emit('game:toggle_pause') }
+		// 竖屏选卡「请横屏」遮罩（全屏层）：竖屏触发升级/事件选择时盖住，横屏后自动露出选项
+		rotateChoiceEl = mk('div', 'position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(6,8,16,0.94);color:#fff;font:700 20px system-ui;text-align:center;z-index:35;pointer-events:auto;padding:24px', froot)
+		rotateChoiceEl.innerHTML = '<div style="font-size:46px">📱↔️</div><div>请横屏以查看升级 / 选择</div><div style="font:500 14px system-ui;color:#ffd76b">旋转手机至横屏后将自动显示选项</div>'
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前“全显示”实现已超设计边界）') }
@@ -179,10 +187,28 @@
 		}
 	}
 
-	function showChoose(choices) {
+	function isPortrait() { return !!(global.matchMedia && global.matchMedia('(orientation:portrait)').matches) }
+	// 竖屏选卡：先盖「请横屏」遮罩，监听 orientationchange，转横屏后自动渲染真实选项
+	function showRotateChoice(thenRender) {
+		if (!rotateChoiceEl) { thenRender(); return }
+		if (rotateChoiceEl.style.display !== 'flex') { rotateChoiceEl.style.display = 'flex' }
+		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler) }
+		_rotateHandler = function () {
+			if (isPortrait()) { return }
+			if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); _rotateHandler = null }
+			if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
+			thenRender()
+		}
+		global.addEventListener('orientationchange', _rotateHandler)
+	}
+	function hideRotateChoice() {
+		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); _rotateHandler = null }
+		if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
+	}
+	function renderChooseCards(choices) {
 		choose.innerHTML = ''
 		var box = mk('div', 'display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:880px', choose)
-		mk('div', 'width:100%;text-align:center;color:#fff;font:700 22px system-ui;margin-bottom:14px', box).textContent = '三选一 · 升级'
+		mk('div', 'width:100%;text-align:center;color:#fff;font:700 22px system-ui;margin-bottom:14px;white-space:nowrap', box).textContent = '三选一 · 升级'
 		for (var i = 0; i < choices.length; i++) {
 			(function (c) {
 				var card = mk('button', 'width:min(220px,78vw);padding:18px;border-radius:14px;border:2px solid #2de1a8;background:#11203a;color:#fff;cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui', box)
@@ -192,16 +218,24 @@
 		}
 		choose.style.display = 'flex'
 	}
-	function hideChoose() { if (choose) { choose.style.display = 'none' } }
+	function showChoose(choices) {
+		if (isPortrait()) { showRotateChoice(function () { renderChooseCards(choices) }); return }
+		renderChooseCards(choices)
+	}
+	function hideChoose() { if (choose) { choose.style.display = 'none' } hideRotateChoice() }
 
 	function offerChoice(ev) {
 		if (choiceActive || GS.status !== 'playing' || choicesUsed >= NARR.choicePerRunMax) { return }
+		if (isPortrait()) { showRotateChoice(function () { renderOfferChoice(ev) }); return }
+		renderOfferChoice(ev)
+	}
+	function renderOfferChoice(ev) {
 		choiceActive = true; choicesUsed++; choiceBox.innerHTML = ''
 		mk('div', 'color:#ffe;font:600 15px system-ui;background:rgba(8,10,20,0.8);padding:8px 14px;border-radius:10px;max-width:520px;text-align:center', choiceBox).textContent = ev.desc
 		var btns = mk('div', 'display:flex;gap:12px', choiceBox), resolved = false
 		function resolve(opt) {
 			if (resolved) { return }
-			resolved = true; choiceActive = false; choiceBox.style.display = 'none'
+			resolved = true; choiceActive = false; choiceBox.style.display = 'none'; hideRotateChoice()
 			GS.irreversibleChoices.push(opt.memory); tagLatest('choice')
 			if (opt.seg) { for (var n = 0; n < opt.seg; n++) { Bus.emit('pickup:eat', { kind: 'food', id: -1, x: 0, y: 0 }) } }
 			if (opt.hp) { var hp = GS.coreHp + opt.hp; GS.coreHp = hp > PLAYER.coreHp ? PLAYER.coreHp : hp }
