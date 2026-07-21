@@ -92,16 +92,16 @@
 			fillLockSec: 8,                   // 🟡 fill 关火后回升锁定时长(秒)：关火后锁定这么久才允许回升，避免「关火→回升重燃火→再关」乒乓；候选 6/8/10，RT 热调
 			fillRecoverSec: 5,                // 🟡 fill 关火后回升稳定时长(秒)：过锁定+fill 回落后须持续这么久才重燃火，防抖动；候选 4/5/6，RT 热调
 			deviceSeed: {                    // 启动设备初判（粗判，避免手机高档起步卡顿后再降）
-				mobileShortSide: 430,        // 手机短边 ≤ 此值 → POTATO 起步（小屏弱机）
-				mobileTier: 'LOW',           // 其余手机/平板 → LOW 起步（不从高档起步）
+				mobileShortSide: 360,        // 手机短边 ≤ 此值 → POTATO 起步（小屏弱机）；360 让 iPhone 横屏短边(≈375-430)落 MED 而非 POTATO，火焰/蒸汽表现默认开
+				mobileTier: 'MED',           // 其余手机/平板 → MED 起步（关火/白爆的 LOW/POTATO 仅作自动降档兜底；火焰/蒸汽表现默认开，弱机由 fill/FPS 看门狗自动压回）
 				desktopShortSide: 720,       // 桌面短边 ≤ 此值 或 dpr ≤ desktopDprFloor → MED 起步（弱集显笔记本）
 				desktopDprFloor: 1           // devicePixelRatio ≤ 此值视为弱集显 → MED 起步
 			},
 			tiers: {                         // 四档质量预设（HIGH=原默认，零回归基准）；每档控制 backing 宽上限/粒子文字上限/视图缩放/火冰视觉抑制/白爆抑制/屏震/vignette 精度
 				HIGH:   { maxBackW: 1600, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
-				MED:    { maxBackW: 1280, worldScale: 0.80, maxParticles: 170, maxTexts: 40, spawnBudget: 90,  suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
-				LOW:    { maxBackW: 1024, worldScale: 0.78, maxParticles: 120, maxTexts: 32, spawnBudget: 70,  suppressFire: true,  suppressIceFill: false, suppressShake: false, suppressWhiteBurst: true,  simpleVignette: false },
-				POTATO: { maxBackW: 800,  worldScale: 0.72, maxParticles: 80,  maxTexts: 24, spawnBudget: 50,  suppressFire: true,  suppressIceFill: true,  suppressShake: true,  suppressWhiteBurst: true,  simpleVignette: true }
+				MED:    { maxBackW: 1280, worldScale: 0.92, maxParticles: 170, maxTexts: 40, spawnBudget: 90,  suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
+				LOW:    { maxBackW: 1024, worldScale: 0.88, maxParticles: 120, maxTexts: 32, spawnBudget: 70,  suppressFire: true,  suppressIceFill: false, suppressShake: false, suppressWhiteBurst: true,  simpleVignette: false },
+				POTATO: { maxBackW: 800,  worldScale: 0.84, maxParticles: 80,  maxTexts: 24, spawnBudget: 50,  suppressFire: true,  suppressIceFill: true,  suppressShake: true,  suppressWhiteBurst: true,  simpleVignette: true }
 			}
 		},
 		// —— 纯视觉渲染（非 §9 平衡值；视图缩放仅改世界显示尺寸，不影响碰撞/坐标/平衡）——

@@ -6,6 +6,22 @@
 
 
 
+## 2026-07-22 · fix(mobile): 手机端技能表现缺失 + 蛇/怪放大（PerfTier 调参）
+
+- **改动文件**：`02_config.js`（纯 PerfTier 表现/视图预设，未动 §9 平衡、core/collision）
+  - `PERF.deviceSeed.mobileTier: 'LOW' → 'MED'`、`mobileShortSide: 430 → 360`：iPhone 横屏短边≈390 原被判 `POTATO`（火焰/白爆/冰填充/屏震全压），现落 `MED`（`suppressFire`/`suppressWhiteBurst`/`suppressIceFill`/`suppressShake` 全 false）→ 火焰蛇身火墙、燃烧标记、蒸汽白爆、冰池填充、屏震 默认开启；≤360 真小弱机仍 `POTATO` 兜底。
+  - 手机档 `worldScale`：MED 0.80→0.92、LOW 0.78→0.88、POTATO 0.72→0.84（实体≈1.15× 放大）；桌面 HIGH 保持 0.80 不动。`worldScale` 注释为「纯视觉视图缩放，不影响碰撞/坐标/平衡」。
+- **一句话**：修手机端"有伤害无表现"——根因是种子档把 iPhone 判成 POTATO 全压技能 VFX（伤害不受档位门控故照常结算）；并把手机端蛇/怪显示放大。弱机仍有 fill/FPS 看门狗自动降回 LOW/POTATO 关火，不丢保护。
+- **是否动 §9**：否（PerfTier 为表现/视图预设，非伤害/血量/速度/射程；worldScale 纯视觉）。
+- **波及（Bus/Formula）**：仅视觉层（11_render drawSkillAura 的 T3=`PERF.suppressFireVisual`、drawEnemies 的 T3、`05_particle.drawOverlay` 的 T1=`PERF.suppressWhiteBurst`、drawIcePools 的 T2、屏震 T4）；伤害管线 `08_skill.tickFire/tickCombos` 不变。
+- **验收**：
+  - 手机吃火焰技能食物 → 蛇身出现火墙/余烬；吃到带冰敌触发蒸汽 → 见白爆+爆环+屏震
+  - 手机端蛇与怪物明显变大（≈1.15×），桌面端大小不变
+  - 弱机若掉帧：HUD「档」应从 MED 自动降 LOW/POTATO，火焰自动关（看门狗自愈），伤害仍结算
+  - 未动 `03_core.js`/`04_collision.js`/伤害公式/`02_config` §9 数值
+
+---
+
 ## 2026-07-22 · fix(mobile): 修主屏模式点全屏误提示「加到主屏」
 
 - **改动文件**：`14_main.js`（`toggleFullscreen` 新增 `isStandalone()` 检测：`navigator.standalone === true`（iOS 主屏 PWA）或 `matchMedia('(display-mode: standalone)').matches`；主屏模式点「⛶ 全屏」不再弹「请把本页添加到主屏幕」误导提示，改为「已在全屏（主屏模式）」；Safari 浏览器内仍提示加主屏）
