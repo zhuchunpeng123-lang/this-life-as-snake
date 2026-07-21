@@ -6,6 +6,20 @@
 
 
 
+## 2026-07-21 · feat(mobile): 全屏(PWA+按钮)+角落HUD贴框+竖屏选卡强制横屏
+
+- **改动文件**：`index.html`（`<head>` 加 PWA meta：`apple-mobile-web-app-capable`/`mobile-web-app-capable`/`status-bar-style` + `<link rel="manifest">`；DOM 重构：`#stage` 包 canvas、`#ui-stage`（贴 canvas 角标层）、`#ui-full`（全屏遮罩层））、`manifest.webmanifest`（**新增** PWA 清单：`display:standalone`、`orientation:landscape`）、`11_render.js`（`resize()` 末尾同步 `#stage` 的 CSS 宽高 = canvas 显示尺寸，使角标层精确贴合游戏框）、`12_ui.js`（`init` 改双 root：角落 HUD `hud/pauseBtn/choiceBox/comboBanner/fullscreenBtn` → `#ui-stage`，遮罩 `choose/result/pauseOverlay/rotateChoice` → `#ui-full`；HUD/连击横幅 `white-space:nowrap` 防竖屏折行；新增「⛶全屏」按钮经 `Bus('ui:fullscreen_toggle')` 触发；升级三选一与事件选择在竖屏时盖「请横屏」遮罩，监听 `orientationchange` 转横屏后自动显示）、`14_main.js`（`Bus.on('ui:fullscreen_toggle')` → 安卓/桌面 `requestFullscreen`；iPhone 检测不支持则 `showFsToast` 提示「添加到主屏幕」）
+- **一句话**：手机端全屏两手做——安卓/桌面「⛶全屏」按钮一键全屏 + iPhone 经 PWA「添加到主屏幕」真全屏无网址栏；角落 HUD（暂停/全屏/连击）贴游戏框不再掉黑边；升级三选一与事件选择在竖屏时强制横屏选卡（常规游戏仍竖屏可玩）；桌面零回归。
+- **是否动 §9**：否（纯输入/UI/PWA 表现，无平衡数值；全屏按钮文案为 UI 提示非强度值）
+- **验收**：
+  - 桌面 Chrome：显示/操作与上一版零差异；「⛶全屏」按钮可用进入浏览器全屏
+  - iPhone 横屏：暂停/HUD 贴游戏框内（不掉黑边）；`push` 后「添加到主屏幕」再从主屏打开 → 网址栏消失、真全屏
+  - iPhone 竖屏游戏：常规可玩；HUD/连击文字单行不折；触发升级/事件选择弹「请横屏」遮罩，转横屏后正常选卡
+  - 安卓/桌面：点全屏按钮即进入浏览器全屏
+  - 未动 `03_core.js`/`04_collision.js`/伤害管线；`02_config` 未改
+
+---
+
 ## 2026-07-21 · feat(mobile): 手机端触控 + 小屏适配（输入 A + 竖屏 A+B）
 
 - **改动文件**：`index.html`（viewport 加 `viewport-fit=cover` + 竖屏横屏提示层 `#rotate-hint`（不阻操作））、`14_main.js`（新增 `aimFromEvent` 统一触屏/鼠标→世界瞄准点；`pointerdown/move` 加 `preventDefault` 阻 iOS 双击缩放/滚动；`pointerup`/`pointercancel` 松手保持末向不丢输入；`orientationchange` 旋屏重算；`readInput` 触控用 `CONFIG.INPUT.touch.deadZone` 防抖）、`12_ui.js`（HUD/暂停按钮/连击横幅加 `env(safe-area-inset-*)` 安全区 + `clamp()` 响应式字号；升级三选一卡片 `width:min(220px,78vw)` 窄屏不溢出）、`02_config.js`（新增 `INPUT.touch.deadZone` 触控死区，非 §9 平衡值）
