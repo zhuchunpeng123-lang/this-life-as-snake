@@ -9,7 +9,7 @@
 	var COMBO_COLOR = { steamExplosion: '#ff9a3c', electroTurret: '#9fd0ff', burningBarrage: '#ff5a4c' }   // TODO: 横幅配色待 UX 复核
 
 	var root = null, froot = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
-	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null
+	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0
@@ -38,6 +38,13 @@
 		fullscreenBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(56px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
 		fullscreenBtn.textContent = '⛶ 全屏'
 		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
+		// GM 测试面板按钮：仅触屏设备显示（移动端无 ~ 键，经 Bus 触发 editor.toggle；桌面用 ~ 键）
+		var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
+		if (isTouch) {
+			gmBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(102px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+			gmBtn.textContent = '⚙ GM'
+			gmBtn.onclick = function () { Bus.emit('editor:toggle') }
+		}
 		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
 		pauseOverlay.innerHTML = '<div>⏸ 已暂停</div><div style="font:500 14px system-ui;opacity:.8">点此 / 按 P 或 Esc 继续</div>'
 		pauseOverlay.onclick = function () { Bus.emit('game:toggle_pause') }
@@ -187,22 +194,32 @@
 		}
 	}
 
-	function isPortrait() { return !!(global.matchMedia && global.matchMedia('(orientation:portrait)').matches) }
-	// 竖屏选卡：先盖「请横屏」遮罩，监听 orientationchange，转横屏后自动渲染真实选项
+	function isPortrait() { var w = global.innerWidth || 0, h = global.innerHeight || 0; return h > w }   // 用视口宽高比判定，iOS standalone/横竖屏滞后更可靠（比 matchMedia 稳）
+	// 竖屏选卡：先盖「请横屏」遮罩，监听 orientationchange + resize，转横屏后自动渲染真实选项；并提供「竖屏继续」兜底避免卡死
 	function showRotateChoice(thenRender) {
 		if (!rotateChoiceEl) { thenRender(); return }
-		if (rotateChoiceEl.style.display !== 'flex') { rotateChoiceEl.style.display = 'flex' }
-		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler) }
-		_rotateHandler = function () {
-			if (isPortrait()) { return }
-			if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); _rotateHandler = null }
-			if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
+		if (!isPortrait()) { thenRender(); return }   // 已横屏（含判定滞后）直接渲染
+		hideRotateChoice()   // 清掉上一次可能残留的监听，避免重复绑定
+		rotateChoiceEl.innerHTML =
+			'<div style="font-size:46px">📱↔️</div>' +
+			'<div>请横屏以查看升级 / 选择</div>' +
+			'<div style="font:500 14px system-ui;color:#ffd76b">旋转手机至横屏后将自动显示选项</div>' +
+			'<button id="rc_continue" style="margin-top:6px;padding:10px 18px;border:1px solid #2de1a8;border-radius:10px;background:transparent;color:#2de1a8;font:600 14px system-ui;cursor:pointer">仍用竖屏继续</button>'
+		rotateChoiceEl.style.display = 'flex'
+		function finish() {
+			if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); global.removeEventListener('resize', _rotateHandler) }
+			_rotateHandler = null
+			rotateChoiceEl.style.display = 'none'
 			thenRender()
 		}
+		_rotateHandler = function () { if (!isPortrait()) { finish() } }   // 转横屏才渲染（resize 也会触发，覆盖 iOS standalone 判定滞后）
 		global.addEventListener('orientationchange', _rotateHandler)
+		global.addEventListener('resize', _rotateHandler)
+		var cb = rotateChoiceEl.querySelector('#rc_continue')
+		if (cb) { cb.onclick = finish }   // 兜底：竖屏也能继续，绝不卡死
 	}
 	function hideRotateChoice() {
-		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); _rotateHandler = null }
+		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); global.removeEventListener('resize', _rotateHandler); _rotateHandler = null }
 		if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
 	}
 	function renderChooseCards(choices) {

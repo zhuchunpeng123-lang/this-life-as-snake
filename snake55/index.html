@@ -58,9 +58,17 @@
   <!-- 全局错误兜底：任何脚本抛错直接可视化，杜绝静默白屏 -->
   <script>
     window.addEventListener('error', function (e) {
+      // 跨域脚本/浏览器扩展产生的 'Script error.'（浏览器脱敏，非本游戏错误）与资源加载失败（e.target 为元素）
+      // 一律不弹红框，仅留痕控制台，避免误报（详见对话：iPhone/桌面误显「[启动错误] Script error.」）
+      if (!e || e.message === 'Script error.' || (e.target && e.target !== window)) {
+        if (e && e.message) { console.warn('[忽略的非致命错误]', e.message, e.target || '') }
+        return
+      }
       var box = document.getElementById('boot-error');
-      box.style.display = 'block';
-      box.textContent = '[启动错误] ' + (e.message || e) + '\n' + (e.filename || '') + ':' + (e.lineno || '');
+      if (box) {
+        box.style.display = 'block';
+        box.textContent = '[启动错误] ' + (e.message || e) + '\n' + (e.filename || '') + ':' + (e.lineno || '') + (e.error && e.error.stack ? '\n' + e.error.stack : '');
+      }
     });
   </script>
 </body>

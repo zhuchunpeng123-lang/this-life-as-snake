@@ -270,7 +270,7 @@
 
 	function render() {
 		var secs = buildSections()
-		var html = '<div style="font:700 16px system-ui;margin-bottom:6px;display:flex;justify-content:space-between"><span>GM 测试面板</span><span style="opacity:.6;font:600 12px system-ui">~ 开关</span></div>'
+		var html = '<div style="font:700 16px system-ui;margin-bottom:6px;display:flex;justify-content:space-between"><span>GM 测试面板</span><span id="ed_close" style="opacity:.7;font:700 20px system-ui;cursor:pointer;padding:0 6px">×</span></div>'
 		html += '<div id="ed_dirty" style="display:' + (dirty ? 'block' : 'none') + ';color:#fd6;margin-bottom:6px;font:600 12px system-ui">有未生效覆盖，保存后重载</div>'
 		for (var i = 0; i < secs.length; i++) {
 			var sec = secs[i]
@@ -283,6 +283,11 @@
 		html += '<button id="ed_copy" style="width:100%;padding:10px;margin-top:8px;border:1px solid #2de1a8;border-radius:8px;background:transparent;color:#2de1a8;cursor:pointer">复制覆盖 JSON</button>'
 		html += '<button id="ed_reset" style="width:100%;padding:10px;margin-top:8px;border:0;border-radius:8px;background:#a33;color:#fff;cursor:pointer">清空覆盖并重载</button>'
 		panel.innerHTML = html
+
+		// 关闭按钮（移动端无 ~ 键也能关 GM 面板）
+		var closeBtn = panel.querySelector('#ed_close')
+		if (closeBtn) { closeBtn.onclick = toggle }
+
 
 		// 折叠
 		var heads = panel.querySelectorAll('.secH')
@@ -478,10 +483,11 @@
 	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render(); if (tuneTimer) { clearInterval(tuneTimer) } tuneTimer = setInterval(refreshTuneLevels, 300) } else { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = null } } }   // 面板开时每 300ms 实时刷新等级/高亮；关时清理
 
 	document.addEventListener('keydown', function (e) { if (e.key === '`' || e.key === '~') { if (!panel) { build() } toggle() } })
+	Bus.on('editor:toggle', function () { if (!panel) { build() } toggle() })   // 移动端无 ~ 键：经 12_ui 的 ⚙GM 按钮触发
 
 	function build() {
 		panel = document.createElement('div')
-		panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:320px;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:40;box-shadow:-4px 0 18px #000'
+		panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:320px;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:60;box-shadow:-4px 0 18px #000'
 		document.body.appendChild(panel)
 		GS.tuningSandbox = GS.tuningSandbox || false   // B-GM 沙盒标志（dev，默认关）
 		render()
