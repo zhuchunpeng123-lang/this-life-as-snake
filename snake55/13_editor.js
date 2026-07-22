@@ -5,13 +5,13 @@
 
 	// —— UI 滑块范围常量（集中，避免逻辑里散落魔法数字；dev 工具边界，非 gameplay 数值）——
 	var RANGE = {
-		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], turnRateDecay: [0, 1.0, 0.01], turnRateFloor: [100, 150, 1], maxSegments: [5, 60, 1],
+		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], turnRateDecay: [0, 1.0, 0.01], turnRateFloor: [100, 150, 1], maxSegments: [5, 60, 1], playerRadius: [4, 40, 1],   // 蛇头/身半径滑条专用范围（headRadius 默认14 / bodyRadius 默认12；config-override 走重载，视觉=判定同随）
 		bodyContactDps: [0, 40, 1], critRate: [0, 1, 0.01], foodCap: [1, 20, 1],
 		enemyHp: [1, 400, 1], enemySpeed: [20, 300, 5], enemyAtk: [1, 10, 1], enemyRadius: [6, 60, 1],
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -40,7 +40,9 @@
 		{ path: 'PLAYER.maxSegments', label: '最大节数', rng: 'maxSegments' },
 		{ path: 'COMBAT.bodyContactDps', label: '蛇身接触DPS', rng: 'bodyContactDps' },
 		{ path: 'COMBAT.critRate', label: '暴击率', rng: 'critRate' },
-		{ path: 'PICKUP.food.screenCap', label: '食物上限', rng: 'foodCap' }
+		{ path: 'PICKUP.food.screenCap', label: '食物上限', rng: 'foodCap' },
+		{ path: 'PLAYER.headRadius', label: '蛇头半径px(判定=视觉)', rng: 'playerRadius' },
+		{ path: 'PLAYER.bodyRadius', label: '蛇身半径px(判定=视觉)', rng: 'playerRadius' }
 	]
 
 	function getPath(p) { var ks = p.split('.'), o = CONFIG; for (var i = 0; i < ks.length; i++) { if (o == null) { return undefined } o = o[ks[i]] } return o }
@@ -78,7 +80,9 @@
 		{ path: 'PLAYER.turnRateFloor', label: '转向下限°/s', rng: 'turnRateFloor', def: 120, dec: 0 },   // 满节不失控下限（真理源 100–150）
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
 		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' },   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
-		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 }   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
+		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 },   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
+		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
+		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 }   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
 	]
 	var TUNING_SCALAR_SLIDERS = []
 

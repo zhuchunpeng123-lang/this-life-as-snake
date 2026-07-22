@@ -9,7 +9,7 @@
 	var _pid = 0
 	var foodTimer = 0, healTimer = PK.heal.naturalRefreshSec
 	var spawnAcc = 0, bossWarned = false, bossSpawned = false, prevStageId = 0
-	var killsSinceSkill = 0, gotFirstSkill = false, healsThisRun = 0, firstSkillTimer = 0
+	var killsSinceSkill = 0, gotFirstSkill = false, healsThisRun = 0, firstSkillTimer = 0, lastSkillBallTime = 0
 
 	function newOrb() { return { active: false, id: 0, kind: 'food', x: 0, y: 0, radius: PK.food.radius } }
 	var orbPool = Core.createPool(newOrb, function (o) { o.active = false }, 32)
@@ -88,11 +88,51 @@
 		return Math.random() < chance
 	}
 	// 首技能保底（§5）：开局即在蛇头正前方 safeDistance 处给出第一个技能球（屏内可直达，绝不落世界原点）
-	function spawnSkillInFront() {
-		var h = head()
-		var ang = (typeof h.angle === 'number') ? h.angle : 0
-		var d = PK.food.safeDistance
-		spawnOrbAt('skill', h.x + Math.cos(ang) * d, h.y + Math.sin(ang) * d)
+	function spawnSkillInFront() { tryGiveSkill(0, 0, true) }   // 经统一入口：首技能路径，地板/满级闸门同处判定
+
+	// —— B-GM 实时标定桥（dev）：读 editor 运行时覆盖，无覆盖回退冻结 CONFIG 默认；仅替换 input 来源，不改判定/公式 ——
+	function RT(path, fb) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
+	// 战线B：全技能满级闸门 → 复用 skill.js 同源判定（candidates 为空＝无更多有效升级），与 buildOffer/offer 完全同步，杜绝双份真相漂移
+	function allSkillsMaxed() {
+		var S = Registry.get('skill')
+		if (S && typeof S.allMaxed === 'function') { return S.allMaxed() }
+		var list = CONFIG.SKILL.list   // 兜底（skill 未就绪时）：与 candidates 等价判定
+		for (var i = 0; i < list.length; i++) { if ((GS.ownedSkills[list[i]] || 0) !== CONFIG.SKILL.maxLevel) { return false } }
+		return true
+	}
+	// 战线B：溢出转化（技能球掉率时机不变，产物换血/食物）——沿用原 skill 球落点
+	function spawnMaxedReward(x, y) {
+		if (GS.coreHp < PK.heal.maxHp && activeKind('heal') < PK.heal.screenCap) {
+			spawnOrbAt('heal', x, y)   // ❶ 血<3（状态上限3心，唯一致死柱石）随时可转回血；同屏上限1；不绑局上限（避免满级后空 food 回归）
+		} else if (activeKind('food') < PK.food.screenCap) {
+			spawnOrbAt('food', x, y)   // ❷ 满血→食物（+1 节，遵 §5 屏上限6）
+		}
+		// 同屏已满则本次不产：沿用掉率、不补窗、不凭空堆叠
+	}
+	// 实际给出技能球（集三处掉落入口于一点；命中即重置计数/计时；被地板压制的触发不重置）
+	function giveSkillBall(x, y) {
+		spawnOrbAt('skill', x, y)
+		killsSinceSkill = 0
+		gotFirstSkill = true
+		lastSkillBallTime = GS.timeSec
+	}
+	// 统一技能球入口：满级→溢出转化；否则按段取值走升级间隔地板（含连杀保底那颗，维持上轮口径：压制不重置、超窗即给、不预支）
+	function tryGiveSkill(x, y, inFront) {
+		if (allSkillsMaxed()) { spawnMaxedReward(x, y); return }
+		var arr = PK.upgradeMinGapSecBySeg, gi = GS.stageId - 1
+		var gap = (gi >= 0 && gi < arr.length) ? arr[gi] : 0   // 按段取值；0/null＝地板失效、恢复原掉率
+		if (gi === 2) { gap = RT('PICKUP.gapFarm', gap) }                    // 段③ 割草：RT 桥到「割草升级间隔s」
+		else if (gi === 0 || gi === 1) { gap = RT('PICKUP.gapEarly', gap) }  // 段①②：RT 桥到「前期升级间隔s」
+		if (gap > 0 && gotFirstSkill) {                                       // 值>0 才节流；首技能≤9s 一律不门控
+			if (GS.timeSec - lastSkillBallTime < gap) { return }             // 地板压制：不 spawn、不重置 killsSinceSkill（防计数漂移/反枯竭语义错）
+		}
+		var px = x, py = y
+		if (inFront) { var h = head(), ang = (typeof h.angle === 'number') ? h.angle : 0, d = PK.food.safeDistance; px = h.x + Math.cos(ang) * d; py = h.y + Math.sin(ang) * d }
+		giveSkillBall(px, py)
 	}
 
 	// ---------------- Pickup 系统 ----------------
@@ -161,13 +201,13 @@
 	})
 	Bus.on('enemy:die', function (d) {
 		killsSinceSkill++
-		if (!GS.tuningSandbox && rollSkillDrop()) { spawnOrbAt('skill', d.x, d.y); killsSinceSkill = 0; gotFirstSkill = true }   // B-GM 沙盒：停击杀掉技能球
+		if (!GS.tuningSandbox && rollSkillDrop()) { tryGiveSkill(d.x, d.y, false) }   // 统一入口：地板/满级闸门在此判定；B-GM 沙盒停击杀掉球
 	})
 	Bus.on('core:run_reset', function () {
 		while (foods.length) { orbPool.release(foods.pop()) }
 		_pid = 0; foodTimer = 0; healTimer = PK.heal.naturalRefreshSec
 		spawnAcc = 0; bossWarned = false; bossSpawned = false; prevStageId = 0
-		killsSinceSkill = 0; gotFirstSkill = false; healsThisRun = 0; firstSkillTimer = 0
+		killsSinceSkill = 0; gotFirstSkill = false; healsThisRun = 0; firstSkillTimer = 0; lastSkillBallTime = 0
 	})
 
 	Registry.register('pickup', Pickup)

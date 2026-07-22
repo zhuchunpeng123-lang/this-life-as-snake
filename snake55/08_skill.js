@@ -381,6 +381,7 @@ function tickCombos(dt) {
 
 	var Skill = {
 		owned: function () { return GS.ownedSkills }, offer: offer, pick: pick,
+		allMaxed: function () { return candidates().length === 0 },   // 战线B 满级闸门同源判定：候选为空＝无更多有效升级（与 buildOffer/offer 完全一致，杜绝双份真相漂移；09_wave 经此门控停刷技能球）
 		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll, debugSetSkill: debugSetSkill,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }    // 依赖：本帧应在 collision.update 之后调用（queryCircle 哈希新鲜）
