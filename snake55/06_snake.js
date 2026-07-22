@@ -12,11 +12,21 @@
 	var squash = { sx: 1, sy: 1, t: 0, dur: 0, from: 1, to: 1 }
 	var wallScrape = { until: 0 }   // 撞墙刮擦减速：持续到 GS.timeSec 达此值（真理源 §2.1）
 
-	// §1：转向速率随节数衰减，不低于 turnRateFloor
+	// B-GM 实时标定桥（dev）：读 editor 运行时覆盖，无覆盖回退冻结 CONFIG 默认；仅替换 input 来源，不改判定/公式语义
+	function RT(path, fb) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
+	// §1：转向速率随节数衰减，不低于 turnRateFloor（P0 手感三件套，支持 GM 运行时热调）
 	function effectiveTurnRateDeg() {
-		var mul = 1 - P.turnRateDecayPerSeg * (GS.segments - P.initSegments)
-		var v = P.turnRate * mul
-		return v < P.turnRateFloor ? P.turnRateFloor : v
+		var base = RT('PLAYER.turnRate', P.turnRate)
+		if (GS.segments <= P.initSegments) { return base }   // 短蛇（开局 3 节）不衰减，恒 = 基线
+		var decay = RT('PLAYER.turnRateDecayPerSeg', P.turnRateDecayPerSeg * 100) / 100   // 单位陷阱规避：RT 用 %/节，热路径 /100（默认 1.0/节 → 0.010，2026-07-22 调参）
+		var mul = 1 - decay * (GS.segments - P.initSegments)
+		var v = base * mul
+		var floor = RT('PLAYER.turnRateFloor', P.turnRateFloor)
+		return v < floor ? floor : v
 	}
 	function setSegments(n) {
 		while (segments.length < n) { segments.push({ x: head.x, y: head.y }) }

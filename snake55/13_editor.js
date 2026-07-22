@@ -5,7 +5,7 @@
 
 	// —— UI 滑块范围常量（集中，避免逻辑里散落魔法数字；dev 工具边界，非 gameplay 数值）——
 	var RANGE = {
-		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], maxSegments: [5, 60, 1],
+		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], turnRateDecay: [0, 1.0, 0.01], turnRateFloor: [100, 150, 1], maxSegments: [5, 60, 1],
 		bodyContactDps: [0, 40, 1], critRate: [0, 1, 0.01], foodCap: [1, 20, 1],
 		enemyHp: [1, 400, 1], enemySpeed: [20, 300, 5], enemyAtk: [1, 10, 1], enemyRadius: [6, 60, 1],
 		bossHpTotal: [1000, 40000, 500],
@@ -37,7 +37,6 @@
 	// 蛇/战斗 标量（走 override+重载）
 	var SNAKE_SCALAR = [
 		{ path: 'PLAYER.snakeSpeed', label: '蛇速', rng: 'snakeSpeed' },
-		{ path: 'PLAYER.turnRate', label: '转向速率', rng: 'turnRate' },
 		{ path: 'PLAYER.maxSegments', label: '最大节数', rng: 'maxSegments' },
 		{ path: 'COMBAT.bodyContactDps', label: '蛇身接触DPS', rng: 'bodyContactDps' },
 		{ path: 'COMBAT.critRate', label: '暴击率', rng: 'critRate' },
@@ -74,6 +73,9 @@
 	var TUNING_SCALAR = [
 		{ path: 'RENDER.maxBackW', label: '渲染分辨率上限W', rng: 'maxBackW', def: 1600, dec: 0 },   // 实时标定：拖动即改 backing 宽上限（RT 桥），触发 render.resize 重算画布；默认 1600 降填充成本治卡顿；注：只控渲染分辨率/填充率，不改实体尺寸
 		{ path: 'RENDER.worldScale', label: '视图缩放(纯视觉)', rng: 'worldScale', def: 0.8, dec: 2 },   // 视图缩放：默认0.8 还原「更小更精致」蛇/怪画面；0.6–1.0 实时可调；纯渲染缩放，碰撞/世界坐标不变
+		{ path: 'PLAYER.turnRate', label: '转向速率°/s', rng: 'turnRate', def: 180, dec: 0 },   // P0 手感第一参数：GM 拖动即时生效（RT 桥到 06_snake）；def 由 config 推导，无裸数字
+		{ path: 'PLAYER.turnRateDecayPerSeg', label: '转向衰减%/节', rng: 'turnRateDecay', def: 1.0, dec: 2 },   // 单位 %/节：RT 存 1.0 → 06_snake 热路径 /100 = 0.010；dec:2 防显示成 1
+		{ path: 'PLAYER.turnRateFloor', label: '转向下限°/s', rng: 'turnRateFloor', def: 120, dec: 0 },   // 满节不失控下限（真理源 100–150）
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
 		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' }   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
 	]

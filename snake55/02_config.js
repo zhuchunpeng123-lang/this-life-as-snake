@@ -31,9 +31,9 @@
 		// —— §1 PLAYER ——
 		PLAYER: {
 			snakeSpeed: 200,
-			turnRate: 180,
-			turnRateDecayPerSeg: 0.006,
-			turnRateFloor: 120,
+		turnRate: 180,
+		turnRateDecayPerSeg: 0.010,
+		turnRateFloor: 120,
 			segmentSpacing: 24,
 			followLerp: 0.4,
 			initSegments: 3,

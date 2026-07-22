@@ -404,6 +404,7 @@ function draw() {
 function drawDebugHud() {
 	if (!RT('PERF.debugHud', CONFIG.PERF.debugHud)) { return }   // 收起 b9 诊断脚手架：默认关闭，GM 面板「性能HUD」一键开；正常运行不显示
 	var En = Registry.get('enemy')
+	var Sn = Registry.get('snake')   // P0 HUD：取有效转向速率单一来源，render 不内联重算衰减公式，防与 06_snake 漂移
 	var en = (En && En.countMobs) ? En.countMobs() : 0
 	var pa = Registry.get('particle')
 	var pc = pa && pa.particles ? pa.particles.length : 0
@@ -441,6 +442,8 @@ function drawDebugHud() {
 			ctx.fillStyle = '#fda'
 			ctx.fillText('BOSS DOT: fire=' + _fv.toFixed(1) + '  shield=' + _sv.toFixed(1) + '  burn=' + _bv.toFixed(1), 8, 88)
 		}
+		ctx.fillStyle = '#9fe'
+		ctx.fillText('转向 ' + (Sn && Sn.getEffectiveTurnRate ? Sn.getEffectiveTurnRate().toFixed(1) : '-') + '°/s', 8, 106)   // P0：实时显示含 RT 覆盖值的有效转速
 	}
 	ctx.restore()
 }
