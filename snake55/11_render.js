@@ -42,6 +42,63 @@
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
 	}
+
+	// —— 精灵子系统（#M0 美术管线基建，全落 render 分区，不新建 10_assets.js）——
+	// 职责：manifest 登记精灵 → init 一次性预载（每帧不 new/decode）→ drawSprite 按判定半径算缩放接图；无图/404/NaN 一律回退代码画（零破功）。
+	// 铁律：①判定半径只读不改（getSpriteRadius 仅从冻结 CONFIG/RT 读）；②缩放系数由判定半径算，禁魔法数字；③保留代码画 fallback，绝不白屏/抛错。
+	var ASSETS_BASE = 'assets/'   // 相对 index.html（index.html 与 assets/ 同处 snake55/）→ 任意服务/打开方式（项目根/ snake55/ 根 / file://）均正确；原 'snake55/assets/' 会被拼成 …/snake55/snake55/assets/ 全 404（#M0 复查修）
+	var SPRITE_MANIFEST = {
+		// file=待放 PNG（当前 assets 为空 → 全部 404 → 永远走 fallback）；radiusKey 即 RT 的 path，也是 SPRITE_BASELINE 的 key
+		// solidDiameterPx = PNG 实心视觉直径（像素），缩放 = 判定半径*2 / solidDiameterPx；接图时须与实际 PNG 实心直径一致（#M1 债）
+		snake_head: { file: 'snake_head.png', radiusKey: 'PLAYER.headRadius', solidDiameterPx: 64, pivot: [0.5, 0.5] },
+		snake_body: { file: 'snake_body.png', radiusKey: 'PLAYER.bodyRadius', solidDiameterPx: 48, pivot: [0.5, 0.5] },
+		snake_tail: { file: 'snake_tail.png', radiusKey: 'PLAYER.bodyRadius', solidDiameterPx: 48, pivot: [0.5, 1.0] }  // #M1：pivot 待校（接真图时，fallback 圆是中心锚点）
+	}
+	var _spriteCache = {}   // key → Image（init 一次性创建，每帧复用，绝不 new）
+	// SPRITE_BASELINE：半径读取基线，key = manifest.radiusKey（RT 的 path），值 = 冻结 CONFIG 基线。
+	// 读取时机：本文件在 03_core.deepFreeze(CONFIG) 之后才加载（index.html 顺序）→ PLAYER.headRadius 此刻已是 config-override 注入后的冻结值 → 视觉与 04_collision 判定同随（看到=打到）。
+	var SPRITE_BASELINE = {
+		'PLAYER.headRadius': PLAYER.headRadius,
+		'PLAYER.bodyRadius': PLAYER.bodyRadius
+	}
+	function getSpriteRadius(radiusKey) {   // 单一半径读取：RT 运行时覆盖优先，缺失回退冻结基线；守卫 r>0 防 NaN/消失
+		var base = SPRITE_BASELINE[radiusKey]
+		var r = RT(radiusKey, base)   // 既有 RT 桥：有 runtime 覆盖取覆盖，否则回退 base
+		return (typeof r === 'number' && r > 0) ? r : base
+	}
+	function preloadSprites() {   // init 末尾一次性调用：每个 manifest 项创建一张 Image，onload→ready / onerror→failed；幂等（init 重入不重复 new）
+		for (var key in SPRITE_MANIFEST) {
+			if (!SPRITE_MANIFEST.hasOwnProperty(key)) { continue }
+			if (_spriteCache[key]) { continue }   // 已建过（防 init 重入重复 new/发请求）
+			var entry = SPRITE_MANIFEST[key]
+			var img = new Image()
+			var rec = { img: img, ready: false, failed: false }
+			img.onload = (function (r) { return function () { r.ready = true } })(rec)   // 加载成功 → 标记 ready，drawSprite 才接图
+			img.onerror = (function (r) { return function () { r.failed = true } })(rec)  // 404/损坏 → 标记 failed，drawSprite 永久走 fallback（永不重试）
+			img.src = ASSETS_BASE + entry.file
+			_spriteCache[key] = rec
+		}
+	}
+	// 返回 true=已用图绘制；false=未就绪/不可用 → 调用方须 fallback 代码画。绝不抛错、绝不在函数内 new Image/发请求、绝不留半截 NaN 进 drawImage。
+	// 硬短路：任何 ctx.save/translate/rotate 之前就判 failed/未 ready → 直接 return，不给每段蛇身白套一层变换开销。
+	function drawSprite(ctx, key, x, y, angle) {
+		var c = _spriteCache[key]
+		if (!c || c.failed || !c.ready) { return false }   // 空 assets 恒走此（failed 标记后永不重试）→ fallback
+		var entry = SPRITE_MANIFEST[key]
+		var r = getSpriteRadius(entry.radiusKey)              // >0 保证（守卫在 getSpriteRadius）
+		var scale = (entry.solidDiameterPx > 0 && r > 0) ? (r * 2 / entry.solidDiameterPx) : 0
+		if (!(scale > 0)) { return false }                    // !(scale>0) 同时兜住 NaN/0/负 → 永不进 drawImage
+		var img = c.img, nw = img.naturalWidth, nh = img.naturalHeight
+		if (!(nw > 0 && nh > 0)) { return false }             // 兜底：naturalWidth=0（损坏）不进 drawImage
+		ctx.save()
+		ctx.translate(x, y)
+		ctx.rotate(angle || 0)
+		ctx.scale(scale, scale)                                // 缩放系数由判定半径算（禁魔法数字）
+		ctx.drawImage(img, -entry.pivot[0] * nw, -entry.pivot[1] * nh)  // 以 pivot 为锚点绘制全图
+		ctx.restore()
+		return true
+	}
+
 	function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
 
 	// 任务2：屏震分档节流（真源 §2.2.1「严禁单一强度轰炸·防脱敏」）
@@ -54,7 +111,7 @@
 		_traumaGateUntil = GS.timeSec + (SHK.gateSec[rank] || 0.5)
 	}
 
-	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize() }   // b9+diag：包装 ctx 计数绘制调用
+	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize(); preloadSprites() }   // b9+diag：包装 ctx 计数绘制调用；#M0 一次性预载精灵（每帧不 new/decode，空 assets→全 404→永远走 fallback）
 	function resize() {
 		if (!canvas) { return }
 		var dprMon = Math.min(global.devicePixelRatio || 1, 3)   // 设备像素比上限 3（retina 手机 dpr=3：用足原生像素→文字/画面清晰；桌面 dpr 通常≤2 不受此影响；填充率上升由 PerfTier 看门狗兜底）
@@ -198,17 +255,38 @@
 	function drawSnake() {
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var segs = s.segments || []
-		for (var i = segs.length - 1; i >= 1; i--) { circle(segs[i].x, segs[i].y, PLAYER.bodyRadius, SNAKE_BODY) }  // 跳过 index 0（头节）：已由头圆单独绘制，避免头后重叠成「双球」
+		// 半径走 getSpriteRadius() 单一源（与精灵路径/碰撞同经冻结 CONFIG）：override 或 RT 运行时覆盖 → 视觉与判定同随（看到=打到）
+		var headR = getSpriteRadius('PLAYER.headRadius')
+		var bodyR = getSpriteRadius('PLAYER.bodyRadius')
+		// 身体（跳过 index 0 头节；同时跳过最后一节 → 交尾巴块负责，避免接真图时「body 图 + tail 图」双绘重影）
+		for (var i = segs.length - 2; i >= 1; i--) {
+			var seg = segs[i]
+			if (!drawSprite(ctx, 'snake_body', seg.x, seg.y, 0)) {   // 接图优先；无图/404/NaN → 回退原代码画（空 assets→零变化）
+				circle(seg.x, seg.y, bodyR, SNAKE_BODY)   // fallback＝原代码画（半径同源）
+			}
+		}
+		// 蛇头
 		var h = s.head, sq = s.squash || { sx: 1, sy: 1 }
 		var inv = GS.invincibleUntil > GS.timeSec
 		var blink = inv && (Math.floor(GS.timeSec * 16) % 2 === 0)   // 无敌帧：蛇头闪烁，直观「这 1 秒安全」
-		ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle || 0); ctx.scale(sq.sx, sq.sy)
-		if (blink) { ctx.globalAlpha = 0.35 }
-		circle(0, 0, PLAYER.headRadius, GS.coreHp <= 1 ? COL.enemyChaser : SNAKE_HEAD)
-		ctx.restore(); ctx.globalAlpha = 1
+		if (!drawSprite(ctx, 'snake_head', h.x, h.y, h.angle || 0)) {   // 接图优先；fallback 保留 squash/blink
+			ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle || 0); ctx.scale(sq.sx, sq.sy)
+			if (blink) { ctx.globalAlpha = 0.35 }
+			circle(0, 0, headR, GS.coreHp <= 1 ? COL.enemyChaser : SNAKE_HEAD)
+			ctx.restore(); ctx.globalAlpha = 1
+		}
 		if (inv) {                                                   // 无敌光环（白闪脉动）
 			var ha = 0.3 + 0.3 * Math.sin(GS.timeSec * 16)
-			ctx.globalAlpha = ha; ctx.beginPath(); ctx.arc(h.x, h.y, PLAYER.headRadius + 6, 0, M.PI2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1
+			ctx.globalAlpha = ha; ctx.beginPath(); ctx.arc(h.x, h.y, headR + 6, 0, M.PI2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1
+		}
+		// 蛇尾（最后一节用 tail 图；body 循环已跳过此节，故 fallback 时也须补画一个同半径圆，避免尾巴「消失」）
+		var tail = segs[segs.length - 1]
+		if (tail) {
+			var tb = (segs.length >= 2 && segs[segs.length - 2]) ? segs[segs.length - 2] : tail
+			var tang = Math.atan2(tail.y - tb.y, tail.x - tb.x)
+			if (!drawSprite(ctx, 'snake_tail', tail.x, tail.y, tang)) {   // 接真图：覆盖尾节；无图/404 → 补画同半径圆（与 body 同源，空 assets 视觉不变）
+				circle(tail.x, tail.y, bodyR, SNAKE_BODY)
+			}
 		}
 	}
 	function drawSkillAura() {

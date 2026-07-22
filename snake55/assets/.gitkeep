@@ -1,0 +1,5 @@
+# 精灵资源目录（#M0 美术管线基建）
+# 当前为空：11_render.js 的 SPRITE_MANIFEST 登记 head/body/tail 三项 PNG，
+# 文件缺失(404) → drawSprite 永远走代码画 fallback（画面零变化、不白屏、不抛错）。
+# 接真图时把 snake_head.png / snake_body.png / snake_tail.png 放此目录，
+# 并核对 manifest 的 solidDiameterPx 与实际 PNG 实心视觉直径一致（否则缩放错 → #M1 债）。

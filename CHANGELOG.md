@@ -6,6 +6,23 @@
 
 
 
+## 2026-07-22 · infra(render): #M0 美术管线基建（精灵子系统 + 半径滑条，空 assets 零变化）
+
+- **范围**：`11_render.js` 新增精灵子系统——`SPRITE_MANIFEST`（head/body/tail 三项，`radiusKey`=RT 的 path + `solidDiameterPx` 资产属性 + `pivot`）/ `_spriteCache`（每张图仅 `new Image()` 一次）/ `SPRITE_BASELINE`（`key=radiusKey`，值=冻结 CONFIG 基线）/ `getSpriteRadius(radiusKey)`（单一半径读取：RT 运行时覆盖优先、缺失回退基线、守卫 `r>0`）/ `preloadSprites()`（`init` 末尾一次性预载，每帧不 new/decode）/ `drawSprite()`（按判定半径算 scale，无图/404/NaN → 回退代码画 fallback，永不白屏/抛错）。`drawSnake` 头/身/尾接 `drawSprite`，fallback＝原 `circle()` 圆画。`13_editor.js` `SNAKE_SCALAR` 加 `PLAYER.headRadius`/`PLAYER.bodyRadius` 滑条（`RANGE.playerRadius=[4,40,1]`，config-override `save+reload`）。新建 `snake55/assets/` + `.gitkeep`。
+- **Bug 修复（放行前定位）**：`SPRITE_BASELINE` 原用精灵名做 key、与 `getSpriteRadius(entry.radiusKey)` 传入的 `RT path`（`'PLAYER.headRadius'`）错配 → `undefined` 基线 → `NaN` scale 漏过 `scale<=0` 兜不住 → 蛇消失/破功。已修为 `key=radiusKey` 对齐 RT path，并硬化 `if (!(scale>0))` 同时兜 NaN/0/负。
+- **时序保证（验收⑤一致性）**：`SPRITE_BASELINE` 在 `11_render.js` 模块加载时读取 `PLAYER.headRadius`；而 `03_core.js` 已在 `deepFreeze(CONFIG)` 前 `applyTuningOverrides()` 把 localStorage 覆盖写回 CONFIG，且 `11_render.js` 在 `03_core.js` 之后加载（index.html 顺序）→ `PLAYER.headRadius` 已是覆盖值 → `04_collision`（`var HEAD_R = CONFIG.PLAYER.headRadius`，同在 deepFreeze 之后加载）与视觉同随（看到=打到）。
+- **铁律遵守**：不动 `03_core.js`/`04_collision.js`；判定半径只读不改；不新建 `10_assets.js`（全落 `11_render.js`）；不改动 `index.html` 脚本顺序；保留代码画 fallback；缩放系数由判定半径算（禁魔法数字）；精灵实心视觉半径=config 判定半径、透明发光像素不计判定。
+- **是否动 §9**：否（纯美术管线基建 + 半径滑条走 config-override 默认值=原值；无新平衡数值锁定）。
+- **债（#M1，本单不做）**：`snake_tail` pivot `[0.5,1.0]` 与 fallback 圆（中心锚点）不一致，接真图会跳位 → 校 pivot；manifest `solidDiameterPx`（64/48/48）接图时必须与实际 PNG 实心直径一致，否则缩放错。已记 DEBT §4。
+- **验收**：
+  - [ ] 空 assets → 画面零变化、无报错、蛇头/身/尾无漏画（全走 fallback 圆）。
+  - [ ] 拖 headRadius/bodyRadius 滑条 → save+reload → 蛇视觉与判定圈（GM「显示碰撞盒」红圈）同步缩放。
+  - [ ] 60fps 无掉帧，每帧无 `new Image`/无 decode。
+  - [ ] 反向——`git diff` 仅 11_render.js / 13_editor.js / assets/.gitkeep / 本文档 / DEBT，core/collision/02_config 未动。
+- **返工（2026-07-22 实测打回）**：①`drawSprite` 改为 `preloadSprites` 一次性建 `_spriteCache[name]={img,ready:false,failed:false}`，`onload→ready` / `onerror→failed`；`drawSprite` 第一行硬短路 `if (!c || c.failed || !c.ready) return false`，**任何 ctx 变换前就 return，函数内绝不 new Image/发请求**；`preloadSprites` 幂等（init 重入不重复 new）。②`drawSnake` fallback 半径改用 `getSpriteRadius('PLAYER.headRadius'/'PLAYER.bodyRadius')` 单一源（与精灵路径/碰撞同经冻结 CONFIG），焊死「看到=打到」。③FPS 实测观察：CPU 0.7ms、外部 33.8ms ≈ rAF 间隔 33ms（≈30Hz），非 JS 负载 → 判为显示器 30Hz 或 IDE 内置预览节流，非 #M0 回归；已按硬性要求加 ready/failed 硬短路防御，请 DevTools→Network 确认 assets/*.png 仅启动期各 1 次后归零。
+- **对抗性审查复查（2026-07-22·用户「插电即满帧、调大小正常」后）**：在 #M0 代码上做对抗性审查，再修 2 处隐患（均在本人引入的 11_render.js 内、对当前空 assets 行为零变化）：①**资源路径真 bug**：`ASSETS_BASE` 原 `'snake55/assets/'`——`img.src` 相对页面 URL 解析，而 `index.html` 与 `assets/` 同处 `snake55/`，任意服务/打开方式都会拼成 `…/snake55/snake55/assets/` 全 404；空 assets 时静默走 fallback 看不出，一旦放真 PNG 会全 404 永不显示（美术管线直接失效且不报错）。已改 `'assets/'`（相对 index.html，项目根/`snake55/`根/`file://` 皆正确）。②**蛇尾双绘（潜在）**：身体循环原把最后一节也画 body 圆/图、尾巴块又在同一位置画 `snake_tail`，空 assets 时尾巴块 `drawSprite` 返回 false 不显（看不出），接真图会重影。已改身体循环从 `segs.length-2` 起、尾巴块 fallback 时补画同半径圆，两种状态都只画一次。③其余观察（非阻塞）已补进 #M1 债：head squash/无敌闪烁不作用于精灵路径、head/tail 朝向须按 sprite 约定配图（`h.angle` 0=+x、tail `pivot[0.5,1.0]` 要求「连接点朝下/尾尖朝上」）、放 PNG 后须整页刷新（Image 在 init 一次性 new、`failed` 永不重试）。
+- **验收（空 assets·当前态已满足）**：①空 assets → 画面零变化、无报错、蛇头/身/尾无漏画（全走 fallback 圆）。②拖 headRadius/bodyRadius 滑条 → save+reload → 蛇视觉与判定圈（GM「显示碰撞盒」红圈）同步缩放（用户实测已 ok）。③60fps 无掉帧（用户插电源后已恢复 60）、每帧无 `new Image`/无 decode。④反向——`git diff` 仅 11_render.js / 13_editor.js / assets/.gitkeep / 本文档 / DEBT，core/collision/02_config 未动。
+
 ## 2026-07-22 · perf(skill) #6: 消除每帧 queryCircle GC 抖动
 
 - **范围**：`08_skill.js` 的 `enemiesIn`（火墙/冰池/护盾球/蒸汽引爆共用的 AOE 索敌）原每帧每 AOE 中心一次 `collision.queryCircle`，每次含字符串 key 拼接 + map 查找 + 新数组分配的 GC 抖动（已登 DEBT 冰区扫描债）。改为复用每帧 `_enemySnap` 做 **cell 覆盖相交判定**，精确复刻 `SpatialHash.query` 返回集合（cell 级宽松、非精确圆），**零行为变化**。
