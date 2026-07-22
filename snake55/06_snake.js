@@ -97,7 +97,7 @@
 			head.x += Math.cos(head.angle) * speed * dt
 			head.y += Math.sin(head.angle) * speed * dt
 			// 3) 撞墙＝沿墙滑行（逐轴钳制→垂直分量归零、切向保速、不可穿越）+ 刮擦减速 grace（真理源 §2.1，非致死源）
-			var r = P.headRadius, hitWall = false
+			var r = RT('PLAYER.headRadius', P.headRadius), hitWall = false   // L2：墙碰半径实时跟随 GM 滑条（RT 桥），与视觉/判定同源
 			if (head.x < r) { head.x = r; hitWall = true }
 			if (head.y < r) { head.y = r; hitWall = true }
 			if (head.x > CONFIG.GAME.worldWidth - r) { head.x = CONFIG.GAME.worldWidth - r; hitWall = true }

@@ -61,10 +61,12 @@
 		'PLAYER.headRadius': PLAYER.headRadius,
 		'PLAYER.bodyRadius': PLAYER.bodyRadius
 	}
-	function getSpriteRadius(radiusKey) {   // 单一半径读取：RT 运行时覆盖优先，缺失回退冻结基线；守卫 r>0 防 NaN/消失
+	var MIN_SPRITE_R = 8   // 与 04_collision.MIN_JUDGE_R / 13_editor RANGE.playerRadius 最小对齐：视觉安全下限，避免 localStorage 残留过小半径导致蛇画得过小（判定已回退 14，视觉须同步抬高，否则「小蛇大判定」不一致）
+	function getSpriteRadius(radiusKey) {   // 单一半径读取：RT 运行时覆盖优先，缺失回退冻结基线；守卫 r>0 防 NaN/消失；MIN_SPRITE_R 防残留小半径视觉过小
 		var base = SPRITE_BASELINE[radiusKey]
 		var r = RT(radiusKey, base)   // 既有 RT 桥：有 runtime 覆盖取覆盖，否则回退 base
-		return (typeof r === 'number' && r > 0) ? r : base
+		var v = (typeof r === 'number' && r > 0) ? r : base
+		return (v && v < MIN_SPRITE_R) ? MIN_SPRITE_R : v
 	}
 	function preloadSprites() {   // init 末尾一次性调用：每个 manifest 项创建一张 Image，onload→ready / onerror→failed；幂等（init 重入不重复 new）
 		for (var key in SPRITE_MANIFEST) {
@@ -474,55 +476,21 @@ function draw() {
 		var En = Registry.get('enemy'); if (En && En.list) { for (var i = 0; i < En.list.length; i++) { var e = En.list[i]; if (!e.active) { continue }; ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, M.PI2); ctx.stroke() } }
 		var s = Registry.get('snake'); if (s && s.head) {
 			ctx.strokeStyle = 'rgba(255,80,120,0.9)'
-			var segs = s.segments || []; for (var j = 0; j < segs.length; j++) { ctx.beginPath(); ctx.arc(segs[j].x, segs[j].y, PLAYER.bodyRadius, 0, M.PI2); ctx.stroke() }
-			ctx.beginPath(); ctx.arc(s.head.x, s.head.y, PLAYER.headRadius, 0, M.PI2); ctx.stroke()
+			var segs = s.segments || []; for (var j = 0; j < segs.length; j++) { ctx.beginPath(); ctx.arc(segs[j].x, segs[j].y, getSpriteRadius('PLAYER.bodyRadius'), 0, M.PI2); ctx.stroke() }
+			ctx.beginPath(); ctx.arc(s.head.x, s.head.y, getSpriteRadius('PLAYER.headRadius'), 0, M.PI2); ctx.stroke()
 		}
 		ctx.restore()
 	}
 function drawDebugHud() {
-	if (!RT('PERF.debugHud', CONFIG.PERF.debugHud)) { return }   // 收起 b9 诊断脚手架：默认关闭，GM 面板「性能HUD」一键开；正常运行不显示
-	var En = Registry.get('enemy')
-	var Sn = Registry.get('snake')   // P0 HUD：取有效转向速率单一来源，render 不内联重算衰减公式，防与 06_snake 漂移
-	var en = (En && En.countMobs) ? En.countMobs() : 0
-	var pa = Registry.get('particle')
-	var pc = pa && pa.particles ? pa.particles.length : 0
-	var tc = pa && pa.texts ? pa.texts.length : 0
-	var bc = pa && pa.beams ? pa.beams.length : 0        // b9-measure：光束活跃数
-	var blc = pa && pa.blasts ? pa.blasts.length : 0     // b9-measure：爆环活跃数
-	var dc = pa && pa.darts ? pa.darts.length : 0        // b9-measure：飞镖活跃数
-	var fcc = pa && pa.flashCores ? pa.flashCores.length : 0   // b9-measure：闪核活跃数
-	var fc = pa && pa.DBG ? pa.DBG.flashDrawn : 0           // 白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
-	var ig = pa && pa.DBG ? pa.DBG.ignite : 0              // 灼烧 ignite 数
-	var fd = pa && pa.DBG ? pa.DBG.fireDot : 0             // 火墙 DOT 命中数
-	var ov = (GS.timeSec < hurtVignetteUntil) ? 1 : 0      // 全屏 overlay（受击红 vignette）本帧 draw 数
-	var pcMax = RT('PERF.maxParticles', perfFB('maxParticles', CONFIG.PERF.maxParticles))
-	var tcMax = RT('PERF.maxTexts', perfFB('maxTexts', CONFIG.PERF.maxTexts))
-	var gap = _fps > 0 ? Math.max(0, 1000 / _fps - _cpuMs) : 0   // 呈现gap=实际帧间隔(1000/fps)−主线程JS(cpuMs)；高 FPS(达刷新率上限)时≈vsync 空闲，掉帧时>0 即 JS 之外的等待(GPU 呈现/合成器/GC/系统调度)，坐实"非代码"掉帧
+	if (!RT('PERF.debugHud', CONFIG.PERF.debugHud)) { return }   // 精简性能HUD：仅 FPS/CPU/GPU 帧耗时，常驻监测调参/美术性能回归；详细数据见 L 剖析面板
+	var gap = _fps > 0 ? Math.max(0, 1000 / _fps - _cpuMs) : 0   // GPU/环境等待 = 实际帧间隔(1000/fps) − 主线程JS(cpuMs)；>0 即 JS 之外等待，坐实"非代码"掉帧
 	ctx.save()
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 	ctx.globalAlpha = 1
-	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
 	ctx.font = '700 13px monospace'
 	ctx.textAlign = 'left'
-	ctx.fillText('FPS ' + _fps + ' (min ' + (_fpsMin === Infinity ? '-' : Math.round(_fpsMin)) + ')  CPU ' + _cpuMs.toFixed(1) + 'ms' + '  帧 ' + _frameMs.toFixed(1) + 'ms' + '  外部 ' + gap.toFixed(1) + 'ms' + '  画布 ' + canvas.width + 'x' + canvas.height + '  敌 ' + en + '  节 ' + GS.segments + '  p ' + pc + '/' + pcMax + '  t ' + tc + '/' + tcMax, 8, 16)
-	ctx.fillStyle = (fc > pcMax * 0.3) ? '#ff8c5b' : '#fff'   // 白爆偏多时高亮告警
-	ctx.fillText('蒸汽(VFX) ' + _lastSteamCount + '  引爆(真) ' + (pa && pa.DBG ? pa.DBG.steamBlasts : 0) + '  AOE比较 ' + (pa && pa.DBG ? pa.DBG.steamAoeCmp : 0) + '  白爆(闪核) ' + fc + '  灼烧ignite ' + ig + '  火DOT ' + fd + '  全屏overlay ' + ov, 8, 34)
-	var t1 = RT('PERF.suppressWhiteBurst', perfFB('suppressWhiteBurst', false) ? 1 : 0) > 0, t2 = RT('PERF.suppressShake', 0) > 0, t3 = RT('PERF.suppressFireVisual', 0) > 0, t4 = RT('PERF.suppressIceFill', 0) > 0   // b9-measure：T1 白爆抑制开关态（录屏可见，零 gameplay；回退源=PerfTier.suppressWhiteBurst）
-	ctx.fillStyle = '#9fe'
-	ctx.fillText('T1白爆:' + (t1 ? '关' : '开') + '  T2震:' + (t2 ? '关' : '开') + '  T3火视:' + (t3 ? '关' : '开') + '  T4冰描:' + (t4 ? '关' : '开'), 8, 52)
-	ctx.fillStyle = '#9fe'   // b9-measure：6 数组活跃数拆行（看哪个飙到上千）
-	ctx.fillText('p ' + pc + '  t ' + tc + '  beam ' + bc + '  blast ' + blc + '  dart ' + dc + '  flash ' + fcc, 8, 70)
-	if (En && En.list) {   // BOSS DOT 源实时观测（仅诊断、零 gameplay）：不同来源 fire/shield/burn 加性叠加，同来源单条累计
-		var _boss = null
-		for (var _bi = 0; _bi < En.list.length; _bi++) { if (En.list[_bi].active && En.list[_bi].type === 'boss') { _boss = En.list[_bi]; break } }
-		if (_boss && _boss.dotMap) {
-			var _fv = _boss.dotMap.fire || 0, _sv = _boss.dotMap.shield || 0, _bv = _boss.dotMap.burn || 0
-			ctx.fillStyle = '#fda'
-			ctx.fillText('BOSS DOT: fire=' + _fv.toFixed(1) + '  shield=' + _sv.toFixed(1) + '  burn=' + _bv.toFixed(1), 8, 88)
-		}
-		ctx.fillStyle = '#9fe'
-		ctx.fillText('转向 ' + (Sn && Sn.getEffectiveTurnRate ? Sn.getEffectiveTurnRate().toFixed(1) : '-') + '°/s', 8, 106)   // P0：实时显示含 RT 覆盖值的有效转速
-	}
+	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
+	ctx.fillText('FPS ' + Math.round(_fps) + '  CPU ' + _cpuMs.toFixed(1) + 'ms  GPU ' + gap.toFixed(1) + 'ms', 8, GAME.logicalHeight - 10)   // 左下角单行，避开左上血量/长度 HUD、右上 L 面板、右下画质角标
 	ctx.restore()
 }
 

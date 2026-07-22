@@ -121,7 +121,7 @@
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
 			chaser: { hp: 20, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10 },
+			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRange: 450, wanderRedirSec: 1.5 },   // aggroRange=段③游荡型切追踪触发半径(px，须>250才>原senseRange生效;default 450,实测拍板300/450/600);wanderRedirSec=游荡重定向间隔s(收编自硬编码 WANDER_REDIR_SEC)
 			charger: { hp: 25, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
 			elite: { hp: 200, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, bulletSpeed: 140, radius: 60 }

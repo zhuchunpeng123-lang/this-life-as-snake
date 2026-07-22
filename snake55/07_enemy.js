@@ -7,7 +7,7 @@
 
 	// 🟡 行为节奏：真理源未量化（仅给速度/半径/弹速），手感占位 + 候选，待回写真理源
 	var CHARGE_DURATION_SEC = 0.4        // TODO: 待确认（候选 0.35 / 0.5）
-	var WANDER_REDIR_SEC = 1.5           // TODO: 待确认（候选 1.2 / 2.0）
+	var WANDER_REDIR_SEC = CONFIG.ENEMIES.wanderer.wanderRedirSec   // 收编进 config：ENEMIES.wanderer.wanderRedirSec（去裸数字/TODO）
 	var BOSS_FIRE_INTERVAL_SEC = 1.2     // TODO: 待确认（候选 1.0 / 1.5）
 	var BOSS_FIRE_COUNT = 6              // TODO: 待确认（候选 5 / 8）
 	var BOSS_BULLET_RADIUS = 9           // TODO: 待确认（候选 8 / 10）
@@ -194,6 +194,12 @@
 		e.x += Math.cos(e.angle) * spd * dt; e.y += Math.sin(e.angle) * spd * dt; clampWorld(e)
 	}
 	function sensesHead(e, hx, hy) { return e.senseRange < 0 ? true : M.distSq(e.x, e.y, hx, hy) <= e.senseRange * e.senseRange }
+	// 实时标定桥：读 GM 运行时覆盖（与 09_wave RT 同款语义），未命中回退 fb（config 真源）
+	function RT(path, fb) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
+		return fb
+	}
 	function applyKnockback(e) {
 		if (e.kbx !== 0 || e.kby !== 0) { e.x += e.kbx; e.y += e.kby; e.kbx = 0; e.kby = 0; clampWorld(e) }
 	}
@@ -249,14 +255,16 @@
 		e.burnT -= dt
 		applyDamage(e, e.burnDps * dt, false, true, 'burn')  // 固定 dps、不经 Formula、isDot 分源聚合飘字、不击退（约束2：位置精确，避免子弹结算/眩晕期暂停）；B-4 ①b 像素级补完 + 衍生：补 src='burn' 透传进 dotMap 累计，引燃飘字带「🔥灼烧 」独立标签（否则 dotMap 不累计、SRC_STYLE.burn 成死配置）；纯标签零 gameplay
 	}
-	if (e.stun > 0) { e.stun -= dt; applyKnockback(e); resolveContact(e, dt); return }
-		if (e.type === 'chaser' || e.type === 'elite') { steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+	if (e.stun > 0) { e._chasing = false; e.stun -= dt; applyKnockback(e); resolveContact(e, dt); return }
+		e._chasing = false
+		if (e.type === 'chaser' || e.type === 'elite') { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 		else if (e.type === 'wanderer') {
-			if (sensesHead(e, hx, hy)) { steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+			var aggro = RT('ENEMIES.wanderer.aggroRange', EN.wanderer.aggroRange)   // 段③ 游荡型 aggro 圈（须>250才>原senseRange生效）
+			if (sensesHead(e, hx, hy) || (GS.stageId === 3 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 			else { wander(e, moveSpeed(e, e.baseSpeed, sm) * 0.6, dt) }
 		}
-		else if (e.type === 'charger') { updateCharger(e, hx, hy, dt, sm) }
-		else if (e.type === 'boss') { updateBoss(e, hx, hy, dt, sm) }
+		else if (e.type === 'charger') { e._chasing = true; updateCharger(e, hx, hy, dt, sm) }
+		else if (e.type === 'boss') { e._chasing = true; updateBoss(e, hx, hy, dt, sm) }
 		applyKnockback(e)
 		resolveContact(e, dt)
 	}
@@ -264,6 +272,7 @@
 	var Enemy = {
 		list: list, spawn: spawn, spawnDummy: spawnDummy, applyDamage: applyDamage, applySlow: applySlow, ignite: ignite,
 		countMobs: function () { var c = 0; for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type !== 'bossBullet' && !list[i].isDummy) { c++ } } return c },   // B-GM：假人不占刷怪 cap
+		chasingCount: function () { var c = 0; for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.active && e.type !== 'bossBullet' && !e.isDummy && e._chasing) { c++ } } return c },   // 段③ aggro 读数：当前帧正向蛇头移动(追蛇)实敌数(含 chaser/elite/charger/boss/被aggro的wanderer；不含游荡中wanderer)；供 Debug HUD「追蛇数/总数」
 		hasBoss: function () { for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type === 'boss') { return true } } return false },
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }
