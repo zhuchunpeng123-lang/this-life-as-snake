@@ -20,6 +20,14 @@
 
 ---
 
+## 2026-07-22 · infra(skill): 电磁 Combo 节奏 RT 桥 + GM 滑条（P1 实测无感·轴暂缓）
+
+- **范围**：`08_skill.js` 加 `RT('COMBO.electroTurret.cooldownSec', CO.electroTurret.cooldownSec)` 桥（P0 turnRate 同款，dev 热调）；`13_editor.js` RANGE 加 `electroCd:[0.2,1.5,0.05]` + TUNING_SCALAR 加「电磁冷却s」滑条（自动接线 `rtSet`→`rtTuning`→`RT()`）。默认 `0.5` 行为零变化，留作基建。`03_core`/`04_collision` 未动。
+- **实测结论**：拖 `0.4/0.5/0.8` 体验无感——CD 仅提频 ~25%，电磁本体即闪电、与基础闪电链（`fx:lightning`）视觉同质，满屏特效读不出变化。故 CD **维持锚点 0.5、不定 0.4/0.8、不落 config 终值**。
+- **债**：可见性表现债（DEBT §2 ①）「电磁与闪电读不出」已记——独占色/音效/命中锚定弹体/更强分叉，下一步不做。
+- **是否动 §9**：否（无终值锁定；§9 由用户侧回写）。
+- **验收**：GM「电磁冷却s」滑条存在、默认 `0.5`、拖动即时生效（`timer.electro` 热改，段③/④ 连锁节奏随动）；核心/碰撞未动。
+
 ## 2026-07-22 · tune(player): 转向衰减 0.6→1.0 %/节（C2 手感标定，§十 轻量通道）
 
 - **范围**：`PLAYER.turnRateDecayPerSeg` `0.006`→`0.010`（02_config.js 真理源落地值）。GM 面板「转向衰减%/节」滑条 `def: 0.6`→`1.0` 同步（13_editor.js）。`turnRate`(180) / `turnRateFloor`(120) 不动。`03_core` / `04_collision` 未动。

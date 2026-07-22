@@ -11,7 +11,7 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], steamCap: [1, 24, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -77,7 +77,8 @@
 		{ path: 'PLAYER.turnRateDecayPerSeg', label: '转向衰减%/节', rng: 'turnRateDecay', def: 1.0, dec: 2 },   // 单位 %/节：RT 存 1.0 → 06_snake 热路径 /100 = 0.010；dec:2 防显示成 1
 		{ path: 'PLAYER.turnRateFloor', label: '转向下限°/s', rng: 'turnRateFloor', def: 120, dec: 0 },   // 满节不失控下限（真理源 100–150）
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
-		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' }   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
+		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' },   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
+		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 }   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
 	]
 	var TUNING_SCALAR_SLIDERS = []
 

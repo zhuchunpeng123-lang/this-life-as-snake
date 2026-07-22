@@ -74,6 +74,7 @@
 | 10_audio.js | 各音效 freq/dur | 候选值 | ~ 调参器微调 |
 | 13_editor.js | 调参清单 | 待确认 | 实测补全 |
 | 12_ui.js | `SKILL_LABEL` | 待确认 | UX 复核 |
+| 08_skill.js / 11_render.js / 10_audio.js | 电磁 Combo(`fx:electroarc`) vs 基础闪电链(`fx:lightning`) 视觉同质 | 满屏特效读不出「弹射→闪电」联动（P1 实测调 cooldownSec 仅提频~25% 仍无感） | 独占色(紫更跳·与基础蓝白拉开)/专属音效/命中锚定弹体(从命中点放射)/更强分叉(hops↑·跳跃更夸张) | 🟡 表现债（① 可见性）：电磁轴暂缓，下一步不做 |
 
 ---
 
