@@ -219,7 +219,7 @@
 		}
 	}
 
-	function buildStart(wrap) {
+function buildStart(wrap) {
 		startEl = document.createElement('div')
 		startEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#fff;font:700 24px system-ui;background:rgba(8,10,20,0.6);z-index:15;cursor:pointer'
 		var t = document.createElement('div'); t.textContent = '5.5 好玩基因融合版贪吃蛇'; startEl.appendChild(t)

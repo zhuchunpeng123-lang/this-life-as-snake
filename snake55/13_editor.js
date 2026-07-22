@@ -5,13 +5,13 @@
 
 	// —— UI 滑块范围常量（集中，避免逻辑里散落魔法数字；dev 工具边界，非 gameplay 数值）——
 	var RANGE = {
-		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], turnRateDecay: [0, 1.0, 0.01], turnRateFloor: [100, 150, 1], maxSegments: [5, 60, 1], playerRadius: [4, 40, 1],   // 蛇头/身半径滑条专用范围（headRadius 默认14 / bodyRadius 默认12；config-override 走重载，视觉=判定同随）
+		snakeSpeed: [80, 400, 5], turnRate: [60, 360, 5], turnRateDecay: [0, 1.0, 0.01], turnRateFloor: [100, 150, 1], maxSegments: [5, 60, 1], playerRadius: [8, 40, 1],   // 蛇头/身半径滑条专用范围（headRadius 默认14 / bodyRadius 默认12；最小 8 与 collision.MIN_JUDGE_R 对齐，源头避免拖出过小判定半径导致「吃不到食物」；L2 实时：拖动即时生效 RT桥→视觉 + Bus(collision:set_radii)→判定/墙碰，同时写 override 供「保存并重载」持久）
 		bodyContactDps: [0, 40, 1], critRate: [0, 1, 0.01], foodCap: [1, 20, 1],
 		enemyHp: [1, 400, 1], enemySpeed: [20, 300, 5], enemyAtk: [1, 10, 1], enemyRadius: [6, 60, 1],
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=段③游荡aggro范围px 滑条[200,800,10] def450(min200=基线/关闭)
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -54,7 +54,7 @@
 	var dirty = false
 
 	var panel = null, open = false, tuneTimer = null   // tuneTimer：面板打开时定时刷新等级显示（dev 实时）
-	var diagWhiteOn = false, diagShakeOn = false, diagFireOn = false, diagIceFillOn = false, diagHudOn = false   // b9-diag：T1 关白爆 / T2 关屏震 / T3 关火焰系视觉 / T4 冰池只描边 / 性能HUD 开关态
+	var diagWhiteOn = false, diagShakeOn = false, diagFireOn = false, diagIceFillOn = false, diagHudOn = false   // b9-diag：T1 关白爆 / T2 关屏震 / T3 关火焰系视觉 / T4 冰池只描边 / 性能HUD(精简) 开关态
 	var SLIDERS = []   // { id, path, kind:'config' } kind 仅 config（GS 用按钮即时改，不存 override）
 	// —— 实时标定（dev）：运行时覆盖层，拖动即时生效、免重载；不持久、不写 config 默认 ——
 	var TUNING_ARR = [
@@ -82,7 +82,8 @@
 		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' },   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
 		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 },   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
 		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
-		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 }   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
+		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 },   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
+		{ path: 'ENEMIES.wanderer.aggroRange', label: '游荡aggro范围px(段③)', rng: 'aggroRange', def: 450, dec: 0 }   // 段③ 游荡型 aggro 圈：距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；default 450，实测拍板300/450/600；min200=基线/关闭(≈原行为，验收④反例)
 	]
 	var TUNING_SCALAR_SLIDERS = []
 
@@ -224,7 +225,7 @@
 		diag += '<button id="diag_t2" style="flex:1;padding:8px;border:1px solid #c9a8ff;border-radius:6px;background:transparent;color:#c9a8ff;cursor:pointer;font:700 12px system-ui">T2 关屏震：关</button></div>'
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t3" style="flex:1;padding:8px;border:1px solid #ff9a3c;border-radius:6px;background:transparent;color:#ff9a3c;cursor:pointer;font:700 12px system-ui">T3 关火焰系视觉：关</button>'
 		diag += '<button id="diag_t4" style="flex:1;padding:8px;border:1px solid #5fd0ff;border-radius:6px;background:transparent;color:#5fd0ff;cursor:pointer;font:700 12px system-ui">T4 冰池只描边：关</button></div>'
-		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_hud" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">性能HUD：关</button></div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_hud" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">性能HUD(精简)：关</button></div>'
 		diag += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 0">T3 关「火焰系 per-enemy 视觉」（点火演出+火焰光环+蓝环），与 T1/T2 配合一次录屏 isolate 全部嫌疑。蒸汽齐爆上限/帧 滑条见「实时标定（手感沙盒）」底部；拉到 <b>1</b> = 白爆骤减</div>'
 		secs.push({ title: '性能诊断（b9 对照实验）', body: diag, open: true })
 		// —— 阶段跳转（测试）：按 STAGE.segments 生成，点击即把 GS.timeSec 写到目标段起点，免手动熬时间 ——
@@ -315,6 +316,13 @@
 				overrides[s.path] = val; dirty = true
 				var vl = document.getElementById('v_' + s.id); if (vl) { vl.textContent = val }
 				var ban = document.getElementById('ed_dirty'); if (ban) { ban.style.display = 'block' }
+				// L2 实时：PLAYER.headRadius/bodyRadius 拖动即生效——rtSet(RT 桥→render 视觉) + Bus(collision:set_radii→判定/墙碰)，免重载；override 仍写供「保存并重载」持久
+				if (s.path === 'PLAYER.headRadius' || s.path === 'PLAYER.bodyRadius') {
+					rtSet(s.path, val)
+					var hr = (s.path === 'PLAYER.headRadius') ? val : (rtGet('PLAYER.headRadius') !== undefined ? rtGet('PLAYER.headRadius') : CONFIG.PLAYER.headRadius)
+					var br = (s.path === 'PLAYER.bodyRadius') ? val : (rtGet('PLAYER.bodyRadius') !== undefined ? rtGet('PLAYER.bodyRadius') : CONFIG.PLAYER.bodyRadius)
+					Bus.emit('collision:set_radii', { headRadius: hr, bodyRadius: br })
+				}
 			}
 		}
 		// 实时标定滑条（拖动即时生效，免重载；不写 persistent override）；独立前缀 ts_/tv_ 避免与 config 滑条 id 撞车
@@ -417,7 +425,8 @@
 	var t4 = panel.querySelector('#diag_t4')
 	if (t4) { t4.onclick = function () { diagIceFillOn = !diagIceFillOn; Editor.rtSet('PERF.suppressIceFill', diagIceFillOn ? 1 : 0); this.textContent = 'T4 冰池只描边：' + (diagIceFillOn ? '开' : '关'); this.style.color = diagIceFillOn ? '#7CFC00' : '#5fd0ff'; this.style.borderColor = diagIceFillOn ? '#7CFC00' : '#5fd0ff' } }   // b9-measure T4：冰池只描边不填充（零 gameplay）
 		var dh = panel.querySelector('#diag_hud')
-		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD：' + (diagHudOn ? '开' : '关') } }   // b9-diag：默认关，开=显示 FPS/粒子/数组计数/T1-T4 开关态 HUD（零 gameplay，美术复查用）
+		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD(精简)：' + (diagHudOn ? '开' : '关') } }   // 精简性能HUD：仅 FPS/CPU/GPU 帧耗时，详细数据见 L 剖析面板
+
 		// 性能自适应：自动开关 + 强制固定档位（运行时即时，零 gameplay）
 		function updPerfCur() { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } }
 		if (panel.querySelector('#perf_auto_on')) { panel.querySelector('#perf_auto_on').onclick = function () { if (global.PerfTier) { global.PerfTier.setAuto(true); updPerfCur() } } }

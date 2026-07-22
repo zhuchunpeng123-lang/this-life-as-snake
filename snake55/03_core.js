@@ -53,13 +53,13 @@
 		deg2rad: function (d) { return d * Math.PI / 180 }
 	}
 
-	// ---------- Bus（事件名强制 系统:动作 小写） ----------
+	// ---------- Bus（事件名 系统:动作：系统段小写、动作段允许大小写混写；格式可疑仅 warn 不崩溃） ----------
 	var Bus = (function () {
 		var map = {}
-		var RE = /^[a-z0-9]+:[a-z0-9_]+$/
+		var RE = /^[a-z0-9]+:[a-zA-Z0-9_]+$/   // 放宽：动作段允许大写字母（驼峰合法）；仍挡空格/空名/特殊字符
 		return {
 			on: function (evt, fn) {
-				assert(RE.test(evt), 'Bus 事件名须为 系统:动作 小写 → ' + evt)
+				if (!RE.test(evt)) { Log.warn('Bus 事件名须为 系统:动作（系统小写、动作仅字母数字下划线） → ' + evt); return fn }   // 软拒绝：格式可疑仅告警+跳过注册，模块不崩（根除「单事件名错误拖垮整模块」第3次同类事故根因；仍返回 fn 兼容调用方）
 				if (!map[evt]) { map[evt] = [] }
 				map[evt].push(fn)
 				return fn

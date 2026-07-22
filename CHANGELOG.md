@@ -6,6 +6,39 @@
 
 
 
+## 2026-07-23 · fix(core): Bus 事件名放宽允许驼峰 + on 断言改软拒绝（根治"事件名致命崩溃"第3次同类事故根因）
+
+- **决策**：用户选方案 A（见上轮 Bus 设计利弊分析）。`03_core.js` 的 `Bus` 事件名校验策略调整，属锁死文件改动，走 AGENTS §三 披露 + §八 计划。
+- **改动（03_core.js）**：①正则 `/^[a-z0-9]+:[a-z0-9_]+$/` → `/^[a-z0-9]+:[a-zA-Z0-9_]+$/`（动作段允许大写字母，驼峰合法；仍挡空格/空名/特殊字符）；②`Bus.on` 首行 `assert(RE.test(evt), ...)` 致命崩溃 → 改为 `if (!RE.test(evt)) { Log.warn(...); return fn }` 软拒绝（格式可疑仅告警+跳过该回调注册，模块不崩，仍返回 fn 兼容调用方）；③emit 端本就安全（无 assert），不动；④Bus 注释同步新约定。
+- **根因（为何改）**：2026-07-13 `fx:iceSlow`（粒子系统）+ 2026-07-22 `collision:setRadii`（碰撞系统）两次同类事故，均因"事件名含大写 → Bus.on 的 assert 抛错 → 整模块 IIFE 中断未注册 → 整系统静默失效"。强制全小写把"风格违规"升级成"致命崩溃"且漏防"下划线不一致"真正 bug。放宽 + 软拒绝后，驼峰不再崩模块，单事件名可疑也仅收不到、不拖垮全局。
+- **影响下游**：全项目 65+ 处 Bus 事件名行为不变（均合规）；唯一变化=驼峰事件名不再致命崩溃；若某事件名含空格/特殊字符，现仅 warn+跳过注册（此前是崩整模块）。无 §9 数值改动、无加载顺序/伤害管线改动。
+- **是否动 §9**：否。
+- **文档同步**：RETRO §4 更新为"动作段允许驼峰、但 on/emit 必须同名、格式可疑仅 warn 不崩"；DEBT §4 第三次事故条目闭环为"已落地方案 A"。
+- **验收**：①刷新无红字、蛇/食物/敌/碰撞正常（用户实测）；②故意写驼峰事件名不再崩模块（grep 确认 Bus.on 无 assert 崩溃路径）；③RETRO/DEBT 同步新约定。
+
+---
+
+## 2026-07-22 · fix(collision): 根因修复——Bus 事件名驼峰违例致碰撞模块启动失败（"吃食物/撞怪无反应"真因）
+
+- **现象/根因**：上一轮"错误兜底前移 + collision try/catch"暴露出真实错误 `[assert]Bus 事件名须为 系统:动作 小写 → collision:setRadii`。`03_core.js` Bus 事件名正则 `/^[a-z0-9]+:[a-z0-9_]+$/` 要求动作部分**全小写**；`04_collision.js` 用 `Bus.on('collision:setRadii')` 接收 GM 半径滑条实时推送，`setRadii` 含大写 `R` → `Bus.on` 首行 `assert(RE.test(evt))` 在启动时抛错 → 整个 IIFE 中断 → `Registry.register('collision', ...)` 未执行 → 碰撞系统整体未注册 → 食物/怪物判定全失效（完全吻合首发"吃食物无反应 + 怪物撞击无反应也不掉血"）。
+- **修复（纯命名修正，零逻辑/数值/§9 改动）**：①事件名改为全小写 `collision:set_radii`（下划线在正则合法集内）；②同步 `13_editor.js:324` 的 `Bus.emit` 发射端及注释，保证收发一致；③`04_collision.js` 注释中 `collision:setRadii` 一并改为 `set_radii`。
+- **波及核对**：反向扫描全项目 65+ 处 `Bus.on/emit/off` 事件名，其余均符合"全小写 + 下划线"规范，无第二个驼峰违例。
+- **是否动 §9**：否（仅事件名字符串）。
+- **验收**：刷新后状态条 `碰撞:已载` 且 `判定R:<数值>`（`getRadii()` 取值正常）；食物可吃、怪物撞击掉血恢复。上一轮基建（onerror 前移 + collision try/catch 暴露 `window.__colErr`）保留作长期防御（DEBT §4）：今后任何脚本启动错误直接弹红字，不再静默吞掉。
+
+---
+
+## 2026-07-22 · fix(infra): 全局错误兜底前移 + collision 启动异常暴露（根治"碰撞缺失"静默隐藏）
+
+- **现象**：用户复验报"吃食物无反应 + 怪物撞击无反应也不掉血"，二者同时失效；强制刷新仍复现；诊断条显示 `碰撞:缺失` 但"无红字"。
+- **根因（已定位方向）**：`index.html` 的全局 `error` 兜底 `window.addEventListener('error',...)` **注册在所有游戏 `<script>` 之后**（原第 60 行）。`04_collision.js` 若在启动期抛运行时异常，`Registry.register('collision', Collision)` 未执行 → 碰撞系统未注册；而该异常发生时兜底尚未挂上 → 被静默吞掉（无红字）。蛇/食物/敌人各自独立 IIFE 照常运行，故唯独碰撞全失效，完美吻合"碰撞缺失 + 无红字"。静态核对（语法/IIFE 闭合/`CONFIG.SPATIAL`=cellSize:64/`Core.M`/`PLAYER.headRadius`）均正常，故为运行时异常，须暴露后精确定位。
+- **修复（三处，纯诊断/基建增强，零 gameplay 影响）**：①`index.html` 把 `error` 兜底整体前移到 `<head>`（早于所有游戏脚本），根治一切脚本错误的静默；②`04_collision.js` 整个 IIFE 体包 `try/catch`，启动异常暴露到 `window.__colErr` 并 `console.error`，仍 `throw` 交兜底显示红字；③`14_main.js` 诊断条 `diagTick` 碰撞缺失时把 `window.__colErr` 真实错误拼入顶部状态条（截断 160 字），免开控制台。
+- **是否动 §9**：否（纯诊断/基建，非数值平衡）。
+- **验收**：①刷新后若 collision 仍抛错 → 状态条显示 `⚠碰撞启动失败:<真实错误 文件名:行号>`，据此定位；②onerror 前移后任何脚本偶发错误正确弹红框，不再静默；③若暴露后错误消失（顺序/缓存），状态条 `碰撞:已载` 且食物/怪物碰撞恢复。
+- **下一步**：据暴露的真实错误做最终修复（再开计划）。`#diag`/`diagTick` 仍属临时诊断债（DEBT §4），根因修复后清理。
+
+---
+
 ## 2026-07-22 · infra(render): #M0 美术管线基建（精灵子系统 + 半径滑条，空 assets 零变化）
 
 - **范围**：`11_render.js` 新增精灵子系统——`SPRITE_MANIFEST`（head/body/tail 三项，`radiusKey`=RT 的 path + `solidDiameterPx` 资产属性 + `pivot`）/ `_spriteCache`（每张图仅 `new Image()` 一次）/ `SPRITE_BASELINE`（`key=radiusKey`，值=冻结 CONFIG 基线）/ `getSpriteRadius(radiusKey)`（单一半径读取：RT 运行时覆盖优先、缺失回退基线、守卫 `r>0`）/ `preloadSprites()`（`init` 末尾一次性预载，每帧不 new/decode）/ `drawSprite()`（按判定半径算 scale，无图/404/NaN → 回退代码画 fallback，永不白屏/抛错）。`drawSnake` 头/身/尾接 `drawSprite`，fallback＝原 `circle()` 圆画。`13_editor.js` `SNAKE_SCALAR` 加 `PLAYER.headRadius`/`PLAYER.bodyRadius` 滑条（`RANGE.playerRadius=[4,40,1]`，config-override `save+reload`）。新建 `snake55/assets/` + `.gitkeep`。
@@ -22,6 +55,46 @@
 - **返工（2026-07-22 实测打回）**：①`drawSprite` 改为 `preloadSprites` 一次性建 `_spriteCache[name]={img,ready:false,failed:false}`，`onload→ready` / `onerror→failed`；`drawSprite` 第一行硬短路 `if (!c || c.failed || !c.ready) return false`，**任何 ctx 变换前就 return，函数内绝不 new Image/发请求**；`preloadSprites` 幂等（init 重入不重复 new）。②`drawSnake` fallback 半径改用 `getSpriteRadius('PLAYER.headRadius'/'PLAYER.bodyRadius')` 单一源（与精灵路径/碰撞同经冻结 CONFIG），焊死「看到=打到」。③FPS 实测观察：CPU 0.7ms、外部 33.8ms ≈ rAF 间隔 33ms（≈30Hz），非 JS 负载 → 判为显示器 30Hz 或 IDE 内置预览节流，非 #M0 回归；已按硬性要求加 ready/failed 硬短路防御，请 DevTools→Network 确认 assets/*.png 仅启动期各 1 次后归零。
 - **对抗性审查复查（2026-07-22·用户「插电即满帧、调大小正常」后）**：在 #M0 代码上做对抗性审查，再修 2 处隐患（均在本人引入的 11_render.js 内、对当前空 assets 行为零变化）：①**资源路径真 bug**：`ASSETS_BASE` 原 `'snake55/assets/'`——`img.src` 相对页面 URL 解析，而 `index.html` 与 `assets/` 同处 `snake55/`，任意服务/打开方式都会拼成 `…/snake55/snake55/assets/` 全 404；空 assets 时静默走 fallback 看不出，一旦放真 PNG 会全 404 永不显示（美术管线直接失效且不报错）。已改 `'assets/'`（相对 index.html，项目根/`snake55/`根/`file://` 皆正确）。②**蛇尾双绘（潜在）**：身体循环原把最后一节也画 body 圆/图、尾巴块又在同一位置画 `snake_tail`，空 assets 时尾巴块 `drawSprite` 返回 false 不显（看不出），接真图会重影。已改身体循环从 `segs.length-2` 起、尾巴块 fallback 时补画同半径圆，两种状态都只画一次。③其余观察（非阻塞）已补进 #M1 债：head squash/无敌闪烁不作用于精灵路径、head/tail 朝向须按 sprite 约定配图（`h.angle` 0=+x、tail `pivot[0.5,1.0]` 要求「连接点朝下/尾尖朝上」）、放 PNG 后须整页刷新（Image 在 init 一次性 new、`failed` 永不重试）。
 - **验收（空 assets·当前态已满足）**：①空 assets → 画面零变化、无报错、蛇头/身/尾无漏画（全走 fallback 圆）。②拖 headRadius/bodyRadius 滑条 → save+reload → 蛇视觉与判定圈（GM「显示碰撞盒」红圈）同步缩放（用户实测已 ok）。③60fps 无掉帧（用户插电源后已恢复 60）、每帧无 `new Image`/无 decode。④反向——`git diff` 仅 11_render.js / 13_editor.js / assets/.gitkeep / 本文档 / DEBT，core/collision/02_config 未动。
+
+## 2026-07-22 · feat(editor) L2: 蛇头/身半径 GM 滑条实时生效（免重载，判定同步）
+
+- **需求**：用户要求拖「蛇头半径/蛇身半径」滑条即时生效，而非「保存并重载」；选 L2（推送式，碰撞 update 内零 RT 读取）。
+- **方案（4 文件）**：①`13_editor.js` 两滑条 `oninput` 双写——`rtSet(path,val)`（RT 桥→render 视觉）+ `Bus.emit('collision:setRadii',{headRadius,bodyRadius})`（→判定/墙碰）+ 仍写 `overrides`（供「保存并重载」持久）；②`04_collision.js`（§三 锁死文件，已披露）加 `isNum` 助手 + `Bus.on('collision:setRadii', …)` 把推送值写入模块缓存 `HEAD_R/BODY_R`（初始取冻结 CONFIG，reload 后由 applyTuningOverrides 自动取终值），`update()` 内部不再读 RT，零每帧额外开销；③`06_snake.js` 墙碰 `P.headRadius` → `RT('PLAYER.headRadius', P.headRadius)`；④`11_render.js` `drawDebugHitboxes` 红圈改 `getSpriteRadius('PLAYER.headRadius'/'PLAYER.bodyRadius')`（RT 优先）。
+- **一致性保证（看到=打到·拖动时也成立）**：render 视觉经 `RT()`（读 `Registry.get('editor').rtGet` 同一份 `rtTuning`）；collision 经 `Bus` 推送获取同源数值；snake 墙碰经 `RT()`。三者同源自滑条读值。
+- **性能（用户关切·已量化）**：L2 碰撞 `update()` 内**完全不读 RT**（仅滑条一动推 1 次 `Bus`，O(1)）；snake 墙碰每 tick 1 次 `RT()`≈2 次 O(1) 查表、零分配、不触发 GC、`rtTuning` 仅 2 key 不增长 → 玩几小时 FPS 不衰减；相对 `hash.query` 每节几十次运算占比 <0.001% 帧预算。
+- **不动**：`03_core.js`/`02_config.js` 数值结构·真理源 / 加载顺序 / 判定几何与伤害公式语义。RT 为 dev-only 运行时覆盖，不写真源。
+- **是否动 §9**：否（仅半径可视/判定读取来源切换，无新平衡数值锁定）。
+- **验收**：①拖滑条→蛇头/身即时变大、GM「显示碰撞盒」红圈同步变大；②拖动中吃食物/撞敌判定实时变（蛇胖了能吃到更远食物、胖了更易被敌碰）；③撞墙边界实时随半径钳制；④点「保存并重载」→reload 保持当前覆盖值（持久正确）；⑤不拖→行为与原完全一致（零回归）；⑥`git diff` 仅 11_render.js / 13_editor.js / 04_collision.js / 06_snake.js / 本文档 / DEBT，02_config/03_core 未动。
+
+## 2026-07-22 · 对抗性复查（food 暗雷）· 用户报"吃食物没效果"
+
+- **对抗性审查结论**：L2 四文件改动**在逻辑上不触碰食物检测代码路径**。证据：①`04_collision.js` 食物循环（`if (fd.active && circleHit(head.x, head.y, HEAD_R, fd.x, fd.y, fd.radius))`）字节级未变，`HEAD_R` 初值仍取自 `CONFIG.PLAYER.headRadius`；②`06_snake.js` 仅把墙碰 `r` 的来源从 `P.headRadius` 改为 `RT('PLAYER.headRadius', P.headRadius)`，该 `r` 只用于墙钳制，不影响蛇移动与食物路径；③`11_render.js` / `13_editor.js` 改动均为视觉或仅在 `oninput` 触发。故 L2 不会直接导致"吃不到食物"。
+- **但发现真正会静默杀死判定的暗雷（根因候选）**：`circleHit` 用 `(ar+br)` 判距；若 `HEAD_R`/`BODY_R` 为 `0/NaN/undefined/字符串错值`，`(ar+br)` 退化为 `NaN` → `dx²+dy² <= NaN` 恒为 **false** → **食物×头、敌×头、敌×身 三类判定全部静默失效**，且因 reload 后经 `applyTuningOverrides` 把 `localStorage['snake55_tuning']` 覆盖回 `CONFIG`，坏值会顽固复现 → 表现为"吃食物没效果"。触发源：旧调试会话残留的坏 override（如把 `PLAYER.headRadius` 写成 `0`/`""`/`"20"` 字符串），或实时推送误发 ≤0 值。
+- **修复（04_collision.js）**：加 `numRadius(v)`（强制转数字、非正/NaN/非有限/字符串错值→0）+ 初值 `HEAD_R = numRadius(CONFIG.PLAYER.headRadius) || 14`、`BODY_R = numRadius(CONFIG.PLAYER.bodyRadius) || 12` 兜底（14/12 为 RANGE 注释记载默认）；`Bus.on('collision:setRadii')` 推送也经 `numRadius` 拒绝坏值。另暴露 `Collision.getRadii()` 供控制台 `Registry.get('collision').getRadii()` 秒查当前实际判定半径。属防御性兜底，对正常正半径值零行为变化。
+- **若修复后仍"吃不到食物"则非半径问题（需进一步信息）**：①`Registry.get('collision').getRadii()` 看 head 是否 >0；②DevTools Console 是否抛错（render 抛错会冻结画面，rAF 虽预排但整帧不更新，易被误判为"吃不到"）；③蛇是否真的长大、还是整局卡死。请报上述三项。
+- **回归验证（修后须过的）**：①清空 `localStorage['snake55_tuning']` 后 reload → 食物正常吃（head=14 默认）；②残留坏值（如 `"PLAYER.headRadius":0`）时 reload → 仍正常吃（兜底生效）；③拖半径滑条实时变大且判定同步；④`git diff` 仅 04_collision.js（+ 本文档/DEBT）。
+
+## 2026-07-22 · fix(collision): food 暗雷第二轮——判定半径"过小正数"兜底
+
+- **用户复验**：上轮加 `numRadius`（拒 ≤0/NaN/字符串）后仍报"吃食物没效果"。
+- **根因（上轮漏网）**：`numRadius` 仅拒 ≤0，但 GM 滑条 `RANGE.playerRadius` 最小=4，曾把 `PLAYER.headRadius` 拖到 4 并"保存并重载"持久进 `localStorage['snake55_tuning']`。`HEAD_R = numRadius(4)=4`（正数不回退），`circleHit` 需 `dx²+dy² <= (4+10)²=196` → 蛇头判定圈仅 4px、食物 10px，共 14px 命中窗，蛇头中心几乎要贴到食物中心才触发 → 视觉"碰到了却吃不到"；刷新清不掉 localStorage 故顽固复现。
+- **修复（两处）**：①`04_collision.js` `numRadius` 加安全下限 `MIN_JUDGE_R=8`——`<8` 一律当无效回退默认 14/12（仅 >0 且 ≥8 才采用）；初始 `HEAD_R/BODY_R` 与 `Bus('collision:setRadii')` 推送均经此守卫。②`13_editor.js` `RANGE.playerRadius` 最小 `[4,40,1]→[8,40,1]`，与 `MIN_JUDGE_R` 对齐，从源头避免拖出过小判定半径。
+- **效果**：即便 localStorage 残留 `headRadius=4` 之类过小值，reload 后判定半径强制回退 14，刷新即恢复"正常吃食物"，无需手动清存档。
+- **是否动 §9**：否（dev 工具边界安全下限，非 gameplay 平衡数值；RANGE 注释已声明"dev 工具边界，非 gameplay 数值"）。
+- **验收**：①残留 `{"PLAYER.headRadius":4}` 时 reload → 食物正常吃（判定回退 14）；②拖滑条最小 8 → 蛇头判定 8px + 食物 10px = 18px 命中窗，可吃；③不拖→与原默认行为一致（零回归）；④`git diff` 仅 04_collision.js / 13_editor.js / 11_render.js / 本文档。
+
+---
+
+## 2026-07-22 · diag(collision): 顶部中文状态条 + index.html ?v 强刷（定位「吃不到/撞不到」）
+
+- **现象**：用户报"吃食物没反应 + 怪物撞击没反应也不掉血"，二者同时失效；强制刷新仍复现。静态核对 food/enemy 检测路径、数据源命名、CONFIG 默认值（headRadius=14/bodyRadius=12/food.radius=10/enemy.radius=8）、GS.status 流转均正常，且 index.html 全局 error 兜底无红字（排除模块未注册/加载报错）。
+- **假设**：①浏览器缓存旧 04_collision.js（旧 numRadius 仅拒 ≤0，残留 headRadius=4 不回退 → HEAD_R=4 → food+head_enemy 命中窗极小，表现为"贴脸才触发"）；②或运行时数据异常（状态非 playing / 食物未生成 / 判定半径异常）。静态无法二选一。
+- **措施**：①`index.html` 全部 `<script src>` 加 `?v=20260722b` 强制重新下载，破本地缓存；②`14_main.js` 加 `diagTick()` 每 ~250ms 在画面顶部 `#diag` 显示中文状态条：`碰撞:已载/缺失 状态:<GS.status> 判定R:<getRadii().head> 食物:<active数> 敌:<active/怪> 蛇头:<x,y>` + 异常警告（状态非playing/无实体/判定R<8）。非技术用户直接念数字即可定位。
+- **是否动 §9**：否（纯诊断+缓存破坏，非数值平衡）。
+- **验收**：①刷新后顶部出现状态条；②若"判定R:14 食物>0 状态:playing"且仍吃不到 → 转坐标系/下游 handler 排查；③若"判定R:4" → 旧缓存未破（?v 生效前需硬刷一次）；④定位后删除 diagTick 与 #diag（临时债）。
+- **注意**：`#diag` 与 `diagTick` 为临时诊断产物，定位根因后须剔除，勿随功能代码遗留。
+
+---
 
 ## 2026-07-22 · perf(skill) #6: 消除每帧 queryCircle GC 抖动
 
