@@ -2,6 +2,21 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-23 · debt(log): 登记 §9 回写清单（3 项）+ STAGE.pool 待量化
+
+- 改动：仅记账，无代码改动。DEBT.md 新增「§9 回写清单」节（A：3 项代码已落值/§9 无记录——`PICKUP.food.overflowScore=10`、`PICKUP.dangerBias.ringMin/ringMax=40/150`、`SKILL.shield.orbitHitMul=0.5`；B：`STAGE.pool` 设计未量化，单列非回写债）。
+- 是否动 §9 / core / collision / config：否（仅 DEBT 记账；§9 真源 MD 由胖胖本人回写，AI 未碰；config 值未改）。
+- 指向：DEBT.md「§9 回写清单」（2026-07-23 登记）。回写完成后由 AI 配合把「§9 已回填」状态更新进 DEBT/Changelog。
+
+## 2026-07-23 · fix(loop+render): 165Hz 卡顿根因=固定60Hz模拟节奏，改原生帧时间步进+固定子步（build 20260723t）
+- **根因（修正前几轮误判）**：前几轮把"蛇头/身抖"归因为"敌人未插值"或"相机/头插值节拍差"，但用户实测改后仍卡 → 真凶是**60Hz 固定模拟在 165Hz 屏上，运动更新节奏只有 60Hz，眼睛在 165Hz 上必然读出 judder**（固定步长架构硬伤，插值只能匀开不能提速；且若模拟=刷新率则 alpha 恒≈0→离散跳变更糟）。诊断铁证：fps=165/steps/s=60/0step帧占63.6%/frameDt 稳→是干净"模拟60/渲染165"节拍错配。
+- **改动（11 处）**：
+  - `14_main.js`：主循环弃用 60Hz 固定步+`acc`累加器，改为**真实帧时间 `elapsed` 切成 ≤1/240s 固定子步逐次 `step(_sdt)` 推进**（运动=真实帧时间=原生刷新率平滑，165Hz屏=165Hz运动零judder；子步1/240s保物理/碰撞不穿模）；`hitStop` 由帧计数(`hitStop--`)改**时间制**(`hitStopSec -= elapsed`，真源hitStopFrames/60秒，刷新率无关)；暴露 `global.__FRAME_DT` 供相机/屏震帧率无关缓动；diagnostic hint 更新。
+  - `06_snake.js`：`updateFollow` 的 `followLerp` 改**帧率无关缓动** `1 - (1-followLerp)^(dt*60)`，避免子步提速致身体过紧（手感与60Hz一致）。
+  - `11_render.js`：`updateCamera` 改为**每帧**按 `__FRAME_DT` 帧率无关缓动（原每模拟步+`camPrev/_ra`二次插值已移除）；相机渲染直接=当前真实位姿（`_ra=1`，蛇头/身/敌均原生位姿，消一切插值残留）；`trauma` 屏震衰减由 `/GAME.fps` 改 `*__FRAME_DT`（刷新率无关）。
+- **是否动 §9 / core / collision / config**：**否**（纯主循环+渲染表现；所有 gameplay 计时本就用 `dt` 秒驱动，世界速度 `pos+=vel*dt` 与步率无关→§9平衡不变）。碰撞因子步更细反而更安全。
+- **验收**：①强刷确认 `[DIAG]` 版本=20260723t；②165Hz 下地图中段直行/甩头/转向蛇头身+敌人+护盾光球顺滑无抖、`0step帧占比`趋0、hint 显示「judder消除」；③60Hz 屏行为与原60Hz 一致（帧率无关缓动保手感）；④开关相机锁定/像素吸附无差异。
+
 ## 2026-07-23 · fix(head): 碰撞/渲染半径解耦（碰撞回真源14）
 - 改动：02_config 拆 headRadius(碰撞=14,真源§1宁小勿大防冤死) 与 headRadiusRender(渲染=26,纯表现)；11_render 蛇头改读 headRadiusRender + 注释更新；13_editor 新增「蛇头渲染半径px(视觉)」滑条(仅驱动视觉,不动碰撞)，原「蛇头判定半径px(碰撞)」仅驱动碰撞。
 - 是否动 §9 / core / collision / config：config 数值结构调整(拆参)，04_collision 逻辑未动(仅读到的 config 值变14)；§9 头部判定半径回真源14(原本即真源,无新平衡值)；渲染纯表现不进 §9。
