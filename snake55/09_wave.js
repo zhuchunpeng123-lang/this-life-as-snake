@@ -143,11 +143,13 @@
 			if (GS.tuningSandbox) { return }   // B-GM 标定沙盒：暂停所有道具/技能掉落刷新（不刷食物/治疗/首技能保底）
 			// P0-1 首技能保底（§5 裁定 ≤10s）：倒计时 firstSkillGuaranteeSec(9s) 后在蛇头正前方给出，让玩家先熟悉操作
 			if (!gotFirstSkill) { firstSkillTimer += dt; if (firstSkillTimer >= PK.skillPity.firstSkillGuaranteeSec) { spawnSkillInFront(); gotFirstSkill = true } }
-			foodTimer -= dt
-			if (foodTimer <= 0) {                         // 每 refreshIntervalSec 补满到 screenCap
-				foodTimer = PK.food.refreshIntervalSec
-				while (activeKind('food') < PK.food.screenCap) { if (!spawnOrb('food')) { break } }
-			}
+		foodTimer -= dt
+		if (foodTimer <= 0) {
+			var fullSeg = GS.segments >= CONFIG.PLAYER.maxSegments
+			foodTimer = fullSeg ? PK.food.maxSegRefreshIntervalSec : PK.food.refreshIntervalSec   // B：满节后拉长期望刷新间隔（零星可吃、不遍地）
+			var foodCap = fullSeg ? PK.food.maxSegScreenCap : PK.food.screenCap
+			while (activeKind('food') < foodCap) { if (!spawnOrb('food')) { break } }
+		}
 			healTimer -= dt
 			if (healTimer <= 0) {                         // 治疗：自然刷新，单屏 cap，整局上限 perRunMax
 				healTimer = PK.heal.naturalRefreshSec

@@ -2,6 +2,11 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-23 · feat(food): 满节食物稀疏化 + 溢出转小分
+- 改动：02_config PICKUP.food 加 maxSegScreenCap:2/maxSegRefreshIntervalSec:6/overflowScore:10；06_snake pickup:eat 改以 maxSegments 为唯一门控，满节 else→overflowScore 小分+飘字+Bus('snake:overflow_food')；09_wave foodTimer 按 fullSeg 切换刷新间隔/屏上限；12_ui 记忆 token 满节同停(记忆 tag 仍记)。
+- 是否动 §9：overflowScore 为 🟡 TODO 候选[5/10/20] 终值待 §9 回写；其余为节奏/表现值，未在 §9 量化区；core/collision 未动。
+- 验收：满25节同屏食物≤2/刷新6s；满节吃食物不加节、转小分；满节不再刷加节食物；记忆 token 满节不授节。
+
 ## 2026-07-23 · fix(head): 碰撞/渲染半径解耦（碰撞回真源14）
 - 改动：02_config 拆 headRadius(碰撞=14,§9 真源·宁小勿大防冤死) 与 headRadiusRender(渲染=26,纯表现)；11_render 蛇头精灵/绘制/基线三处改读 headRadiusRender；13_editor 拆「蛇头判定半径px(碰撞)」与「蛇头渲染半径px(视觉)」两个独立滑条（前者驱动碰撞圈+墙碰，后者仅驱动视觉、rtSet 实时生效）。
 - 是否动 §9 / core / collision / config：config 数值结构拆参；04_collision 逻辑未动（仅读到的 config 值变 14）；§9 头部判定半径回真源 14（本即真源，无新平衡值）；渲染纯表现不进 §9。蛇头视觉缩放(solidDiameterPx)与 body/tail 精灵标定属美术，留美术窗口。

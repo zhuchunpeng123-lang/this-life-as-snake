@@ -154,7 +154,7 @@
 		// —— §5 PICKUP ——
 		PICKUP: {
 			// ✅ 确认 food.radius=10
-			food: { screenCap: 6, refreshIntervalSec: 2.5, segCap: 25, gainSegments: 1, safeDistance: 180, minSpacing: 80, radius: 10 },
+			food: { screenCap: 6, refreshIntervalSec: 2.5, segCap: 25, gainSegments: 1, safeDistance: 180, minSpacing: 80, radius: 10, maxSegScreenCap: 2, maxSegRefreshIntervalSec: 6, overflowScore: 10 },  // B：满节后食物稀疏化(屏上限2/刷新6s)+溢出转小分(🟡 TODO 候选[5/10/20] 终值待 §9；score 用途未定仅占位)
 			skill: { baseDropRate: 0.12, perOwnedPenalty: 0.02, floorRate: 0.03 },
 			skillPity: { killStreakGuarantee: 15, firstSkillGuaranteeSec: 9 },   // P0-1 裁定：≤10s（9s）内给首技能
 		upgradeMinGapSecBySeg: [20, 20, 30, 0, 0],   // 战线A：升级间隔地板按段取值（索引=stageId-1：1→20 / 2→20 / 3→30 / 4→0 / 5→0）；值0或null＝地板失效、恢复原掉率。段①②=设计下限20(终值待实测锁20/25)；段③=30锚(实测拍板25/30/35)；段④⑤=0不测
