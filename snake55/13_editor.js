@@ -41,7 +41,8 @@
 		{ path: 'COMBAT.bodyContactDps', label: '蛇身接触DPS', rng: 'bodyContactDps' },
 		{ path: 'COMBAT.critRate', label: '暴击率', rng: 'critRate' },
 		{ path: 'PICKUP.food.screenCap', label: '食物上限', rng: 'foodCap' },
-		{ path: 'PLAYER.headRadius', label: '蛇头半径px(判定=视觉)', rng: 'playerRadius' },
+		{ path: 'PLAYER.headRadius', label: '蛇头判定半径px(碰撞)', rng: 'playerRadius' },
+		{ path: 'PLAYER.headRadiusRender', label: '蛇头渲染半径px(视觉)', rng: 'playerRadius' },
 		{ path: 'PLAYER.bodyRadius', label: '蛇身半径px(判定=视觉)', rng: 'playerRadius' }
 	]
 
@@ -317,12 +318,15 @@
 				var vl = document.getElementById('v_' + s.id); if (vl) { vl.textContent = val }
 				var ban = document.getElementById('ed_dirty'); if (ban) { ban.style.display = 'block' }
 				// L2 实时：PLAYER.headRadius/bodyRadius 拖动即生效——rtSet(RT 桥→render 视觉) + Bus(collision:set_radii→判定/墙碰)，免重载；override 仍写供「保存并重载」持久
-				if (s.path === 'PLAYER.headRadius' || s.path === 'PLAYER.bodyRadius') {
-					rtSet(s.path, val)
-					var hr = (s.path === 'PLAYER.headRadius') ? val : (rtGet('PLAYER.headRadius') !== undefined ? rtGet('PLAYER.headRadius') : CONFIG.PLAYER.headRadius)
-					var br = (s.path === 'PLAYER.bodyRadius') ? val : (rtGet('PLAYER.bodyRadius') !== undefined ? rtGet('PLAYER.bodyRadius') : CONFIG.PLAYER.bodyRadius)
-					Bus.emit('collision:set_radii', { headRadius: hr, bodyRadius: br })
-				}
+			if (s.path === 'PLAYER.headRadius' || s.path === 'PLAYER.bodyRadius') {
+				rtSet(s.path, val)
+				var hr = (s.path === 'PLAYER.headRadius') ? val : (rtGet('PLAYER.headRadius') !== undefined ? rtGet('PLAYER.headRadius') : CONFIG.PLAYER.headRadius)
+				var br = (s.path === 'PLAYER.bodyRadius') ? val : (rtGet('PLAYER.bodyRadius') !== undefined ? rtGet('PLAYER.bodyRadius') : CONFIG.PLAYER.bodyRadius)
+				Bus.emit('collision:set_radii', { headRadius: hr, bodyRadius: br })
+			}
+			if (s.path === 'PLAYER.headRadiusRender') {
+				rtSet(s.path, val)   // 渲染半径实时：RT 桥→getSpriteRadius('PLAYER.headRadiusRender')→视觉，不动碰撞（视觉≥判定，故意解耦）
+			}
 			}
 		}
 		// 实时标定滑条（拖动即时生效，免重载；不写 persistent override）；独立前缀 ts_/tv_ 避免与 config 滑条 id 撞车

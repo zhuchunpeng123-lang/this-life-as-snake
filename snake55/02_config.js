@@ -38,9 +38,10 @@
 			followLerp: 0.4,
 			initSegments: 3,
 			maxSegments: 25,
-			coreHp: 3,
-			headRadius: 14,
-			bodyRadius: 12,
+		coreHp: 3,
+		headRadius: 14,            // 碰撞判定半径（§9 真源：宁小勿大防冤死，回真源 14；渲染半径见 headRadiusRender）
+		headRadiusRender: 26,      // 渲染半径(px)：纯表现，配合 snake_head.png 视觉大小；与碰撞 headRadius 解耦（视觉≥判定，防冤死）
+		bodyRadius: 12,
 			headKnockback: 0,
 			buildPauseCdMs: 800,
 			deadZoneRadius: 12,

@@ -50,15 +50,15 @@
 	var SPRITE_MANIFEST = {
 		// file=待放 PNG（当前 assets 为空 → 全部 404 → 永远走 fallback）；radiusKey 即 RT 的 path，也是 SPRITE_BASELINE 的 key
 		// solidDiameterPx = PNG 实心视觉直径（像素），缩放 = 判定半径*2 / solidDiameterPx；接图时须与实际 PNG 实心直径一致（#M1 债）
-		snake_head: { file: 'snake_head.png', radiusKey: 'PLAYER.headRadius', solidDiameterPx: 64, pivot: [0.5, 0.5] },
+		snake_head: { file: 'snake_head.png', radiusKey: 'PLAYER.headRadiusRender', solidDiameterPx: 64, pivot: [0.5, 0.5] },
 		snake_body: { file: 'snake_body.png', radiusKey: 'PLAYER.bodyRadius', solidDiameterPx: 48, pivot: [0.5, 0.5] },
 		snake_tail: { file: 'snake_tail.png', radiusKey: 'PLAYER.bodyRadius', solidDiameterPx: 48, pivot: [0.5, 1.0] }  // #M1：pivot 待校（接真图时，fallback 圆是中心锚点）
 	}
 	var _spriteCache = {}   // key → Image（init 一次性创建，每帧复用，绝不 new）
 	// SPRITE_BASELINE：半径读取基线，key = manifest.radiusKey（RT 的 path），值 = 冻结 CONFIG 基线。
-	// 读取时机：本文件在 03_core.deepFreeze(CONFIG) 之后才加载（index.html 顺序）→ PLAYER.headRadius 此刻已是 config-override 注入后的冻结值 → 视觉与 04_collision 判定同随（看到=打到）。
+	// 读取时机：本文件在 03_core.deepFreeze(CONFIG) 之后才加载（index.html 顺序）→ PLAYER.headRadiusRender 此刻已是 config-override 注入后的冻结值 → 视觉只读 headRadiusRender（渲染半径），与碰撞 headRadius 解耦（视觉≥判定）。
 	var SPRITE_BASELINE = {
-		'PLAYER.headRadius': PLAYER.headRadius,
+		'PLAYER.headRadiusRender': PLAYER.headRadiusRender,
 		'PLAYER.bodyRadius': PLAYER.bodyRadius
 	}
 	var MIN_SPRITE_R = 8   // 与 04_collision.MIN_JUDGE_R / 13_editor RANGE.playerRadius 最小对齐：视觉安全下限，避免 localStorage 残留过小半径导致蛇画得过小（判定已回退 14，视觉须同步抬高，否则「小蛇大判定」不一致）
@@ -257,8 +257,8 @@
 	function drawSnake() {
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var segs = s.segments || []
-		// 半径走 getSpriteRadius() 单一源（与精灵路径/碰撞同经冻结 CONFIG）：override 或 RT 运行时覆盖 → 视觉与判定同随（看到=打到）
-		var headR = getSpriteRadius('PLAYER.headRadius')
+		// 半径走 getSpriteRadius() 单一源（与精灵路径同经冻结 CONFIG）：渲染半径=headRadiusRender，与碰撞 headRadius 解耦（视觉≥判定，宁小勿大防冤死）
+		var headR = getSpriteRadius('PLAYER.headRadiusRender')
 		var bodyR = getSpriteRadius('PLAYER.bodyRadius')
 		// 身体（跳过 index 0 头节；同时跳过最后一节 → 交尾巴块负责，避免接真图时「body 图 + tail 图」双绘重影）
 		for (var i = segs.length - 2; i >= 1; i--) {
