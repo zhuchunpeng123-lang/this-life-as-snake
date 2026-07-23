@@ -56,6 +56,7 @@
 			segments: G ? G.segments : 0,
 			tier: (global.PerfTier ? global.PerfTier.tier : '-'),
 			auto: (global.PerfTier ? global.PerfTier.auto : true),
+			stepRate: (global.__STEP_RATE != null ? global.__STEP_RATE : 0),   // 每秒 step() 次数（验证主循环回退：≈60，旧~330）
 			canvas: cv ? (cv.width + 'x' + cv.height) : '-'
 		}
 	}
@@ -67,7 +68,7 @@
 	function sample() {
 		var G = gs()
 		var s = getDiag()
-		push('FPS ' + s.fps + '/min' + s.fpsMin + ' | CPU ' + s.cpuMs.toFixed(1) + 'ms | 帧 ' + s.frameMs.toFixed(1) + 'ms | 外部 ' + s.presentGap.toFixed(1) + 'ms | 绘制 ' + s.drawCalls + '(' + s.dcDetail + ') | 粒子 ' + s.particles + '/' + s.pmax + ' | 白爆 ' + s.flash + ' | 全屏 ' + s.overlay + ' | 飘字 ' + s.texts + ' | 敌 ' + s.enemies + '(可见 ' + s.visEnemies + ') | 追蛇 ' + s.chasing + '/' + s.enemies + ' | 余烬 ' + s.embers + ' | 火焰 ' + s.flame + ' | T1 ' + s.t1 + ' | T3 ' + s.t3 + ' | 档 ' + s.tier + (s.auto ? '自动' : '固定') + ' | overdraw≈' + (s.overdraw / 1000 | 0) + 'k | 节 ' + s.segments + ' | 升级 ' + (G ? G.upgradesThisRun : 0) + ' | 画布 ' + s.canvas)
+		push('FPS ' + s.fps + '/min' + s.fpsMin + ' | CPU ' + s.cpuMs.toFixed(1) + 'ms | step/s ' + s.stepRate.toFixed(0) + ' | 帧 ' + s.frameMs.toFixed(1) + 'ms | 外部 ' + s.presentGap.toFixed(1) + 'ms | 绘制 ' + s.drawCalls + '(' + s.dcDetail + ') | 粒子 ' + s.particles + '/' + s.pmax + ' | 白爆 ' + s.flash + ' | 全屏 ' + s.overlay + ' | 飘字 ' + s.texts + ' | 敌 ' + s.enemies + '(可见 ' + s.visEnemies + ') | 追蛇 ' + s.chasing + '/' + s.enemies + ' | 余烬 ' + s.embers + ' | 火焰 ' + s.flame + ' | T1 ' + s.t1 + ' | T3 ' + s.t3 + ' | 档 ' + s.tier + (s.auto ? '自动' : '固定') + ' | overdraw≈' + (s.overdraw / 1000 | 0) + 'k | 节 ' + s.segments + ' | 升级 ' + (G ? G.upgradesThisRun : 0) + ' | 画布 ' + s.canvas)
 		if (s.fps > 0 && s.fps < FPS_DROP && !dropping) { dropping = true; push('⚠ FPS 掉至 ' + s.fps + '(瞬时 min ' + s.fpsMin + ')（敌 ' + s.enemies + ' 可见 ' + s.visEnemies + ' 粒子 ' + s.particles + '/' + s.pmax + ' 白爆 ' + s.flash + ' 全屏 ' + s.overlay + ' 绘制 ' + s.drawCalls + ' 余烬 ' + s.embers + ' 火焰 ' + s.flame + ' overdraw≈' + (s.overdraw / 1000 | 0) + 'k CPU ' + s.cpuMs.toFixed(1) + 'ms）') }
 		else if (dropping && s.fps >= FPS_RECOVER) { dropping = false; push('✓ FPS 恢复至 ' + s.fps) }
 		if (lastEnemies >= 0 && Math.abs(s.enemies - lastEnemies) >= ENEMY_DELTA) { push('➤ 敌数 ' + lastEnemies + ' → ' + s.enemies) }

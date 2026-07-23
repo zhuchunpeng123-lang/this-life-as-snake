@@ -206,6 +206,7 @@
 		gm += '<div style="font:600 11px system-ui;opacity:.7;margin:8px 0 2px">训练假人（默认 1 · 5000 血）</div>'
 		gm += '<div style="display:flex;gap:6px;margin:4px 0"><input id="gm_dummy_n" type="number" min="1" max="50" value="1" title="数量" style="width:56px;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"><input id="gm_dummy_hp" type="number" min="100" max="1000000" value="5000" title="血量" style="flex:1;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"></div>'
 		gm += '<button id="gm_dummy" style="width:100%;padding:8px;margin:4px 0;border:0;border-radius:6px;background:#ffd166;color:#063;font:700 12px system-ui;cursor:pointer">生成假人</button>'
+		// （2026-07-24b 已移除「帧率封顶 maxFps」按钮：封顶跳帧丢真实时间致世界变慢 bug，主循环已回归纯累加器不封顶）
 		// 冰系手感（冰区滞留 / 减速跟随窗）已统一收口到「实时标定（手感沙盒）」，GM 指令只保留即时动作指令，避免重复控制、归类更清晰
 		gm += '<div style="font:600 11px system-ui;opacity:.55;margin:6px 0 2px;border-top:1px dashed #2a3358;padding-top:6px">冰系手感滑条见「实时标定（手感沙盒）」</div>'
 		secs.push({ title: 'GM 指令', body: gm, open: false })

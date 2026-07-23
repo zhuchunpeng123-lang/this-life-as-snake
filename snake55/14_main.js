@@ -2,8 +2,9 @@
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	// —— 运行版本横幅：控制台见此行即代表新包已加载；若仍是旧版本号（20260723d 或更早）说明浏览器仍在喂旧缓存 ——
-	console.log('%c[snake55] build v=20260723v（头旋转角烘焙进离屏缓存+整蛇同淡出：消头位图每帧旋转重采样爬行 shimmer + 无敌"两个画面重叠"）— 看到此行=新代码生效；若版本号更旧=缓存未清，请清站点数据/强刷', 'color:#5f9;font-weight:bold')
-	var SUBSTEP = 1 / 240        // 固定子步长(秒)：物理/碰撞稳定(≤4.17ms/步→绝不穿模)，与刷新率无关；模拟按真实帧时间切成若干子步推进
+	console.log('%c[snake55] build v=20260724b（固定STEP累加器锁60Hz仿真+渲染插值；移除maxFps封顶旋钮——封顶跳帧丢时间致世界变慢bug，且实测不封顶已稳165）— 看到此行=新代码生效；若版本号更旧=缓存未清，请清站点数据/强刷', 'color:#5f9;font-weight:bold')
+	var STEP = 1 / CONFIG.GAME.fps   // 固定仿真步长(秒)：累加器锁 60Hz 仿真，与刷新率解耦（回退 2026-07-20「原生帧时间步进」的 330Hz 仿真过载回归）
+	var SUBSTEP = 1 / 240        // 旧：固定子步长(秒)——2026-07-24 已弃用（仿真过载根因），仅留作对照
 	global.__FRAME_DT = 1 / CONFIG.GAME.fps   // 本帧真实时间(秒)初始值，main 每帧覆写；供相机/屏震帧率无关缓动
 	// —— 自适应性能分级（跨端 FPS 根治）：状态对象 + 控制器（内联，不新增文件/不动 core/collision）——
 	// 设计：RT 回退源 = PerfTier 当前档；editor 手动覆盖经 RT 仍优先（GM 链路不变，零双份真相源）。
@@ -78,13 +79,13 @@
 					this._recvSec += dt
 					if (this._recvSec >= fillRecover) { this._recvSec = 0; this.setFireSuppressed(false) }
 				} else { this._recvSec = 0 }
-			} else {
-				if (emaFill > fillThr) {
-					this._fillSec += dt
-					if (this._fillSec >= fillStable) { this._fillSec = 0; this._fireLockUntil = GS.timeSec + fillLock; this.setFireSuppressed(true) }
-				} else { this._fillSec = 0 }
-			}
-		},
+		} else {
+			if (emaFill > fillThr) {
+				this._fillSec += dt
+				if (this._fillSec >= fillStable) { this._fillSec = 0; this._fireLockUntil = GS.timeSec + fillLock; this.setFireSuppressed(true) }
+			} else { this._fillSec = 0 }
+		}
+	},
 		seedTier: function () {   // 设备初判：手机中/低档起步，弱集显笔记本 MED 起步，不从高档起步
 			var ua = (global.navigator && global.navigator.userAgent) || ''
 			var isMobile = /Android|iPhone|iPod|iPad|Mobile|Windows Phone|HarmonyOS/i.test(ua)
@@ -252,6 +253,7 @@
 	}
 
 	var last = 0
+	var _acc = 0            // 仿真时间累加器（固定 STEP 累加器）
 	var _dl = { frames: 0, steps: 0, zeroFrames: 0, aMin: 9, aMax: -9, aSum: 0, eMin: 9, eMax: -9, eSum: 0, t0: 0 }   // DIAG_LOG 累积器（纯只读诊断）
 	function frame(now) {
 		global.requestAnimationFrame(frame)
@@ -261,30 +263,38 @@
 		var frameDt = elapsed
 		if (global.document && global.document.hidden) { return }   // 标签页隐藏：跳过 step+draw，last 已新鲜，恢复不追帧
 		if (elapsed > 0.05) { elapsed = 0.05 }   // 大间隔封顶 50ms：防穿模/突发多子步
+		// 2026-07-24b 移除 maxFps 封顶旋钮：封顶跳帧在 _acc 累加前 return，但 last 已推进 → 被跳帧的真实时间永久丢失 → 世界整体变慢(165Hz 封 60 ≈ 1/3 速)；且实测不封顶已稳 165，无存在必要
 		global.__FRAME_DT = elapsed   // 本帧真实时间，供相机/屏震做帧率无关缓动
-		// 原生帧时间步进：把本帧真实时间切成 ≤SUBSTEP 固定子步逐次推进 → 运动=真实帧时间=原生刷新率平滑(165Hz屏=165Hz运动,零 judder)；子步 1/240s 保物理/碰撞稳定
+		// 固定 STEP 累加器：把真实时间累积、每满 STEP=1/60s 推进一次 step(STEP) → 仿真死锁 60Hz，与刷新率解耦
+		// → 165Hz 屏每秒仅 ~60 次 step()（旧「原生帧时间步进」为 ~330 次 = 5.5× 过载，致持续掉帧回归）；渲染经 _ix/_iy 按 alpha=_acc/STEP 插值保丝滑
 		var _steps = 0
 		if (hitStopSec > 0 && GS.status === 'playing') {
 			hitStopSec -= elapsed   // ⑥ 冻帧：时间制，消费真实时间、不推进模拟
 		} else {
-			var _rem = elapsed
-			while (_rem > 1e-6) { var _sdt = _rem < SUBSTEP ? _rem : SUBSTEP; _rem -= _sdt; step(_sdt); _steps++; if (_steps > 2000) { _rem = 0; break } }
-		}
-		var alpha = 1   // 原生步进：渲染即当前真实位姿，无需插值(_ra=1)
-		_diagTick(_steps, alpha, frameDt)
-		if (window.__DIAG_LOG) {   // 纯只读诊断：每秒汇总 fps/步率/0-step帧占比/alpha/帧时间，定位 fixed-step 卡顿；零行为影响，发我分析
-			_dl.frames++; _dl.steps += _steps; if (_steps === 0) _dl.zeroFrames++
-			if (alpha < _dl.aMin) _dl.aMin = alpha; if (alpha > _dl.aMax) _dl.aMax = alpha; _dl.aSum += alpha
-			if (frameDt < _dl.eMin) _dl.eMin = frameDt; if (frameDt > _dl.eMax) _dl.eMax = frameDt; _dl.eSum += frameDt
-			var _n = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
-			if (!_dl.t0) _dl.t0 = _n
-			if (_n - _dl.t0 >= 1000) {
-				var _sec = (_n - _dl.t0) / 1000
-				var _fps = _dl.frames / _sec, _stp = _dl.steps / _sec
-				var _hint = _fps > 65 ? ' [原生帧时间步进:模拟=真实帧时间→运动=面板率(' + _fps.toFixed(0) + 'Hz)→judder 消除；0-step 趋零]' : (_dl.zeroFrames / _dl.frames > 0.05 ? ' [偶发0-step帧→实体忽停忽跳]' : '')
-				console.log('[DIAG] fps=' + _fps.toFixed(1) + ' steps/s=' + _stp.toFixed(1) + ' 0step帧占比=' + (_dl.zeroFrames / _dl.frames * 100).toFixed(1) + '%  alpha[min/avg/max]=' + _dl.aMin.toFixed(3) + '/' + (_dl.aSum / _dl.frames).toFixed(3) + '/' + _dl.aMax.toFixed(3) + '  frameDt[ms min/avg/max]=' + (_dl.eMin * 1000).toFixed(2) + '/' + (_dl.eSum / _dl.frames * 1000).toFixed(2) + '/' + (_dl.eMax * 1000).toFixed(2) + _hint)
-				_dl.frames = 0; _dl.steps = 0; _dl.zeroFrames = 0; _dl.aMin = 9; _dl.aMax = -9; _dl.aSum = 0; _dl.eMin = 9; _dl.eMax = -9; _dl.eSum = 0; _dl.t0 = _n
+			_acc += elapsed
+			var _nn = 0
+			while (_acc >= STEP) {
+				step(STEP); _acc -= STEP; _steps++
+				if (++_nn > 4) { _acc = 0; break }   // 防极端卡顿后追帧螺旋：最多 4 步/帧，余量丢弃
 			}
+		}
+		var alpha = _acc / STEP; if (alpha > 1) alpha = 1; if (alpha < 0) alpha = 0   // 渲染插值系数：prev→cur 平滑，激活 _ix/_iy（消 60Hz→165Hz 微抖）
+		_diagTick(_steps, alpha, frameDt)
+		// 诊断采样：始终累计（供性能日志面板 15_profiler 读 step 率），仅 __DIAG_LOG 时打印控制台明细；零行为影响
+		_dl.frames++; _dl.steps += _steps; if (_steps === 0) _dl.zeroFrames++
+		if (alpha < _dl.aMin) _dl.aMin = alpha; if (alpha > _dl.aMax) _dl.aMax = alpha; _dl.aSum += alpha
+		if (frameDt < _dl.eMin) _dl.eMin = frameDt; if (frameDt > _dl.eMax) _dl.eMax = frameDt; _dl.eSum += frameDt
+		var _n = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+		if (!_dl.t0) _dl.t0 = _n
+		if (_n - _dl.t0 >= 1000) {
+			var _sec = (_n - _dl.t0) / 1000
+			var _fps = _dl.frames / _sec, _stp = _dl.steps / _sec
+			global.__STEP_RATE = _stp   // 暴露 step 率供性能日志面板读取（验证主循环回退：回退后应≈60，旧~330）
+			if (window.__DIAG_LOG) {
+				var _hint = _fps > 65 ? ' [固定STEP累加器:仿真锁60Hz(解耦刷新率)→165Hz屏仅~60 step/s(旧~330=过载回归已修)；alpha 插值保丝滑；0-step 趋零]' : (_dl.zeroFrames / _dl.frames > 0.05 ? ' [偶发0-step帧→实体忽停忽跳]' : '')
+				console.log('[DIAG] fps=' + _fps.toFixed(1) + ' steps/s=' + _stp.toFixed(1) + ' 0step帧占比=' + (_dl.zeroFrames / _dl.frames * 100).toFixed(1) + '%  alpha[min/avg/max]=' + _dl.aMin.toFixed(3) + '/' + (_dl.aSum / _dl.frames).toFixed(3) + '/' + _dl.aMax.toFixed(3) + '  frameDt[ms min/avg/max]=' + (_dl.eMin * 1000).toFixed(2) + '/' + (_dl.eSum / _dl.frames * 1000).toFixed(2) + '/' + (_dl.eMax * 1000).toFixed(2) + _hint)
+			}
+			_dl.frames = 0; _dl.steps = 0; _dl.zeroFrames = 0; _dl.aMin = 9; _dl.aMax = -9; _dl.aSum = 0; _dl.eMin = 9; _dl.eMax = -9; _dl.eSum = 0; _dl.t0 = _n
 		}
 		var r = Registry.get('render'); if (r && r.draw) { r.draw(alpha) }
 		var ui = Registry.get('ui'); if (ui && ui.update) { ui.update() }
@@ -346,11 +356,47 @@ function buildStart(wrap) {
 		canvas.addEventListener('pointerup', function () { cursor.on = false })       // 松手保持最后方向（蛇按末向续行，不丢输入）
 		canvas.addEventListener('pointercancel', function () { cursor.on = false })
 		global.addEventListener('orientationchange', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸
-		global.addEventListener('keydown', function (e) { keys[e.key] = true; if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return } if (e.key !== '`' && e.key !== '~') { startIfMenu() } })
+		global.addEventListener('keydown', function (e) {
+			keys[e.key] = true
+			// 调试：像素吸附开关（2026-07-24 FPS 回归 A/B；实测已证伪=对卡顿无影响，保留仅作对照）按 B
+			if (e.key === 'b' || e.key === 'B') { window.__NO_DIR1 = !(window.__NO_DIR1 !== false); _statusBanner() }
+			// 调试：重量级特效开关（2026-07-24 实测定因：白爆(T1)+火墙(T3)是 GPU 填充率尖峰主因）按 V
+			if (e.key === 'v' || e.key === 'V') { _toggleVfx(); _statusBanner() }
+			if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return }
+			if (e.key !== '`' && e.key !== '~') { startIfMenu() }
+		})
+		function _toggleVfx() {   // 一键关掉最贵的两种 GPU 填充：白爆(T1=suppressWhiteBurst) + 火墙/余烬(T3=suppressFire)，并锁 MED 档防摆动；纯诊断用，不动数值结构
+			var pt = global.PerfTier
+			if (!pt) { return }
+			window.__NO_VFX = !window.__NO_VFX
+			if (window.__NO_VFX) {
+				pt._savedAuto = pt.auto
+				pt._savedWB = pt.suppressWhiteBurst
+				pt._savedFire = pt.suppressFire
+				pt._savedTier = pt.tier
+				if (pt.forceTier) { pt.forceTier('MED') }   // 锁 MED（auto=false）：世界缩放适中且不随 FPS 抖动
+				pt.suppressWhiteBurst = true                 // 强制关白爆（MED 默认开，这里覆盖）
+				pt.suppressFire = true                       // 强制关火墙/余烬
+			} else {
+				if (pt._savedTier && pt.forceTier) { pt.forceTier(pt._savedTier) }
+				pt.auto = !!pt._savedAuto
+				pt.suppressWhiteBurst = !!pt._savedWB
+				pt.suppressFire = !!pt._savedFire
+			}
+		}
+		function _statusBanner() {   // 屏幕顶部横幅：同时显示像素吸附(B) 与 重量特效(V) 开关，非技术用户也能看懂
+			var el = document.getElementById('snapBanner')
+			if (!el) { el = document.createElement('div'); el.id = 'snapBanner'; el.style.cssText = 'position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9999;padding:4px 14px;border-radius:8px;font:700 13px system-ui;color:#fff;pointer-events:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.4)'; document.body.appendChild(el) }
+			var snap = window.__NO_DIR1 !== false
+			var vfx = !window.__NO_VFX
+			el.textContent = '像素' + (snap ? '吸附开' : '吸附关') + '(B) ｜ 重量特效' + (vfx ? '开' : '关·应流畅') + '(V)'
+			el.style.background = vfx ? 'rgba(40,180,90,.92)' : 'rgba(220,60,60,.92)'
+		}
+		_statusBanner()   // 启动即显示当前状态
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
 		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
 
-		Log.info('main 就绪：循环启动（原生帧时间步进 + 固定子步 ' + SUBSTEP.toFixed(4) + 's）')
+		Log.info('main 就绪：循环启动（固定 STEP 累加器 ' + STEP.toFixed(4) + 's · 锁 60Hz 仿真 + 渲染插值 · 不封顶跑满刷新率）')
 		global.requestAnimationFrame(frame)
 	}
 

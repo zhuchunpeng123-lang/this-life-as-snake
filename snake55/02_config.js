@@ -101,7 +101,7 @@
 				desktopDprFloor: 1           // devicePixelRatio ≤ 此值视为弱集显 → MED 起步
 			},
 			tiers: {                         // 四档质量预设（HIGH=原默认，零回归基准）；每档控制 backing 宽上限/粒子文字上限/视图缩放/火冰视觉抑制/白爆抑制/屏震/vignette 精度
-				HIGH:   { maxBackW: 2560, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
+				HIGH:   { maxBackW: 1600, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },   // ⚠️2026-07-23 回退: maxBackW 2560→1600。2560 是 7/22「2400 掉帧」坑的复刻(画布2560×1440+余烬/白爆/飘字齐发→外部17-23ms→FPS崩42, 见CHANGELOG「2400 掉帧澄清」); 1600=7/22 auto-tier 封版基准(双实证稳60fps)。2560 是 commit 52d076a 为消1600拉伸shimmer误焊成默认, 今回归。shimmer 若明显另开轴(如落地7/22搁置的FPS自动降分辨率)
 				MED:    { maxBackW: 1920, worldScale: 0.92, maxParticles: 170, maxTexts: 40, spawnBudget: 90,  suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
 				LOW:    { maxBackW: 1024, worldScale: 0.88, maxParticles: 120, maxTexts: 32, spawnBudget: 70,  suppressFire: true,  suppressIceFill: false, suppressShake: false, suppressWhiteBurst: true,  simpleVignette: false },
 				POTATO: { maxBackW: 800,  worldScale: 0.84, maxParticles: 80,  maxTexts: 24, spawnBudget: 50,  suppressFire: true,  suppressIceFill: true,  suppressShake: true,  suppressWhiteBurst: true,  simpleVignette: true }

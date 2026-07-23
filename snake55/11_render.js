@@ -375,6 +375,9 @@ function drawChargeArrow(e) {
 	function snapWX(v) { return (_snapGrid > 0) ? (Math.round((v - _camX) * _snapGrid) + Math.round(_camX * _snapGrid)) / _snapGrid : v }
 	function snapWY(v) { return (_snapGrid > 0) ? (Math.round((v - _camY) * _snapGrid) + Math.round(_camY * _snapGrid)) / _snapGrid : v }
 	function snapAngle(a) { return (window.__HEAD_ROT_SNAP === false) ? (a || 0) : Math.round((a || 0) / ROT_BUCKET) * ROT_BUCKET }   // 头旋转角吸附 3° 桶：配合离屏烘焙→位图仅跨桶时重栅格化一次，消每帧旋转重采样爬行(shimmer)；__HEAD_ROT_SNAP=false 还原旧行为
+	// 方向1 亚像素回归调试开关（2026-07-24）：FPS 46↔165 摇摆根因=蛇身/光球走浮点、落非整数设备像素→canvas 每 fill 做 AA 且成本随亚像素偏移量每帧波动。
+	//   true(默认)=强制吸附蛇/光球到整数设备像素(复用敌人已验证的 snapWX/Y,残差<1设备像素肉眼不可见)；false=还原方向1 浮点(复现卡顿,用于A/B确诊)。确认后去开关永久吸附。
+	function DIR1_SNAP() { return window.__NO_DIR1 !== false }
 	// 渲染插值（CAM-STUTTER 修复·方案A）：任意带 prevX/prevY 扁平字段的实体，按同一 _ra（已 clamp[0,1]）在「上一步→当前步」间插值。判定位移/碰撞逻辑只读真实 x/y，不碰
 	function _ix(o) { return snapWX((o.prevX != null) ? M.lerp(o.prevX, o.x, _ra) : o.x) }
 	function _iy(o) { return snapWY((o.prevY != null) ? M.lerp(o.prevY, o.y, _ra) : o.y) }
@@ -392,11 +395,14 @@ function drawChargeArrow(e) {
 		// 插值中心线（head + 各节 prev→cur 插值）：整条蛇平滑，消 fixed-step 无插值导致的身体一顿一顿（与头部同源，165Hz 不再逐帧跳）
 		var h = s.head
 		var _ih = interpHead()   // 与相机同源插值基准：所画蛇头位姿 == 相机跟随目标，直行无 bob
+		var _snap = DIR1_SNAP()   // 调试开关：true=吸附蛇到整数设备像素(消亚像素 AA 摇摆)；false=方向1 浮点(复现卡顿)
 		var hx = _ih.x, hy = _ih.y, hAng = _ih.ang   // 方向1：蛇坐标走浮点(由外层残差补偿抵消相机锯齿),不再自身 snapWX→整条蛇连续投影
+		if (_snap) { hx = snapWX(hx); hy = snapWY(hy) }
 		var pts = [{ x: hx, y: hy }]
 		for (var _i = 1; _i < segs.length; _i++) {
 			var _g = segs[_i], _ix = _g.x, _iy = _g.y
 			if (GS.status === 'playing' && _g.px != null) { _ix = M.lerp(_g.px, _g.x, _ra); _iy = M.lerp(_g.py, _g.y, _ra) }
+			if (_snap) { _ix = snapWX(_ix); _iy = snapWY(_iy) }
 			pts.push({ x: _ix, y: _iy })   // 方向1：身体逐节浮点(残差补偿后整条蛇连续投影,无链内接缝)
 		}
 		var _mi = Math.floor(pts.length / 2)   // 诊断采样点:身体中段(矢量圆)
@@ -436,7 +442,9 @@ function drawChargeArrow(e) {
 		var T4 = RT('PERF.suppressIceFill', perfFB('suppressIceFill', false) ? 1 : 0) > 0   // 自适应分级：POTATO 档冰池只描边；GM 经 editor.rtSet 仍优先
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
 	var _ihA = interpHead() || h   // 护盾光球绕「插值头」公转（与所画蛇头同源），消 165Hz 光球相对头错位跳
+	var _snapA = DIR1_SNAP()   // 调试开关：true=吸附光球/火墙到整数设备像素(消亚像素 AA 摇摆)；false=方向1 浮点(复现卡顿)
 	var _iax = _ihA.x, _iay = _ihA.y   // 方向1：护盾/火墙基底浮点(残差补偿后随蛇一起连续投影)
+	if (_snapA) { _iax = snapWX(_iax); _iay = snapWY(_iay) }
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		var segs = s.segments || []
 		var flick = 0.7 + 0.3 * Math.sin(GS.timeSec * FIRE_FLICKER_HZ)   // 火跳动
@@ -448,8 +456,9 @@ function drawChargeArrow(e) {
 			ctx.beginPath()
 			for (var sf = 0; sf < segs.length; sf += stepF) {
 				var sg = segs[sf]
-				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y   // 方向1：火墙贴插值蛇身浮点(残差补偿后连续投影)
-				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
+			var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y   // 方向1：火墙贴插值蛇身浮点(残差补偿后连续投影)
+			if (_snapA) { sgx = snapWX(sgx); sgy = snapWY(sgy) }
+			if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
 			}
 			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
 		ctx.lineWidth = fr * 2; ctx.strokeStyle = 'rgba(255,90,0,' + (0.30 * flick).toFixed(2) + ')'; ctx.stroke()   // 软火带：宽 fr*2 / alpha 0.30（round6 稳定版；火墙为整条蛇身火管+沿身橙黄余烬，无"怪异蛇身细线"）
@@ -465,6 +474,7 @@ function drawChargeArrow(e) {
 			var ox2 = _iax + Math.cos(a2) * orbR, oy2 = _iay + Math.sin(a2) * orbR   // 方向1：护盾球浮点(残差补偿后连续投影)
 			var at = a2 - SHIELD_GLOW_TRAIL   // 拖影（沿轨道后方）
 			var oxt = _iax + Math.cos(at) * orbR, oyt = _iay + Math.sin(at) * orbR   // 方向1：护盾拖影浮点(残差补偿后连续投影)
+			if (_snapA) { ox2 = snapWX(ox2); oy2 = snapWY(oy2); oxt = snapWX(oxt); oyt = snapWY(oyt) }
 				ctx.globalAlpha = 0.3; ctx.strokeStyle = 'rgba(255,225,140,0.9)'; ctx.lineWidth = 5; ctx.lineCap = 'round'
 				ctx.beginPath(); ctx.moveTo(oxt, oyt); ctx.lineTo(ox2, oy2); ctx.stroke(); ctx.globalAlpha = 1
 				ctx.beginPath(); ctx.arc(ox2, oy2, 6, 0, M.PI2); ctx.fillStyle = 'rgba(255,235,160,0.95)'; ctx.fill()   // 发光球（白金）

@@ -55,20 +55,21 @@
   <div id="rotate-hint">横屏视野更宽，体验更佳（竖屏也可玩）</div>
   <div id="boot-error"></div>
 
-  <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口；?v=287d7e45f7 强制浏览器重新下载新代码，绕过本地缓存（破「改了代码刷新仍不生效」） -->
-  <script src="02_config.js?v=287d7e45f7"></script>
-  <script src="03_core.js?v=287d7e45f7"></script>
-  <script src="04_collision.js?v=287d7e45f7"></script>
-  <script src="05_particle.js?v=287d7e45f7"></script>
-  <script src="06_snake.js?v=287d7e45f7"></script>
-  <script src="07_enemy.js?v=287d7e45f7"></script>
-  <script src="08_skill.js?v=287d7e45f7"></script>
-  <script src="09_wave.js?v=287d7e45f7"></script>
-  <script src="10_audio.js?v=287d7e45f7"></script>
-  <script src="11_render.js?v=287d7e45f7"></script>
-  <script src="12_ui.js?v=287d7e45f7"></script>
-  <script src="13_editor.js?v=287d7e45f7"></script>
-  <script src="14_main.js?v=287d7e45f7"></script>
-  <script src="15_profiler.js?v=287d7e45f7"></script>
+  <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口；本地双击(file://)打开时去掉 ?v= 缓存版本号，否则 Chrome 对带查询串的本地脚本会 404 导致整游戏白屏（worktree 13c915b 即无 ?v= 可正常加载）；如需强制刷新清缓存用 Ctrl+Shift+R -->
+  <!-- 缓存破坏：版本号跟随 build 升，改任意脚本后统一 +1 即强制浏览器拉新，免手动清缓存 -->
+  <script src="02_config.js?v=ff45353192"></script>
+  <script src="03_core.js?v=ff45353192"></script>
+  <script src="04_collision.js?v=ff45353192"></script>
+  <script src="05_particle.js?v=ff45353192"></script>
+  <script src="06_snake.js?v=ff45353192"></script>
+  <script src="07_enemy.js?v=ff45353192"></script>
+  <script src="08_skill.js?v=ff45353192"></script>
+  <script src="09_wave.js?v=ff45353192"></script>
+  <script src="10_audio.js?v=ff45353192"></script>
+  <script src="11_render.js?v=ff45353192"></script>
+  <script src="12_ui.js?v=ff45353192"></script>
+  <script src="13_editor.js?v=ff45353192"></script>
+  <script src="14_main.js?v=ff45353192"></script>
+  <script src="15_profiler.js?v=ff45353192"></script>
 </body>
 </html>
