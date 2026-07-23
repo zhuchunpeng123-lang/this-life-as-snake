@@ -332,7 +332,7 @@
 			else if (breaking && i === lostHeartIndex) { hearts += '💥' }   // 扣心瞬间：对应心碎裂闪烁
 			else { hearts += '🖤' }
 		}
-		hud.innerHTML = '<div>' + hearts + '</div><div>得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + '</div><div>击杀 ' + GS.kills + '　蛇长 ' + GS.segments + '</div><div>时间 ' + fmtTime(GS.timeSec) + '　阶段 ' + stageName + '</div>' + buildRecipeHint()
+		hud.innerHTML = '<div>' + hearts + '</div><div>得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + '　升级 ' + (GS.upgradesThisRun || 0) + '</div><div>击杀 ' + GS.kills + '　蛇长 ' + GS.segments + '</div><div>时间 ' + fmtTime(GS.timeSec) + '　阶段 ' + stageName + '</div>' + buildRecipeHint()
 	}
 
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })

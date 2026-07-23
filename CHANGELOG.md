@@ -2,19 +2,87 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-23 · fix(head): 碰撞/渲染半径解耦（碰撞回真源14）
+- 改动：02_config 拆 headRadius(碰撞=14,真源§1宁小勿大防冤死) 与 headRadiusRender(渲染=26,纯表现)；11_render 蛇头改读 headRadiusRender + 注释更新；13_editor 新增「蛇头渲染半径px(视觉)」滑条(仅驱动视觉,不动碰撞)，原「蛇头判定半径px(碰撞)」仅驱动碰撞。
+- 是否动 §9 / core / collision / config：config 数值结构调整(拆参)，04_collision 逻辑未动(仅读到的 config 值变14)；§9 头部判定半径回真源14(原本即真源,无新平衡值)；渲染纯表现不进 §9。
+- 验收：GM 拖「判定」只变碰撞圈/冤死率、拖「渲染」只变蛇头显示大小；视觉头≥碰撞圈；键盘/摇杆手感不变。
+
+## 2026-07-23 · diag(log): fixed-step 卡顿根因定位——加 __DIAG_LOG 文本日志
+
+- **进展**：三轮 A/B 已排除 `__CAM_LOCK`(锁) 与 `__PIXEL_SNAP`(吸附) 为"地图中段卡顿"真凶——锁开+snap开/关均卡、全默认(锁关+snap关)也卡。卡顿与锁/吸附无关。
+- **根因假设（高置信，代码事实）**：世界实体(敌人/拾取/粒子/bounds)未做 `_ra` 渲染插值(仅蛇头11_render:206/身段355/相机481 插了)，每模拟步跳一次；相机滚动(中段)时未插值实体的步进跳被掠过视口放大=整片卡顿，相机冻结(边缘)不敏感=顺。fps=60(02_config:12→STEP=16.67ms)本应匹配，但 rAF 抖动/显示器刷新率≠60 致偶发 0-step 帧→实体忽停忽跳。
+- **改动(14_main.js)**：加 `__DIAG_LOG` 只读开关，每秒 console 汇总 fps/steps/s/0-step帧占比/alpha[min/avg/max]/frameDt[ms] 并自动 hint 高刷或偶发0-step。零行为影响、可关、不碰 core/collision/config/§9。版本 bump 20260723j 防缓存。
+- **待用户复验**：控制台 `__DIAG_LOG=true` + ~两开关全关 + 地图中段跑 5s，把 `[DIAG]` 行发回 → 据此判高刷未插值(方案A:实体加插值) or alpha 节拍(方案B:主循环)。不改码，等数据。
+
+## 2026-07-23 · diag+fix(render): 头抖"中段一顿一顿"=相机/头插值节拍差，加两个 A/B 开关
+
+- **新现象（用户实测）**：蛇头"一顿一顿"只在中段（相机自由滚动）出现、到边缘（相机 clamp 冻结）消失。与"世界 shimmer"不同机制——指向**相机（每模拟步推进一次 camPrev→cam，按 _ra 插值）与蛇头（每帧 interpHead 插值）在不同步长负载下的相对节拍差**：相机滚动快→每帧位移大→节拍差被肉眼读出；相机冻结→零位移→无差→不抖。
+- **改动**：①`11_render.js` 相机块新增 `window.__CAM_LOCK` 模式：相机每帧直接 = `interpHead()+lookAhead*dir`（去 followLerp 滞后与 camPrev/cam 插值），clamp 同 `updateCamera` 边界 → 头相对屏幕恒定、彻底消中段头抖（候选修复）。②`ws` 上提到相机块，供锁定模式 clamp 与像素吸附共用（单一真相）。③`13_editor.js`「性能诊断」区新增两个按钮：`像素吸附(消世界shimmer)`（默认开）、`相机锁定插值头(消头抖)`（默认关），点击即 A/B。
+- **blame**：`2026-07-23e` 曾回退"每帧追 interpHead"（导致移动糊），本修复用"直接锁定(无 followLerp)"而非"指数追插值头"，规避糊、保消抖。最终手感待用户 A/B 定。
+- **性能**：锁定模式每帧仅 1 次 interpHead + 2 次 clamp，零额外分配，FPS 无影响；`__PIXEL_SNAP` 维持 2×Math.round/帧。
+- **是否动 §9 / core / collision / config**：否（纯渲染表现 + 调参器 dev 开关）。
+- **验收（A/B）**：①开`相机锁定插值头`→地图中段直行/转向头不再一顿一顿；②关→恢复旧节拍差；③像素吸附开关独立影响世界硬边 shimmer；④绕圈/甩鼠标/贴边墙无新增顿挫；FPS 不变。
+- **结论归属（已 A/B 确认）**：✅ 根因锁定＝相机/头插值不同步（旧相机追模拟头 h.x + camPrev/cam 独立插值，与蛇头 interpHead 不同源/不同相位）；`相机锁定插值头(__CAM_LOCK)` 开→中段头不抖、关→头抖立刻回，翻转判据成立。此结论**推翻** 2026-07-23e(653行)"回退后仍抖=worldScale shimmer"的误判。锁模式实现为"直接锁定 interpHead、零 followLerp"（非 23e 回退的"指数追插值头"），规避移动糊。下一步：固化默认（见下方计划）。
+
+## 2026-07-23 · fix(render): 相机像素吸附消地图中段滚动 shimmer
+
+---
+
+## 2026-07-23 · fix(render+input): 直线自动转向根治 + 蛇头回退 HEAD 忠实画法（去 squish/代码眼）
+
+- **移动自动转向根治（14_main.js，输入模型；非 core/collision/config/§9 锁死区）**：
+  - 根因：`aimFromEvent` 在鼠标移动那一刻把世界坐标**烘焙死**（`cursor.wx/wy` 固定世界点）。蛇每帧朝该冻结世界点转向，前进时方向持续漂移 → 绕点自转＝自动转向、无法直行。
+  - 修法：鼠标只存**相对屏幕中心的角度** `cursor.angle`（相机仅平移不旋转 → 屏幕角＝世界角）。`readInput` 朝该角度转向 → 鼠标不动＝角度恒定＝蛇对齐后直行；动鼠标＝角度更新＝360°自由转向；松键/移出画布＝直行。键盘仍优先。
+- **蛇头回退 HEAD 忠实画法（11_render.js，render 分区）**：
+  - 删 `EYE` 常量、`drawSnakeEyes`/`drawEye`（代码眼画在腮帮子、压住 PNG 自带靠后眼）；删头部 `ctx.scale(sq.sx,sq.sy)`（吃/受击 squash 挤压整张脸＝"压扁"）。
+  - 现在**忠实绘制 PNG**（PNG 自带靠后眼睛＋圆舌头＋露嘴），保留离屏预渲染（防位图 shimmer）＋`ART_FORWARD_OFFSET_RAD=π/2` 对齐前进＋blink/无敌环。`solidDiameterPx:628` 等比例不变（不压扁）。
+- **影响下游**：纯渲染＋输入；碰撞/伤害/§9 未动；headRadius=26（上轮）不变。
+- **验收**：①鼠标不动→蛇直行；动鼠标→360°平滑转向；松键/移出画布→直行；②蛇头不压扁、PNG 自带圆舌＋靠后眼＋露嘴可见；③无 PNG 时 fallback 圆头正常；④身体/无敌环/blink 不受影响。
+
+## 2026-07-23 · fix(render): 相机像素吸附消地图中段滚动 shimmer
+
+- **根因**：世界→设备像素变换链 `dpr·ws·rcx`（`dpr=2, ws=0.8` → 系数 1.6）每帧非整数。相机自由滚动时（地图中段）整片世界（边界 `strokeRect`/拾取/敌人/粒子硬边）逐帧在设备像素网格上做亚像素重采样＝shimmer；地图**边缘**相机被 `clamp` 卡死不滚→世界光栅化固定→不抖。精确对应"地图中段抖、过中段不抖"。`DIAG-HS` 蛇头位移≈0 证明相机-蛇头同步 OK，抖的是硬边世界元素的滚动重采样。
+- **修法（11_render.js 相机块，render 分区）**：在 `translate(-rcx,-rcy)` 前把相机平移吸附到整数设备像素网格 `rcxS=round(rcx·ws·dpr)/(ws·dpr)`（y 同理）。吸附残差<1 设备像素(≈0.5 CSS px)肉眼不可见；蛇头仍用未吸附 `rcx/rcy` 绘制、不引入顿挫。`diagCamTick/diagHeadTick` 仍传原 `rcx/rcy`，诊断口径不变。
+- **运行时开关**：`window.__PIXEL_SNAP`（默认 true；置 `false` 即关吸附，现场 A/B 对比可确认是其根因）。开关为只读诊断用、不落 §9、不改玩法平衡。
+- **性能**：仅每帧 2 次 `Math.round`，零额外绘制/分配，对 FPS 无任何可测影响（已 lint 干净）。
+- **是否动 §9 / core / collision / config**：否（纯渲染表现修复）。
+- **验收**：① `__PIXEL_SNAP=true`（默认）走到地图正中央直行→整片世界不再颤动；② `__PIXEL_SNAP=false`→立刻恢复 shimmer，确认根因；③绕圈/甩鼠标/贴边墙无新增顿挫；蛇头/舌/眼仍平滑；④ FPS 不变。
+
 ## 2026-07-23 · feat(food): 满节食物稀疏化 + 溢出转小分
 - 改动：02_config PICKUP.food 加 maxSegScreenCap:2/maxSegRefreshIntervalSec:6/overflowScore:10；06_snake pickup:eat 改以 maxSegments 为唯一门控，满节 else→overflowScore 小分+飘字+Bus('snake:overflow_food')；09_wave foodTimer 按 fullSeg 切换刷新间隔/屏上限；12_ui 记忆 token 满节同停(记忆 tag 仍记)。
 - 是否动 §9：overflowScore 为 🟡 TODO 候选[5/10/20] 终值待 §9 回写；其余为节奏/表现值，未在 §9 量化区；core/collision 未动。
 - 验收：满25节同屏食物≤2/刷新6s；满节吃食物不加节、转小分；满节不再刷加节食物；记忆 token 满节不授节。
 
-## 2026-07-23 · fix(head): 碰撞/渲染半径解耦（碰撞回真源14）
-- 改动：02_config 拆 headRadius(碰撞=14,§9 真源·宁小勿大防冤死) 与 headRadiusRender(渲染=26,纯表现)；11_render 蛇头精灵/绘制/基线三处改读 headRadiusRender；13_editor 拆「蛇头判定半径px(碰撞)」与「蛇头渲染半径px(视觉)」两个独立滑条（前者驱动碰撞圈+墙碰，后者仅驱动视觉、rtSet 实时生效）。
-- 是否动 §9 / core / collision / config：config 数值结构拆参；04_collision 逻辑未动（仅读到的 config 值变 14）；§9 头部判定半径回真源 14（本即真源，无新平衡值）；渲染纯表现不进 §9。蛇头视觉缩放(solidDiameterPx)与 body/tail 精灵标定属美术，留美术窗口。
-- 验收：GM 拖「判定」只变碰撞圈/冤死率、拖「渲染」只变蛇头显示大小；视觉头≥碰撞圈；键盘/摇杆手感不变。
+## 2026-07-23 · diag: 直行 stutter + 直线自动转向 排查埋点（window.__SNAKE_DIAG）
+
+- **背景**：用户报 ①直行仍"嘚嘚嘚"（上一轮删 snap 未解，说明 snap 非根因）②走直线会自动转向、无法保持方向。
+- **埋点（14_main.js + 11_render.js，纯调试、默认关、非 core/collision/config 锁死区）**：`readInput` 返回 `src`（key/mouse/none）；`frame()` 内 `_diagTick` 每 ~1s 汇总 `steps/frame` 分布、插值 `alpha` 区间、输入源（key/mouse/mouseWhileNoKey）、`cursor.on`、蛇头角度；鼠标输入生效且无键盘时即时告警 `[DIAG] ⚠ 鼠标自动转向生效`；render 内 `diagCamTick` 输出相机每帧屏幕位移直方图（冻结帧多=相机节奏破缺→stutter）。开关 `window.__SNAKE_DIAG=true`。
+- **初步判因（待数据确认）**：自动转向≈鼠标在 canvas 上任一移动即 `cursor.on=true`、松键后蛇朝鼠标世界点弯（14_main 输入模型如此）；stutter≈固定步长相机每模拟步更新一次，非 60Hz 屏上每帧 0/1/2 步不规律→相机冻结/突进交替＝"嘚嘚嘚"。
+- **是否动 §9**：否（纯调试 + 待定修复）。
+- **验收**：开启 `__SNAKE_DIAG` 直行 10s，看 `steps/frame` 是否非 `{1:N}`、`mouseWhileNoKey` 是否高、`[DIAG-R]` 冻结帧是否多，据此定位两项根因并出修复计划（§八）。
+
+
+
+## 2026-07-23 · feat(count): 本局升级计数 upgradesThisRun
+- 改动：03_core GS.upgradesThisRun:0 + resetRun 归零；08_skill pick 内 +1；12_ui HUD 加「升级 N」；15_profiler 面板加「升级 N」。
+- 是否动 §9 / core / collision / config：纯计数展示，无数值平衡变化；core 仅加运行态字段。
+- 验收：开局0/每次合法升级+1/HUD显示/开第二局归0。
+
+## 2026-07-23 · fix(render): 回退舌头+像素snap(直行嘚嘚嘚根因) + headRadius 默认 14→26
+
+- **决策**：上一轮"代码画舌头+整数像素snap"未通过实测——①舌头观感丑，用户决定去掉、只留纯蛇头；②直行仍"嘚嘚嘚像刷新"，且 snap 正是元凶：匀速直行时头真实坐标连续前进但被 snap 到整设备像素，只在跨像素边界那帧跳 1px → 规律台阶抖动，转向时台阶不规律被运动掩盖故仅直线显。故本轮回退舌头与 snap，回到纯亚像素插值。
+- **改动（11_render.js，全 render 分区，非 core/collision 锁死区）**：①删 `TONGUE` 常量 + `drawTongue()` + 其调用（去舌头）；②删 `snapWorldToDevicePx()` + `drawSnake` 内 snap 调用（消直行台阶抖动）；③`rcx/rcy` 回退为 draw() 局部 `var`（snap 已删无需模块级）。
+- **改动（02_config.js，数值）**：`PLAYER.headRadius` 14→26（用户 GM 滑条实测舒适区下沿；`solidDiameterPx=628` 缩放下头视觉随之放大、比身体 r=12 明显更大）。
+- **影响下游（headRadius 波及）**：headRadius 判定=视觉同源——04_collision 初值 + Bus(collision:set_radii) + 06_snake 墙碰半径均读它，故蛇头碰撞圈同步放大（更易吃到食物/也更易撞墙中弹），但与用户滑条实测手感一致。bodyRadius 不变。
+- **是否动 §9**：**是**（headRadius 影响判定强度）→ 需回写真源 §9（headRadius 14→26 + 登记 Changelog），**由用户回写 MD**；AI 已同步 config.js。
+- **验收**：①直行贴脸细看，"嘚嘚嘚"台阶抖动消失、平滑连续移动；②转圈/转向仍顺；③蛇头无舌头、干净；④蛇头明显比身体大（视觉与判定同步 r=26）；⑤边界：暂停头不飘、死亡不抖、无 PNG 时 fallback 圆头正常。
 
 ---
 
-
+## 2026-07-23 · fix(skill): 满级技能不进候选 + 闸门诊断
+- 改动：08_skill candidates() 满级技能 push 进 maxed 不进候选(杜绝「选了还是满级」)；08_skill/09_wave 加 [GATE] 诊断日志(确认 allMaxed 判定)。
+- 是否动 §9 / core / collision：纯候选过滤+诊断，无数值平衡；core/collision 未动。
+- 验收：自然升满某技能 Lv5 后不再进 3选1；全满后不再刷技能球(只刷 heal/food)；[GATE] 日志确认 allMaxed 正确。
 
 ## 2026-07-23 · fix(core): Bus 事件名放宽允许驼峰 + on 断言改软拒绝（根治"事件名致命崩溃"第3次同类事故根因）
 
@@ -27,6 +95,11 @@
 - **验收**：①刷新无红字、蛇/食物/敌/碰撞正常（用户实测）；②故意写驼峰事件名不再崩模块（grep 确认 Bus.on 无 assert 崩溃路径）；③RETRO/DEBT 同步新约定。
 
 ---
+
+## 2026-07-23 · fix(input): 鼠标转向模型重写(治直线自动绕圈)
+- 改动：14_main aimFromEvent 重写为存「相对屏幕中心角度」cursor.angle(相机仅平移→屏角=世界角)；加 mouseSteerIdleSec:0.12/mouseMoveDeadPx:3(空闲/微抖判定)；pointerleave 清 lx/ly；_diag 诊断。02_config INPUT 加 mouseSteerIdleSec/mouseMoveDeadPx。
+- 是否动 §9 / core / collision：输入模型，非 §9 平衡值；键盘/摇杆默认手感不变。
+- 验收：①动鼠标蛇头跟着转 ②鼠标停住蛇走直线不绕圈 ③键盘/摇杆手感不变。
 
 ## 2026-07-22 · fix(collision): 根因修复——Bus 事件名驼峰违例致碰撞模块启动失败（"吃食物/撞怪无反应"真因）
 

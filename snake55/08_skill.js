@@ -315,12 +315,14 @@ function tickCombos(dt) {
 	// —— 3 选 1（保底 guaranteeAttack 攻 + guaranteeSurvival 生）——
 	function isAttack(id) { return SK.attackSkills.indexOf(id) >= 0 }
 	function candidates() {
-		var out = [], k = SK.list
+		var out = [], k = SK.list, maxed = []
 		for (var i = 0; i < k.length; i++) {
 			var id = k[i], L = lvl(id)
 			if (L === 0) { out.push({ id: id, level: 1, isNew: true }) }
 			else if (L < SK.maxLevel) { out.push({ id: id, level: L + 1, isNew: false }) }
+			else { maxed.push(id) }   // L>=maxLevel 不进候选 → 不会出现「选了还是满级」
 		}
+		Log.info('[GATE] candidates=' + out.length + ' maxedExcluded=' + (maxed.length ? maxed.join(',') : '—'))
 		return out
 	}
 	function buildOffer() {
@@ -352,6 +354,8 @@ function tickCombos(dt) {
 		for (var i = 0; i < c.length; i++) { if (c[i].id === id) { ok = c[i]; break } }
 		if (!ok) { Log.warn('技能选择非法：' + id); return }
 		GS.ownedSkills[id] = ok.level
+		GS.upgradesThisRun = (GS.upgradesThisRun || 0) + 1   // C：本局累计升级+1（每次选择=1次，口径与「点满5技能需25次」一致）
+		Log.info('[GATE] pick ' + id + '→Lv' + ok.level + ' (upgradesThisRun=' + GS.upgradesThisRun + ')')   // A#1 诊断：确认选的是候选内合法技能
 		Bus.emit('skill:gained', { id: id, level: ok.level })
 		checkCombos()
 		if (GS.status === 'choosing') { GS.status = 'playing' }

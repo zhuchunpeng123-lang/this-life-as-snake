@@ -132,7 +132,7 @@
 
 	// ---------- GS 全局运行态 ----------
 	var GS = {
-		status: 'menu', timeSec: 0, frame: 0, score: 0, kills: 0, killStreak: 0,
+		status: 'menu', timeSec: 0, frame: 0, score: 0, kills: 0, killStreak: 0, upgradesThisRun: 0,   // C：本局累计升级次数
 		coreHp: 0, segments: 0, stageId: 0, waveIndex: 0,
 		invincibleUntil: 0, buildPauseUntil: 0, comboScore: 0,
 		ownedSkills: {}, shakeFrames: 0, shakeMag: 0, rngSeed: 0,
@@ -145,7 +145,7 @@
 	// GDD §13.3：开新局重置一切运行态
 	function resetRun() {
 		GS.status = 'playing'
-		GS.timeSec = 0; GS.frame = 0; GS.score = 0; GS.kills = 0; GS.killStreak = 0
+		GS.timeSec = 0; GS.frame = 0; GS.score = 0; GS.kills = 0; GS.killStreak = 0; GS.upgradesThisRun = 0   // C：本局升级计数开局清零
 		GS.coreHp = CONFIG.PLAYER.coreHp
 		GS.segments = CONFIG.PLAYER.initSegments
 		GS.stageId = 1; GS.waveIndex = 0
