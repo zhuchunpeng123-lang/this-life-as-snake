@@ -1,6 +1,8 @@
 ;(function (global) {
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
+	// —— 运行版本横幅：控制台见此行即代表新包已加载；若仍是旧版本号（20260723d 或更早）说明浏览器仍在喂旧缓存 ——
+	console.log('%c[snake55] build v=20260723s（敌人/护盾光球接入渲染插值，消 165Hz 频闪抖）— 看到此行=新代码生效；若版本号更旧=缓存未清，请清站点数据/强刷', 'color:#5f9;font-weight:bold')
 	var STEP = 1 / CONFIG.GAME.fps
 	// —— 自适应性能分级（跨端 FPS 根治）：状态对象 + 控制器（内联，不新增文件/不动 core/collision）——
 	// 设计：RT 回退源 = PerfTier 当前档；editor 手动覆盖经 RT 仍优先（GM 链路不变，零双份真相源）。
@@ -14,7 +16,7 @@
 	var TIER_ORDER = ['HIGH', 'MED', 'LOW', 'POTATO']
 	var PerfTier = {
 		tier: 'HIGH', auto: true,
-		maxBackW: 1600, worldScale: 0.8, maxParticles: 240, maxTexts: 48, spawnBudget: 120,
+		maxBackW: 2560, worldScale: 0.8, maxParticles: 240, maxTexts: 48, spawnBudget: 120,
 		suppressFire: false, suppressIceFill: false, suppressShake: false, simpleVignette: false, suppressWhiteBurst: false,
 		_downSec: 0, _upSec: 0, _emergencyCd: 0, _lastAppBackW: null, _fillSec: 0, _fillEma: null, _fireLockUntil: 0, _fireSuppressed: false, _recvSec: 0,
 		_tierCfg: function (name) { var t = PERF.tiers[name]; return t || PERF.tiers.HIGH },
@@ -105,7 +107,61 @@
 	var HITSTOP_FRAMES = CONFIG.COMBAT.hitStopFrames   // ⑥ 命中冻帧（真理源 §2.2 hitStop 2帧）
 	var hitStop = 0
 
-	var keys = {}, cursor = { on: false, wx: 0, wy: 0, touch: false }
+	var keys = {}, cursor = { on: false, wx: 0, wy: 0, angle: 0, touch: false, lastMoveT: -1, lx: null, ly: null }
+	// —— DIAG（调试用，window.__SNAKE_DIAG=true 开启；排查直行 stutter + 鼠标自动转向）——
+	var _diag = { t: 0, frames: 0, steps: {}, keyFrames: 0, mouseFrames: 0, mouseNoKey: 0, alphaMin: 1, alphaMax: 0, prevMouseNoKey: false,
+		dtHist: {}, headHist: {}, freeze: 0, prevHx: null, prevHy: null }
+	function _anyMoveKey() { return !!(keys.ArrowLeft || keys.ArrowRight || keys.ArrowUp || keys.ArrowDown || keys.a || keys.A || keys.d || keys.D || keys.w || keys.W || keys.s || keys.S) }
+	// DIAG：window.__SNAKE_DIAG=true 时每 ~1s 汇总：每帧模拟步数分布、插值 alpha、真实帧间隔 dt 直方图(抓环境/GC 抖动)、蛇头每帧位移直方图(抓直行"一顿一顿"：0=冻帧、尖峰=跳步)
+	function _diagTick(steps, alpha, frameDt) {
+		if (!global.__SNAKE_DIAG || GS.status !== 'playing') { return }
+		var inp = readInput()
+		var noKey = !_anyMoveKey()
+		_diag.frames++
+		_diag.steps[steps] = (_diag.steps[steps] || 0) + 1
+		if (alpha < _diag.alphaMin) { _diag.alphaMin = alpha }
+		if (alpha > _diag.alphaMax) { _diag.alphaMax = alpha }
+		// 真实帧间隔(ms)直方图 → 若分布宽/有尖峰 = 帧节奏抖动(stutter 来自环境/主线程)，非算法
+		var ms = Math.round((frameDt || 0) * 1000)
+		var db = ms < 12 ? '<12' : (ms <= 16 ? '12-16' : (ms <= 20 ? '16-20' : (ms <= 30 ? '20-30' : (ms <= 50 ? '30-50' : '>=50'))))
+		_diag.dtHist[db] = (_diag.dtHist[db] || 0) + 1
+		// 蛇头渲染位移(世界px)/帧 → 直行匀速本应集中某桶；出现 0(冻帧) 或 >=3(跳步) 即定位"一顿一顿"
+		var sn = Registry.get('snake'), h = sn && sn.head
+		if (h) {
+			var hx = h.x + (h.x - h.px) * alpha, hy = h.y + (h.y - h.py) * alpha
+			if (_diag.prevHx != null) {
+				var d = Math.hypot(hx - _diag.prevHx, hy - _diag.prevHy)
+				var hb = d < 0.05 ? '0(冻)' : (d < 0.5 ? '<0.5' : (d < 1.5 ? '0.5-1.5' : (d < 3 ? '1.5-3' : '>=3')))
+				_diag.headHist[hb] = (_diag.headHist[hb] || 0) + 1
+				if (d < 0.05) { _diag.freeze++ }
+			}
+			_diag.prevHx = hx; _diag.prevHy = hy
+		}
+		if (inp.active) {
+			if (inp.src === 'mouse') { _diag.mouseFrames++; if (noKey) { _diag.mouseNoKey++ } }
+			else if (inp.src === 'key') { _diag.keyFrames++ }
+		}
+		// 事件：鼠标自动转向刚生效（鼠标输入生效 且 无键盘）→ 直接告警（直行自动转向根因）
+		var mnk = (inp.src === 'mouse' && inp.active && noKey)
+		if (mnk && !_diag.prevMouseNoKey) {
+			console.log('[DIAG] ⚠ 鼠标转向生效(无键盘): cursor.on=' + (cursor.on ? 1 : 0) + ' angle=' + (cursor.angle * 180 / Math.PI).toFixed(0) + '°' +
+				(h ? (' 蛇头角=' + (h.angle * 180 / Math.PI).toFixed(0) + '°') : '') + ' ← 鼠标不动应直行、动鼠标才转向')
+		}
+		_diag.prevMouseNoKey = mnk
+		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+		if (now - _diag.t >= 1000) {
+			console.log('[DIAG-H] steps/frame=' + JSON.stringify(_diag.steps) +
+				' alpha[' + _diag.alphaMin.toFixed(2) + ',' + _diag.alphaMax.toFixed(2) + ']' +
+				' dtMs=' + JSON.stringify(_diag.dtHist) +
+				' 头位移/帧=' + JSON.stringify(_diag.headHist) +
+				' 冻帧=' + _diag.freeze +
+				' input: key=' + _diag.keyFrames + ' mouse=' + _diag.mouseFrames + ' mouseWhileNoKey=' + _diag.mouseNoKey +
+				' cursorOn=' + (cursor.on ? 1 : 0) +
+				(h ? (' headAng=' + (h.angle * 180 / Math.PI).toFixed(1) + '°') : ''))
+			_diag.t = now; _diag.frames = 0; _diag.steps = {}; _diag.keyFrames = 0; _diag.mouseFrames = 0; _diag.mouseNoKey = 0; _diag.alphaMin = 1; _diag.alphaMax = 0
+			_diag.dtHist = {}; _diag.headHist = {}; _diag.freeze = 0; _diag.prevHx = null; _diag.prevHy = null
+		}
+	}
 	var startEl = null
 	Bus.on('snake:hurt', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
 	Bus.on('enemy:phase', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
@@ -160,19 +216,17 @@
 		if (keys.ArrowRight || keys.d || keys.D) { kx += 1 }
 		if (keys.ArrowUp || keys.w || keys.W) { ky -= 1 }
 		if (keys.ArrowDown || keys.s || keys.S) { ky += 1 }
-		if (kx !== 0 || ky !== 0) { var l = Math.sqrt(kx * kx + ky * ky); return { x: kx / l, y: ky / l, active: true } }
+		if (kx !== 0 || ky !== 0) { var l = Math.sqrt(kx * kx + ky * ky); return { x: kx / l, y: ky / l, active: true, src: 'key' } }
 		// 绝对瞄准：鼠标/触摸在 canvas 上且未用键盘时优先，死区用 CONFIG.PLAYER.deadZoneRadius
 		if (cursor.on) {
-			var sn = Registry.get('snake'), h = sn && sn.head
-			if (h) {
-				var dx = cursor.wx - h.x, dy = cursor.wy - h.y
-				var len = Math.sqrt(dx * dx + dy * dy)
-				var dz = cursor.touch ? CONFIG.INPUT.touch.deadZone : CONFIG.PLAYER.deadZoneRadius
-				if (len > dz) { return { x: dx / len, y: dy / len, active: true } }
+			// 空闲门限：指针停止移动超过 mouseSteerIdleSec 即视为空闲 → 不再持续跟踪光标，蛇保持当前角直行（治悬停常驻转向导致的舌头一顿一顿）
+			var idle = (CONFIG.INPUT && CONFIG.INPUT.mouseSteerIdleSec) || 0.12
+			if (GS.timeSec - cursor.lastMoveT <= idle) {
+				// 朝「鼠标相对中心角度」转向：鼠标动=360°自由转向；鼠标停=超出空闲门限后本分支不命中 → 下方返回 inactive=直行
+				return { x: Math.cos(cursor.angle), y: Math.sin(cursor.angle), active: true, src: 'mouse' }
 			}
-			return { x: 0, y: 0, active: false }
 		}
-		return { x: 0, y: 0, active: false }
+		return { x: 0, y: 0, active: false, src: 'none' }
 	}
 
 	function callSys(name, dt) { var s = Registry.get(name); if (s && s.update) { s.update(dt) } }
@@ -197,19 +251,38 @@
 	}
 
 	var last = 0, acc = 0
+	var _dl = { frames: 0, steps: 0, zeroFrames: 0, aMin: 9, aMax: -9, aSum: 0, eMin: 9, eMax: -9, eSum: 0, t0: 0 }   // DIAG_LOG 累积器（纯只读诊断）
 	function frame(now) {
 		global.requestAnimationFrame(frame)
 		var cpu0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 		if (!last) { last = now }
 		var elapsed = (now - last) / 1000; last = now
+		var frameDt = elapsed
 		if (global.document && global.document.hidden) { acc = 0; return }   // 标签页隐藏(最小化/切后台)：跳过 step+draw，保持 last 新鲜，恢复瞬间不追帧爆发（治最小化再点开卡顿）
 		if (elapsed > 0.1) { elapsed = 0; acc = 0 }   // 大间隔(卡顿/恢复/切后台残帧)：直接丢弃追帧，避免 while 连跑 ~15 步突发 stutter（原 clamp 0.25 仍会爆 15 步）
 		else { acc += elapsed }
+		var _steps = 0
 		while (acc >= STEP) {
 			if (hitStop > 0 && GS.status === 'playing') { hitStop--; acc -= STEP; continue }   // ⑥ 冻帧：仅 playing 态消费时间不推进
-			step(STEP); acc -= STEP
+			step(STEP); acc -= STEP; _steps++
 		}
-		var r = Registry.get('render'); if (r && r.draw) { r.draw() }
+		var alpha = (STEP > 0) ? (acc / STEP) : 1   // 渲染插值系数：剩余累计时间 / 固定步长（消头部一顿一顿）
+		_diagTick(_steps, alpha, frameDt)
+		if (window.__DIAG_LOG) {   // 纯只读诊断：每秒汇总 fps/步率/0-step帧占比/alpha/帧时间，定位 fixed-step 卡顿；零行为影响，发我分析
+			_dl.frames++; _dl.steps += _steps; if (_steps === 0) _dl.zeroFrames++
+			if (alpha < _dl.aMin) _dl.aMin = alpha; if (alpha > _dl.aMax) _dl.aMax = alpha; _dl.aSum += alpha
+			if (frameDt < _dl.eMin) _dl.eMin = frameDt; if (frameDt > _dl.eMax) _dl.eMax = frameDt; _dl.eSum += frameDt
+			var _n = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+			if (!_dl.t0) _dl.t0 = _n
+			if (_n - _dl.t0 >= 1000) {
+				var _sec = (_n - _dl.t0) / 1000
+				var _fps = _dl.frames / _sec, _stp = _dl.steps / _sec
+				var _hint = _fps > 65 ? ' [高刷:渲染率>>模拟率60→全实体已插值→0-step 不可见(若仍抖=子像素/敌)]' : (_dl.zeroFrames / _dl.frames > 0.05 ? ' [偶发0-step帧→实体忽停忽跳]' : '')
+				console.log('[DIAG] fps=' + _fps.toFixed(1) + ' steps/s=' + _stp.toFixed(1) + ' 0step帧占比=' + (_dl.zeroFrames / _dl.frames * 100).toFixed(1) + '%  alpha[min/avg/max]=' + _dl.aMin.toFixed(3) + '/' + (_dl.aSum / _dl.frames).toFixed(3) + '/' + _dl.aMax.toFixed(3) + '  frameDt[ms min/avg/max]=' + (_dl.eMin * 1000).toFixed(2) + '/' + (_dl.eSum / _dl.frames * 1000).toFixed(2) + '/' + (_dl.eMax * 1000).toFixed(2) + _hint)
+				_dl.frames = 0; _dl.steps = 0; _dl.zeroFrames = 0; _dl.aMin = 9; _dl.aMax = -9; _dl.aSum = 0; _dl.eMin = 9; _dl.eMax = -9; _dl.eSum = 0; _dl.t0 = _n
+			}
+		}
+		var r = Registry.get('render'); if (r && r.draw) { r.draw(alpha) }
 		var ui = Registry.get('ui'); if (ui && ui.update) { ui.update() }
 		var cpu1 = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 		if (r && r.setCpuMs) { r.setCpuMs(cpu1 - cpu0) }   // 诊断：整帧主线程 JS 耗时(step+draw+ui)，与 HUD「帧」(仅 draw 命令下发) 对比 → 定 GPU 合成 / DOM 回流 / 逻辑 瓶颈归属
@@ -238,13 +311,22 @@ function buildStart(wrap) {
 		var ui = Registry.get('ui'); if (ui && ui.init) { ui.init(document.getElementById('ui-stage'), document.getElementById('ui-full')) }
 		buildStart(wrap)
 
-		function aimFromEvent(e) {   // 触控/鼠标统一：屏幕坐标 → 世界瞄准点（contain 反算 + worldScale 反除）
+		// 鼠标瞄准：只存「相对屏幕中心的角度」。相机仅平移不旋转 → 屏幕角 = 世界角。
+		// 鼠标不动 = 角度恒定 → 蛇朝该角度对齐后直行；动鼠标 = 角度更新 → 360°自由转向。
+		// （旧实现把世界点烘焙死 → 蛇前进时方向漂移、持续绕点转 = 自动转向 bug）
+		function aimFromEvent(e) {
 			var rect = canvas.getBoundingClientRect()
 			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height
 			var mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy
-			var r = Registry.get('render'); var cam = r && r.camera; var ws = (r && r.getWorldScale) ? r.getWorldScale() : 1
-			cursor.wx = cam.x + (mx - CONFIG.GAME.logicalWidth / 2) / ws
-			cursor.wy = cam.y + (my - CONFIG.GAME.logicalHeight / 2) / ws
+			var dx = mx - CONFIG.GAME.logicalWidth / 2, dy = my - CONFIG.GAME.logicalHeight / 2
+			// 相对死区：仅当指针相对上次记录位置移动超过 mouseMoveDeadPx 才更新瞄准角（滤掉 OS/浏览器悬停微抖 → 头不再每帧微转 → 舌头不再一顿一顿）；
+			// 抖动帧仅保持 on（不丢输入），不更新角度、不刷新 lastMoveT（空闲门限据此判定"鼠标已停"→ 蛇直行）
+			var DEAD = (CONFIG.INPUT && CONFIG.INPUT.mouseMoveDeadPx) || 3
+			if (cursor.lx != null && (mx - cursor.lx) * (mx - cursor.lx) + (my - cursor.ly) * (my - cursor.ly) < DEAD * DEAD) {
+				cursor.on = true; cursor.touch = (e.pointerType === 'touch'); return
+			}
+			if (dx * dx + dy * dy > 9) { cursor.angle = Math.atan2(dy, dx) }   // 中心极小死区：避免 atan2(0,0) 抖动
+			cursor.lx = mx; cursor.ly = my; cursor.lastMoveT = GS.timeSec
 			cursor.on = true; cursor.touch = (e.pointerType === 'touch')
 		}
 		canvas.addEventListener('pointerdown', function (e) {
@@ -256,7 +338,7 @@ function buildStart(wrap) {
 			if (e.cancelable) { e.preventDefault() }
 			aimFromEvent(e)
 		})
-		canvas.addEventListener('pointerleave', function () { cursor.on = false })
+		canvas.addEventListener('pointerleave', function () { cursor.on = false; cursor.lx = null; cursor.ly = null })
 		canvas.addEventListener('pointerup', function () { cursor.on = false })       // 松手保持最后方向（蛇按末向续行，不丢输入）
 		canvas.addEventListener('pointercancel', function () { cursor.on = false })
 		global.addEventListener('orientationchange', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸

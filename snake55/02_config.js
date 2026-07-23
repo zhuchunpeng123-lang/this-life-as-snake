@@ -25,7 +25,9 @@
 
 		// —— §0.1 输入（触控手感，非 §9 平衡值）——
 		INPUT: {
-			touch: { deadZone: 18 }   // 🟡 触控死区(px 逻辑)：触控精度低于鼠标，略大于 PLAYER.deadZoneRadius(12) 防抖；纯输入手感，不进 §9
+			touch: { deadZone: 18 },   // 🟡 触控死区(px 逻辑)：触控精度低于鼠标，略大于 PLAYER.deadZoneRadius(12) 防抖；纯输入手感，不进 §9
+			mouseSteerIdleSec: 0.12,   // 🟡 鼠标转向空闲门限(s)：指针停止移动超过该时长即视为"空闲"→蛇保持当前角直行（治悬停常驻跟踪导致的舌头一顿一顿）；纯输入手感，不进 §9
+			mouseMoveDeadPx: 3         // 🟡 鼠标相对死区(px 逻辑)：指针移动小于该距离不更新瞄准角，滤 OS/浏览器微抖；纯输入手感，不进 §9
 		},
 
 		// —— §1 PLAYER ——
@@ -38,10 +40,10 @@
 			followLerp: 0.4,
 			initSegments: 3,
 			maxSegments: 25,
-		coreHp: 3,
-		headRadius: 14,            // 碰撞判定半径（§9 真源：宁小勿大防冤死，回真源 14；渲染半径见 headRadiusRender）
-		headRadiusRender: 26,      // 渲染半径(px)：纯表现，配合 snake_head.png 视觉大小；与碰撞 headRadius 解耦（视觉≥判定，防冤死）
-		bodyRadius: 12,
+			coreHp: 3,
+			headRadius: 14,            // 碰撞判定半径（真理源 §1：宁小勿大防冤死，回真源 14；渲染半径见下方 headRadiusRender）
+			headRadiusRender: 26,      // 渲染半径(px)：纯表现，配合 snake_head.png 视觉大小；与碰撞 headRadius 解耦（视觉≥判定，故意，防冤死）
+			bodyRadius: 12,
 			headKnockback: 0,
 			buildPauseCdMs: 800,
 			deadZoneRadius: 12,
@@ -99,7 +101,7 @@
 				desktopDprFloor: 1           // devicePixelRatio ≤ 此值视为弱集显 → MED 起步
 			},
 			tiers: {                         // 四档质量预设（HIGH=原默认，零回归基准）；每档控制 backing 宽上限/粒子文字上限/视图缩放/火冰视觉抑制/白爆抑制/屏震/vignette 精度
-				HIGH:   { maxBackW: 1600, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
+				HIGH:   { maxBackW: 2560, worldScale: 0.80, maxParticles: 240, maxTexts: 48, spawnBudget: 120, suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
 				MED:    { maxBackW: 1920, worldScale: 0.92, maxParticles: 170, maxTexts: 40, spawnBudget: 90,  suppressFire: false, suppressIceFill: false, suppressShake: false, suppressWhiteBurst: false, simpleVignette: false },
 				LOW:    { maxBackW: 1024, worldScale: 0.88, maxParticles: 120, maxTexts: 32, spawnBudget: 70,  suppressFire: true,  suppressIceFill: false, suppressShake: false, suppressWhiteBurst: true,  simpleVignette: false },
 				POTATO: { maxBackW: 800,  worldScale: 0.84, maxParticles: 80,  maxTexts: 24, spawnBudget: 50,  suppressFire: true,  suppressIceFill: true,  suppressShake: true,  suppressWhiteBurst: true,  simpleVignette: true }
@@ -122,7 +124,7 @@
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
 			chaser: { hp: 20, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRange: 450, wanderRedirSec: 1.5 },   // aggroRange=段③游荡型切追踪触发半径(px，须>250才>原senseRange生效;default 450,实测拍板300/450/600);wanderRedirSec=游荡重定向间隔s(收编自硬编码 WANDER_REDIR_SEC)
+			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px(索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调);wanderRedirSec=游荡重定向间隔s(收编自硬编码 WANDER_REDIR_SEC)
 			charger: { hp: 25, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
 			elite: { hp: 200, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, bulletSpeed: 140, radius: 60 }
@@ -291,8 +293,8 @@
 		COLORS: {
 			background: '#11162a',
 			worldBorder: '#2a3358',
-			snakeHead: '#3effa8',
-			snakeBody: '#27c98a',
+		snakeHead: '#20c088',   // 与头 PNG 主色统一（2026-07-23 量得 head PNG 主填充 #20c088/#18c088；旧 #3effa8 偏亮，仅 PNG 缺失 fallback 用）
+		snakeBody: '#20c088',   // 与头 PNG 主色统一（2026-07-23 量得 head PNG 主填充 #20c088；旧 #27c98a 偏亮一档 → 细微色差，现已统一）
 			food: '#ffd84d',
 			heal: '#7cff6b',
 			skillDrop: '#ffb000',

@@ -4,7 +4,7 @@
 	var M = Core.M
 	var P = CONFIG.PLAYER
 
-	var head = { x: 0, y: 0, angle: 0 }
+	var head = { x: 0, y: 0, angle: 0, px: 0, py: 0, pangle: 0 }   // px/py/pangle = 上一模拟步位姿（渲染插值用，消 fixed-step 一顿一顿）
 	var segments = []            // 含头节(index 0)
 	var path = []                // 头部历史轨迹（绳感跟随），最新在前
 	var PATH_MAX = 1
@@ -29,7 +29,7 @@
 		return v < floor ? floor : v
 	}
 	function setSegments(n) {
-		while (segments.length < n) { segments.push({ x: head.x, y: head.y }) }
+		while (segments.length < n) { segments.push({ x: head.x, y: head.y, px: head.x, py: head.y }) }   // px/py=上一模拟步位姿（渲染插值用，消身体一顿一顿）
 		while (segments.length > n) { segments.pop() }
 	}
 	function triggerSquash(to, durMs) { squash.from = 1; squash.to = to; squash.t = 0; squash.dur = durMs / 1000 }
@@ -38,6 +38,7 @@
 		head.x = CONFIG.GAME.worldWidth / 2
 		head.y = CONFIG.GAME.worldHeight / 2
 		head.angle = 0
+		head.px = head.x; head.py = head.y; head.pangle = head.angle   // 插值初值=当前，避免开局从原点飞入
 		PATH_MAX = (P.maxSegments + 2) * P.segmentSpacing + 64
 		segments.length = 0
 		setSegments(GS.segments)
@@ -85,6 +86,8 @@
 		getEffectiveTurnRate: effectiveTurnRateDeg,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }
+			head.px = head.x; head.py = head.y; head.pangle = head.angle   // 记录上一模拟步位姿（渲染插值基准）
+			for (var _si = 0; _si < segments.length; _si++) { segments[_si].px = segments[_si].x; segments[_si].py = segments[_si].y }   // 各身体节同步记录 prev（渲染插值消 165Hz 一顿一顿）
 			// 1) 转向：朝摇杆方向，受 effectiveTurnRate 限制
 			if (inputDir.active && (inputDir.x !== 0 || inputDir.y !== 0)) {
 				var targetAngle = Math.atan2(inputDir.y, inputDir.x)

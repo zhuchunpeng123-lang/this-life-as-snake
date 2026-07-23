@@ -11,7 +11,7 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2400, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=段③游荡aggro范围px 滑条[200,800,10] def450(min200=基线/关闭)
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -69,12 +69,12 @@
 	var rtTuning = {}
 	function rtGet(path) { return rtTuning.hasOwnProperty(path) ? rtTuning[path] : undefined }
 	function rtSet(path, val) { if (val == null) { delete rtTuning[path] } else { rtTuning[path] = val } }
-	function rtResetGroup() { for (var k = 0; k < TUNING_ARR.length; k++) { var a = TUNING_ARR[k], base = getPath(a.path); if (Array.isArray(base)) { for (var lv = 0; lv < a.levels; lv++) { delete rtTuning[a.path + '.' + lv] } } } for (var ks = 0; ks < TUNING_SCALAR.length; ks++) { delete rtTuning[TUNING_SCALAR[ks].path] } }   // 同时清冰系标量（减速跟随窗）运行时覆盖
+	function rtResetGroup() { for (var k = 0; k < TUNING_ARR.length; k++) { var a = TUNING_ARR[k], base = getPath(a.path); if (Array.isArray(base)) { for (var lv = 0; lv < a.levels; lv++) { delete rtTuning[a.path + '.' + lv] } } } for (var ks = 0; ks < TUNING_SCALAR.length; ks++) { delete rtTuning[TUNING_SCALAR[ks].path]; if (TUNING_SCALAR[ks].extraPaths) { for (var xp = 0; xp < TUNING_SCALAR[ks].extraPaths.length; xp++) { delete rtTuning[TUNING_SCALAR[ks].extraPaths[xp]] } } } }   // 同时清冰系标量 + 段-scaled aggro 运行时覆盖（含 extraPaths 相邻段）
 	Bus.on('perf:tier', function () { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } })   // 自适应分级：档位变化即时刷新 GM 面板读数
 	var TUNING_SLIDERS = []
 	// 实时标定·标量（运行时 rtSet，免重载；与 SKILL_SCALAR 区分：后者写 config override 持久化需重载）
 	var TUNING_SCALAR = [
-		{ path: 'RENDER.maxBackW', label: '渲染分辨率上限W', rng: 'maxBackW', def: 1600, dec: 0 },   // 实时标定：拖动即改 backing 宽上限（RT 桥），触发 render.resize 重算画布；默认 1600 降填充成本治卡顿；注：只控渲染分辨率/填充率，不改实体尺寸
+		{ path: 'RENDER.maxBackW', label: '渲染分辨率上限W', rng: 'maxBackW', def: 2560, dec: 0 },   // 实时标定：拖动即改 backing 宽上限（RT 桥），触发 render.resize 重算画布；默认 2560（消 1600 封顶拉伸导致的直行 shimmer）；注：只控渲染分辨率/填充率，不改实体尺寸
 		{ path: 'RENDER.worldScale', label: '视图缩放(纯视觉)', rng: 'worldScale', def: 0.8, dec: 2 },   // 视图缩放：默认0.8 还原「更小更精致」蛇/怪画面；0.6–1.0 实时可调；纯渲染缩放，碰撞/世界坐标不变
 		{ path: 'PLAYER.turnRate', label: '转向速率°/s', rng: 'turnRate', def: 180, dec: 0 },   // P0 手感第一参数：GM 拖动即时生效（RT 桥到 06_snake）；def 由 config 推导，无裸数字
 		{ path: 'PLAYER.turnRateDecayPerSeg', label: '转向衰减%/节', rng: 'turnRateDecay', def: 1.0, dec: 2 },   // 单位 %/节：RT 存 1.0 → 06_snake 热路径 /100 = 0.010；dec:2 防显示成 1
@@ -84,7 +84,8 @@
 		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 },   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
 		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
 		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 },   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
-		{ path: 'ENEMIES.wanderer.aggroRange', label: '游荡aggro范围px(段③)', rng: 'aggroRange', def: 450, dec: 0 }   // 段③ 游荡型 aggro 圈：距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；default 450，实测拍板300/450/600；min200=基线/关闭(≈原行为，验收④反例)
+		{ path: 'ENEMIES.wanderer.aggroRangeByStage.2', label: '游荡aggro·成长期(段②)px', rng: 'aggroRange', def: 800, dec: 0 },   // 段≥② 游荡型 aggro 圈（段-scaled）：成长期默认800覆盖刷怪环520-760，距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；min200=基线/关闭
+		{ path: 'ENEMIES.wanderer.aggroRangeByStage.3', label: '游荡aggro·割草+高潮(段③④)px', rng: 'aggroRange', def: 450, dec: 0, extraPaths: ['ENEMIES.wanderer.aggroRangeByStage.4'] }   // 割草/高潮共用一滑条→同时写段③+段④；default 450（不推猛，沿用原割草值）；min200=基线/关闭
 	]
 	var TUNING_SCALAR_SLIDERS = []
 
@@ -227,6 +228,7 @@
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t3" style="flex:1;padding:8px;border:1px solid #ff9a3c;border-radius:6px;background:transparent;color:#ff9a3c;cursor:pointer;font:700 12px system-ui">T3 关火焰系视觉：关</button>'
 		diag += '<button id="diag_t4" style="flex:1;padding:8px;border:1px solid #5fd0ff;border-radius:6px;background:transparent;color:#5fd0ff;cursor:pointer;font:700 12px system-ui">T4 冰池只描边：关</button></div>'
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_hud" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">性能HUD(精简)：关</button></div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_camsnap" style="flex:1;padding:8px;border:1px solid #6ad0ff;border-radius:6px;background:transparent;color:#6ad0ff;cursor:pointer;font:700 12px system-ui">像素吸附(消世界shimmer)：开</button><button id="diag_camlock" style="flex:1;padding:8px;border:1px solid #ffd76b;border-radius:6px;background:transparent;color:#ffd76b;cursor:pointer;font:700 12px system-ui">相机锁定插值头(消头抖)：关</button></div>'
 		diag += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 0">T3 关「火焰系 per-enemy 视觉」（点火演出+火焰光环+蓝环），与 T1/T2 配合一次录屏 isolate 全部嫌疑。蒸汽齐爆上限/帧 滑条见「实时标定（手感沙盒）」底部；拉到 <b>1</b> = 白爆骤减</div>'
 		secs.push({ title: '性能诊断（b9 对照实验）', body: diag, open: true })
 		// —— 阶段跳转（测试）：按 STAGE.segments 生成，点击即把 GS.timeSec 写到目标段起点，免手动熬时间 ——
@@ -318,10 +320,10 @@
 				var vl = document.getElementById('v_' + s.id); if (vl) { vl.textContent = val }
 				var ban = document.getElementById('ed_dirty'); if (ban) { ban.style.display = 'block' }
 				// L2 实时：PLAYER.headRadius/bodyRadius 拖动即生效——rtSet(RT 桥→render 视觉) + Bus(collision:set_radii→判定/墙碰)，免重载；override 仍写供「保存并重载」持久
-			if (s.path === 'PLAYER.headRadius' || s.path === 'PLAYER.bodyRadius') {
-				rtSet(s.path, val)
-				var hr = (s.path === 'PLAYER.headRadius') ? val : (rtGet('PLAYER.headRadius') !== undefined ? rtGet('PLAYER.headRadius') : CONFIG.PLAYER.headRadius)
-				var br = (s.path === 'PLAYER.bodyRadius') ? val : (rtGet('PLAYER.bodyRadius') !== undefined ? rtGet('PLAYER.bodyRadius') : CONFIG.PLAYER.bodyRadius)
+				if (s.path === 'PLAYER.headRadius' || s.path === 'PLAYER.bodyRadius') {
+					rtSet(s.path, val)
+					var hr = (s.path === 'PLAYER.headRadius') ? val : (rtGet('PLAYER.headRadius') !== undefined ? rtGet('PLAYER.headRadius') : CONFIG.PLAYER.headRadius)
+					var br = (s.path === 'PLAYER.bodyRadius') ? val : (rtGet('PLAYER.bodyRadius') !== undefined ? rtGet('PLAYER.bodyRadius') : CONFIG.PLAYER.bodyRadius)
 				Bus.emit('collision:set_radii', { headRadius: hr, bodyRadius: br })
 			}
 			if (s.path === 'PLAYER.headRadiusRender') {
@@ -345,14 +347,15 @@
 		for (var tsk2 = 0; tsk2 < TUNING_SCALAR_SLIDERS.length; tsk2++) {
 			var tsd = TUNING_SCALAR_SLIDERS[tsk2], tsinp = panel.querySelector('#sc_' + tsd.id)
 			if (!tsinp) { continue }
-			tsinp.oninput = function () {
-				var t = TUNING_SCALAR_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
-				if (!t) { return }
-			rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 08_skill RT() 即时生效
-			if (t.path === 'RENDER.maxBackW') { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } }   // 改 backing 上限需重算画布尺寸才生效
-		var tvl = document.getElementById('scv_' + t.id)
-			if (tvl) { tvl.innerHTML = fmtTune(t.path, val, t.dec) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
-			}
+		tsinp.oninput = function () {
+			var t = TUNING_SCALAR_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
+			if (!t) { return }
+		rtSet(t.path, val)   // 写进 rtTuning 运行时层 → 07_enemy RT() 即时生效（段-scaled aggro）
+		if (t.extraPaths) { for (var ep = 0; ep < t.extraPaths.length; ep++) { rtSet(t.extraPaths[ep], val) } }   // 割草+高潮共用滑条：同步写相邻段
+		if (t.path === 'RENDER.maxBackW') { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } }   // 改 backing 上限需重算画布尺寸才生效
+	var tvl = document.getElementById('scv_' + t.id)
+		if (tvl) { tvl.innerHTML = fmtTune(t.path, val, t.dec) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
+		}
 		}
 		panel.querySelector('#tune_reset').onclick = function () { rtResetGroup(); render() }   // 复位本组：仅清实时覆盖，不动其他 override
 		panel.querySelector('#tune_sandbox').onclick = function () {
@@ -430,6 +433,11 @@
 	if (t4) { t4.onclick = function () { diagIceFillOn = !diagIceFillOn; Editor.rtSet('PERF.suppressIceFill', diagIceFillOn ? 1 : 0); this.textContent = 'T4 冰池只描边：' + (diagIceFillOn ? '开' : '关'); this.style.color = diagIceFillOn ? '#7CFC00' : '#5fd0ff'; this.style.borderColor = diagIceFillOn ? '#7CFC00' : '#5fd0ff' } }   // b9-measure T4：冰池只描边不填充（零 gameplay）
 		var dh = panel.querySelector('#diag_hud')
 		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD(精简)：' + (diagHudOn ? '开' : '关') } }   // 精简性能HUD：仅 FPS/CPU/GPU 帧耗时，详细数据见 L 剖析面板
+		// A/B 相机修复开关（window 全局，零 gameplay）：像素吸附=消世界硬边 shimmer；相机锁定插值头=消头相对屏幕抖动（中段一顿一顿）
+		var cs = panel.querySelector('#diag_camsnap')
+		if (cs) { cs.onclick = function () { window.__PIXEL_SNAP = (window.__PIXEL_SNAP === false); var _on = (window.__PIXEL_SNAP !== false); this.textContent = '像素吸附(消世界shimmer)：' + (_on ? '开' : '关'); this.style.color = _on ? '#7CFC00' : '#6ad0ff'; this.style.borderColor = _on ? '#7CFC00' : '#6ad0ff' } }
+		var cl = panel.querySelector('#diag_camlock')
+		if (cl) { cl.onclick = function () { window.__CAM_LOCK = !window.__CAM_LOCK; this.textContent = '相机锁定插值头(消头抖)：' + (window.__CAM_LOCK ? '开' : '关'); this.style.color = window.__CAM_LOCK ? '#7CFC00' : '#ffd76b'; this.style.borderColor = window.__CAM_LOCK ? '#7CFC00' : '#ffd76b' } }
 
 		// 性能自适应：自动开关 + 强制固定档位（运行时即时，零 gameplay）
 		function updPerfCur() { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } }
