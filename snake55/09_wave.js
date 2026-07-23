@@ -11,7 +11,7 @@
 	var spawnAcc = 0, bossWarned = false, bossSpawned = false, prevStageId = 0
 	var killsSinceSkill = 0, gotFirstSkill = false, healsThisRun = 0, firstSkillTimer = 0, lastSkillBallTime = 0
 
-	function newOrb() { return { active: false, id: 0, kind: 'food', x: 0, y: 0, radius: PK.food.radius } }
+	function newOrb() { return { active: false, id: 0, kind: 'food', x: 0, y: 0, prevX: 0, prevY: 0, radius: PK.food.radius } }
 	var orbPool = Core.createPool(newOrb, function (o) { o.active = false }, 32)
 
 	function head() { var s = Registry.get('snake'); return s && s.head ? s.head : { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 } }
@@ -65,13 +65,13 @@
 	function spawnOrb(kind) {
 		if (!sampleViewPos(_p)) { return false }
 		var o = orbPool.acquire()
-		o.active = true; o.id = ++_pid; o.kind = kind; o.x = _p.x; o.y = _p.y; o.radius = PK.food.radius
+		o.active = true; o.id = ++_pid; o.kind = kind; o.x = _p.x; o.y = _p.y; o.prevX = o.x; o.prevY = o.y; o.radius = PK.food.radius
 		foods.push(o); return true
 	}
 	function spawnOrbAt(kind, x, y) {
 		var o = orbPool.acquire(), r = PK.food.radius
 		o.active = true; o.id = ++_pid; o.kind = kind
-		o.x = M.clamp(x, r, GAME.worldWidth - r); o.y = M.clamp(y, r, GAME.worldHeight - r); o.radius = r
+		o.x = M.clamp(x, r, GAME.worldWidth - r); o.y = M.clamp(y, r, GAME.worldHeight - r); o.prevX = o.x; o.prevY = o.y; o.radius = r
 		foods.push(o)
 	}
 	function releaseOrb(id) {
@@ -106,10 +106,11 @@
 	}
 	// 战线B：溢出转化（技能球掉率时机不变，产物换血/食物）——沿用原 skill 球落点
 	function spawnMaxedReward(x, y) {
+		Log.info('[GATE] spawnMaxedReward coreHp=' + GS.coreHp + '/' + PK.heal.maxHp)
 		if (GS.coreHp < PK.heal.maxHp && activeKind('heal') < PK.heal.screenCap) {
 			spawnOrbAt('heal', x, y)   // ❶ 血<3（状态上限3心，唯一致死柱石）随时可转回血；同屏上限1；不绑局上限（避免满级后空 food 回归）
 		} else if (activeKind('food') < PK.food.screenCap) {
-			spawnOrbAt('food', x, y)   // ❷ 满血→食物（+1 节，遵 §5 屏上限6）
+			spawnOrbAt('food', x, y)   // ❷ 满血→食物（遵 §5 屏上限6；B：满节时该食物被吃→overflow→小分，复用同管线不新建类型）
 		}
 		// 同屏已满则本次不产：沿用掉率、不补窗、不凭空堆叠
 	}
@@ -122,7 +123,8 @@
 	}
 	// 统一技能球入口：满级→溢出转化；否则按段取值走升级间隔地板（含连杀保底那颗，维持上轮口径：压制不重置、超窗即给、不预支）
 	function tryGiveSkill(x, y, inFront) {
-		if (allSkillsMaxed()) { spawnMaxedReward(x, y); return }
+		var am = allSkillsMaxed()
+		if (am) { Log.info('[GATE] all-maxed → spawnMaxedReward (no skill ball)'); spawnMaxedReward(x, y); return }
 		var arr = PK.upgradeMinGapSecBySeg, gi = GS.stageId - 1
 		var gap = (gi >= 0 && gi < arr.length) ? arr[gi] : 0   // 按段取值；0/null＝地板失效、恢复原掉率
 		if (gi === 2) { gap = RT('PICKUP.gapFarm', gap) }                    // 段③ 割草：RT 桥到「割草升级间隔s」
@@ -132,6 +134,7 @@
 		}
 		var px = x, py = y
 		if (inFront) { var h = head(), ang = (typeof h.angle === 'number') ? h.angle : 0, d = PK.food.safeDistance; px = h.x + Math.cos(ang) * d; py = h.y + Math.sin(ang) * d }
+		Log.info('[GATE] giveSkillBall owned=' + JSON.stringify(GS.ownedSkills) + ' allMaxed=' + am)   // A#3 诊断：满级后仍见此行且 allMaxed=false＝闸门漏判
 		giveSkillBall(px, py)
 	}
 

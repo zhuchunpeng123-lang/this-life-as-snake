@@ -39,9 +39,9 @@
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
 
-	function newParticle() { return { active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
+	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
 	function resetParticle(p) { p.active = false }
-	function newText() { return { active: false, x: 0, y: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
+	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
 	function resetText(t) { t.active = false }
 
 	var particlePool = Core.createPool(newParticle, resetParticle, 512)   // b9 性能护栏：齐爆峰值防爆池增长 GC 尖刺（128→512，一次性内存廉价）
@@ -87,7 +87,7 @@
 			else { return false }                                          // 低优先且已满：丢弃
 		}
 		var p = particlePool.acquire()
-		p.active = true; p.x = x; p.y = y; p.vx = vx; p.vy = vy
+		p.active = true; p.x = x; p.y = y; p.prevX = x; p.prevY = y; p.vx = vx; p.vy = vy
 		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio
 		particles.push(p); frameSpawn++; return true
 	}
@@ -98,7 +98,7 @@
 			else { return false }
 		}
 		var t = textPool.acquire()
-		t.active = true; t.x = x; t.y = y; t.vy = -40
+		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -40
 		t.life = t.maxLife = 0.8; t.text = str; t.color = color; t.size = size || 14; t.prio = prio
 		texts.push(t); frameSpawn++; return true
 	}
@@ -190,14 +190,14 @@
 				var p = particles[i]
 				p.life -= dt
 				if (p.life <= 0) { particlePool.release(p); particles.splice(i, 1); continue }
-				p.x += p.vx * dt; p.y += p.vy * dt
+				p.prevX = p.x; p.prevY = p.y; p.x += p.vx * dt; p.y += p.vy * dt
 				p.vx *= p.drag; p.vy *= p.drag
 			}
 		for (i = texts.length - 1; i >= 0; i--) {
 			var t = texts[i]
 			t.life -= dt
 			if (t.life <= 0) { textPool.release(t); texts.splice(i, 1); continue }
-			t.y += t.vy * dt
+			t.prevX = t.x; t.prevY = t.y; t.y += t.vy * dt
 		}
 		for (i = beams.length - 1; i >= 0; i--) {
 			var b = beams[i]; b.life -= dt
@@ -217,7 +217,8 @@
 		}
 	},
 		// 由 render 在世界坐标系下调用；粒子层绘于核心实体之下，飘字小号，永不盖核心信息（JUICE 不干扰）
-		drawWorld: function (ctx) {
+		drawWorld: function (ctx, ra) {
+			if (ra == null) { ra = 1 }
 			var i
 			for (i = 0; i < particles.length; i++) {
 				var p = particles[i]
@@ -225,7 +226,7 @@
 				if (a < 0) { a = 0 }
 				ctx.globalAlpha = a
 				ctx.fillStyle = p.color
-				ctx.beginPath(); ctx.arc(p.x, p.y, p.size * a, 0, M.PI2); ctx.fill()
+				ctx.beginPath(); ctx.arc(M.lerp(p.prevX, p.x, ra), M.lerp(p.prevY, p.y, ra), p.size * a, 0, M.PI2); ctx.fill()
 			}
 			// 光束：廉价双描边发光（宽+低透明打底 + 窄+高亮覆盖），避免 shadowBlur 拖帧（验收⑤）
 			ctx.lineCap = 'round'
@@ -264,7 +265,8 @@
 			ctx.globalAlpha = 1
 		},
 		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
-		drawOverlay: function (ctx) {
+		drawOverlay: function (ctx, ra) {
+			if (ra == null) { ra = 1 }
 			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
 			if (!(RT('PERF.suppressWhiteBurst', (global.PerfTier && global.PerfTier.suppressWhiteBurst) ? 1 : 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字；回退源=PerfTier.suppressWhiteBurst(原写死 0→白爆永不关，本次接线)
 				for (var i = 0; i < flashCores.length; i++) {
@@ -283,7 +285,7 @@
 				ctx.globalAlpha = M.clamp(t.life / t.maxLife * 1.5, 0, 1)
 				ctx.fillStyle = t.color
 				ctx.font = '700 ' + t.size + 'px system-ui, sans-serif'
-				ctx.fillText(t.text, t.x, t.y)
+				ctx.fillText(t.text, M.lerp(t.prevX, t.x, ra), M.lerp(t.prevY, t.y, ra))
 			}
 			ctx.globalAlpha = 1
 		},

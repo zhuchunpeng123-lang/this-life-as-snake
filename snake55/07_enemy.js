@@ -24,7 +24,7 @@
 	function newEnemy() {
 		return {
 			active: false, id: 0, type: 'chaser',
-			x: 0, y: 0, vx: 0, vy: 0, angle: 0,
+			x: 0, y: 0, vx: 0, vy: 0, angle: 0, prevX: 0, prevY: 0,
 			hp: 1, maxHp: 1, radius: 8, baseSpeed: 0, atk: 1, senseRange: -1, color: '#fff',
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
@@ -63,7 +63,7 @@
 		var e = pool.acquire()
 		pickSpawnPos(_pos, cfg.radius || 12)
 		e.active = true; e.id = ++_id; e.type = type
-		e.x = _pos.x; e.y = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
+		e.x = _pos.x; e.y = _pos.y; e.prevX = _pos.x; e.prevY = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
 		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
@@ -81,7 +81,7 @@
 	function spawnBullet(x, y, ang) {
 		var e = pool.acquire()
 		e.active = true; e.id = ++_id; e.type = 'bossBullet'
-		e.x = x; e.y = y; e.radius = BOSS_BULLET_RADIUS
+		e.x = x; e.y = y; e.prevX = x; e.prevY = y; e.radius = BOSS_BULLET_RADIUS
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
@@ -100,6 +100,7 @@
 			e.active = true; e.id = ++_id; e.type = 'dummy'
 			e.x = M.clamp(hx + Math.cos(hang) * frontDist, 24, GAME.worldWidth - 24)
 			e.y = M.clamp(hy + Math.sin(hang) * frontDist, 24, GAME.worldHeight - 24)
+			e.prevX = e.x; e.prevY = e.y
 			e.vx = 0; e.vy = 0; e.radius = 24
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
@@ -259,8 +260,10 @@
 		e._chasing = false
 		if (e.type === 'chaser' || e.type === 'elite') { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 		else if (e.type === 'wanderer') {
-			var aggro = RT('ENEMIES.wanderer.aggroRange', EN.wanderer.aggroRange)   // 段③ 游荡型 aggro 圈（须>250才>原senseRange生效）
-			if (sensesHead(e, hx, hy) || (GS.stageId === 3 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+		var stageIdx = GS.stageId - 1
+		var byStage = EN.wanderer.aggroRangeByStage
+		var aggro = RT('ENEMIES.wanderer.aggroRangeByStage.' + GS.stageId, (byStage && byStage[stageIdx]) || 0)   // 段≥② 游荡型 aggro 圈（段-scaled：成长期800覆盖刷怪环, 割草/高潮450; 须>250才>原senseRange生效）
+		if (sensesHead(e, hx, hy) || (GS.stageId >= 2 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 			else { wander(e, moveSpeed(e, e.baseSpeed, sm) * 0.6, dt) }
 		}
 		else if (e.type === 'charger') { e._chasing = true; updateCharger(e, hx, hy, dt, sm) }
@@ -272,17 +275,19 @@
 	var Enemy = {
 		list: list, spawn: spawn, spawnDummy: spawnDummy, applyDamage: applyDamage, applySlow: applySlow, ignite: ignite,
 		countMobs: function () { var c = 0; for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type !== 'bossBullet' && !list[i].isDummy) { c++ } } return c },   // B-GM：假人不占刷怪 cap
-		chasingCount: function () { var c = 0; for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.active && e.type !== 'bossBullet' && !e.isDummy && e._chasing) { c++ } } return c },   // 段③ aggro 读数：当前帧正向蛇头移动(追蛇)实敌数(含 chaser/elite/charger/boss/被aggro的wanderer；不含游荡中wanderer)；供 Debug HUD「追蛇数/总数」
+		chasingCount: function () { var c = 0; for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.active && e.type !== 'bossBullet' && !e.isDummy && e._chasing) { c++ } } return c },   // 段≥② aggro 读数：当前帧正向蛇头移动(追蛇)实敌数(含 chaser/elite/charger/boss/被aggro的wanderer；不含游荡中wanderer)；供 Debug HUD「追蛇数/总数」
 		hasBoss: function () { for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type === 'boss') { return true } } return false },
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }
 			// §7 连杀清零：距上次击杀 ≥ resetSec 秒无新击杀（防挂机刷分）
 			if (GS.killStreak > 0 && (GS.timeSec - lastKillSec) >= ECON.killStreak.resetSec) { GS.killStreak = 0 }
 			var sm = rookieSpeedMul(GS.timeSec)
-			for (var i = list.length - 1; i >= 0; i--) {
-				updateOne(list[i], dt, sm)
-				if (!list[i].active) { releaseAt(i) }
-			}
+		for (var i = list.length - 1; i >= 0; i--) {
+			var ei = list[i]
+			ei.prevX = ei.x; ei.prevY = ei.y   // 渲染插值快照：移动前记上一步位置（对象池复用/瞬移由 spawn 重置 prev，防横穿地图）
+			updateOne(ei, dt, sm)
+			if (!ei.active) { releaseAt(i) }
+		}
 		}
 	}
 
