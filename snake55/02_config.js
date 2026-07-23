@@ -47,7 +47,7 @@
 			headKnockback: 0,
 			buildPauseCdMs: 800,
 			deadZoneRadius: 12,
-			camera: { followLerp: 0.12, lookAhead: 60, deadZone: 30 },
+			camera: { followLerp: 0.12, lookAhead: 60, deadZone: 30 },   // ⚠️deadZone 已废弃(2026-07-23 相机封板)：updateCamera 不再读它。原 if(d>deadZone) 闸门在常速下(稳态滞后≈v/7.2≈27.8px<30)冻结相机→30世界px「冻-扑」锯齿=中心顿(实测 __CAM_DZ=0 消顿+顿感幅度随视口缩放 S 变化 双证)。字段保留仅防结构变动，可下次清理时删
 			// §1.1 效果系数：1 + (segments - base) * coeff，下限 floor
 			effect: { base: 3, coeff: 0.08, floor: 1.0, formula: '1 + (segments - 3) * 0.08' }
 		},

@@ -52,11 +52,12 @@
 		path.unshift(pt)
 	}
 	// 绳感：按「累计弧长」沿历史路径取点（与帧率/速度无关）——第 s 节落在距蛇头弧长 s*segmentSpacing 处
-	function updateFollow() {
+	function updateFollow(dt) {
+		var followK = (dt > 0) ? (1 - Math.pow(1 - P.followLerp, dt * 60)) : P.followLerp   // 帧率无关缓动（followLerp=60Hz 步语义→任意步率手感一致）
 		var spacing = P.segmentSpacing
 		if (segments.length === 0) { return }
-		segments[0].x = M.lerp(segments[0].x, path[0].x, P.followLerp)   // 第 0 节贴合蛇头
-		segments[0].y = M.lerp(segments[0].y, path[0].y, P.followLerp)
+		segments[0].x = M.lerp(segments[0].x, path[0].x, followK)   // 第 0 节贴合蛇头
+		segments[0].y = M.lerp(segments[0].y, path[0].y, followK)
 		var acc = 0, pi = 1            // acc=path[0..pi-1] 累计弧长；pi 单调前进、跨节复用（O(节+路径)）
 		for (var s = 1; s < segments.length; s++) {
 			var targetDist = s * spacing
@@ -75,8 +76,8 @@
 				tx = M.lerp(a.x, b.x, t); ty = M.lerp(a.y, b.y, t)
 			}
 			var seg = segments[s]
-			seg.x = M.lerp(seg.x, tx, P.followLerp)
-			seg.y = M.lerp(seg.y, ty, P.followLerp)
+			seg.x = M.lerp(seg.x, tx, followK)
+			seg.y = M.lerp(seg.y, ty, followK)
 		}
 	}
 
@@ -111,7 +112,7 @@
 			}
 			// 4) 路径记录 + 跟随
 			recordPath()
-			updateFollow()
+			updateFollow(dt)
 			// 5) squash/stretch 衰减（0→to→1体积守恒）
 			if (squash.dur > 0) {
 				squash.t += dt

@@ -2,8 +2,9 @@
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	// —— 运行版本横幅：控制台见此行即代表新包已加载；若仍是旧版本号（20260723d 或更早）说明浏览器仍在喂旧缓存 ——
-	console.log('%c[snake55] build v=20260723s（敌人/护盾光球接入渲染插值，消 165Hz 频闪抖）— 看到此行=新代码生效；若版本号更旧=缓存未清，请清站点数据/强刷', 'color:#5f9;font-weight:bold')
-	var STEP = 1 / CONFIG.GAME.fps
+	console.log('%c[snake55] build v=20260723v（头旋转角烘焙进离屏缓存+整蛇同淡出：消头位图每帧旋转重采样爬行 shimmer + 无敌"两个画面重叠"）— 看到此行=新代码生效；若版本号更旧=缓存未清，请清站点数据/强刷', 'color:#5f9;font-weight:bold')
+	var SUBSTEP = 1 / 240        // 固定子步长(秒)：物理/碰撞稳定(≤4.17ms/步→绝不穿模)，与刷新率无关；模拟按真实帧时间切成若干子步推进
+	global.__FRAME_DT = 1 / CONFIG.GAME.fps   // 本帧真实时间(秒)初始值，main 每帧覆写；供相机/屏震帧率无关缓动
 	// —— 自适应性能分级（跨端 FPS 根治）：状态对象 + 控制器（内联，不新增文件/不动 core/collision）——
 	// 设计：RT 回退源 = PerfTier 当前档；editor 手动覆盖经 RT 仍优先（GM 链路不变，零双份真相源）。
 	// 升降档：仅 playing 态按真实 FPS（render.diag().fps）累计，越阈持续 stabilize 秒才换挡（防抖）。
@@ -104,8 +105,8 @@
 	}
 	global.PerfTier = PerfTier
 	Registry.register('perfTier', PerfTier)
-	var HITSTOP_FRAMES = CONFIG.COMBAT.hitStopFrames   // ⑥ 命中冻帧（真理源 §2.2 hitStop 2帧）
-	var hitStop = 0
+	var HITSTOP_SEC = CONFIG.COMBAT.hitStopFrames / CONFIG.GAME.fps   // ⑥ 命中冻帧时长(秒)，刷新率无关（真理源 §2.2 hitStop 2帧@60→等效时长）
+	var hitStopSec = 0
 
 	var keys = {}, cursor = { on: false, wx: 0, wy: 0, angle: 0, touch: false, lastMoveT: -1, lx: null, ly: null }
 	// —— DIAG（调试用，window.__SNAKE_DIAG=true 开启；排查直行 stutter + 鼠标自动转向）——
@@ -163,11 +164,11 @@
 		}
 	}
 	var startEl = null
-	Bus.on('snake:hurt', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
-	Bus.on('enemy:phase', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
-	Bus.on('combo:found', function () { if (HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
-	Bus.on('enemy:die', function (d) { if (d && (d.kind === 'elite' || d.kind === 'boss') && HITSTOP_FRAMES > hitStop) { hitStop = HITSTOP_FRAMES } })
-	Bus.on('core:run_reset', function () { hitStop = 0 })
+	Bus.on('snake:hurt', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
+	Bus.on('enemy:phase', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
+	Bus.on('combo:found', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
+	Bus.on('enemy:die', function (d) { if (d && (d.kind === 'elite' || d.kind === 'boss') && HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
+	Bus.on('core:run_reset', function () { hitStopSec = 0 })
 	Bus.on('game:toggle_pause', togglePause)   // 暂停按钮/遮罩经 Bus 触发（事件名全小写过断言）
 
 	// 全屏：安卓/桌面调 requestFullscreen 一键生效；iPhone 的 Safari 不支持 JS 全屏 → 提示「添加到主屏幕」
@@ -250,7 +251,7 @@
 		callSys('particle', dt)
 	}
 
-	var last = 0, acc = 0
+	var last = 0
 	var _dl = { frames: 0, steps: 0, zeroFrames: 0, aMin: 9, aMax: -9, aSum: 0, eMin: 9, eMax: -9, eSum: 0, t0: 0 }   // DIAG_LOG 累积器（纯只读诊断）
 	function frame(now) {
 		global.requestAnimationFrame(frame)
@@ -258,15 +259,18 @@
 		if (!last) { last = now }
 		var elapsed = (now - last) / 1000; last = now
 		var frameDt = elapsed
-		if (global.document && global.document.hidden) { acc = 0; return }   // 标签页隐藏(最小化/切后台)：跳过 step+draw，保持 last 新鲜，恢复瞬间不追帧爆发（治最小化再点开卡顿）
-		if (elapsed > 0.1) { elapsed = 0; acc = 0 }   // 大间隔(卡顿/恢复/切后台残帧)：直接丢弃追帧，避免 while 连跑 ~15 步突发 stutter（原 clamp 0.25 仍会爆 15 步）
-		else { acc += elapsed }
+		if (global.document && global.document.hidden) { return }   // 标签页隐藏：跳过 step+draw，last 已新鲜，恢复不追帧
+		if (elapsed > 0.05) { elapsed = 0.05 }   // 大间隔封顶 50ms：防穿模/突发多子步
+		global.__FRAME_DT = elapsed   // 本帧真实时间，供相机/屏震做帧率无关缓动
+		// 原生帧时间步进：把本帧真实时间切成 ≤SUBSTEP 固定子步逐次推进 → 运动=真实帧时间=原生刷新率平滑(165Hz屏=165Hz运动,零 judder)；子步 1/240s 保物理/碰撞稳定
 		var _steps = 0
-		while (acc >= STEP) {
-			if (hitStop > 0 && GS.status === 'playing') { hitStop--; acc -= STEP; continue }   // ⑥ 冻帧：仅 playing 态消费时间不推进
-			step(STEP); acc -= STEP; _steps++
+		if (hitStopSec > 0 && GS.status === 'playing') {
+			hitStopSec -= elapsed   // ⑥ 冻帧：时间制，消费真实时间、不推进模拟
+		} else {
+			var _rem = elapsed
+			while (_rem > 1e-6) { var _sdt = _rem < SUBSTEP ? _rem : SUBSTEP; _rem -= _sdt; step(_sdt); _steps++; if (_steps > 2000) { _rem = 0; break } }
 		}
-		var alpha = (STEP > 0) ? (acc / STEP) : 1   // 渲染插值系数：剩余累计时间 / 固定步长（消头部一顿一顿）
+		var alpha = 1   // 原生步进：渲染即当前真实位姿，无需插值(_ra=1)
 		_diagTick(_steps, alpha, frameDt)
 		if (window.__DIAG_LOG) {   // 纯只读诊断：每秒汇总 fps/步率/0-step帧占比/alpha/帧时间，定位 fixed-step 卡顿；零行为影响，发我分析
 			_dl.frames++; _dl.steps += _steps; if (_steps === 0) _dl.zeroFrames++
@@ -277,7 +281,7 @@
 			if (_n - _dl.t0 >= 1000) {
 				var _sec = (_n - _dl.t0) / 1000
 				var _fps = _dl.frames / _sec, _stp = _dl.steps / _sec
-				var _hint = _fps > 65 ? ' [高刷:渲染率>>模拟率60→全实体已插值→0-step 不可见(若仍抖=子像素/敌)]' : (_dl.zeroFrames / _dl.frames > 0.05 ? ' [偶发0-step帧→实体忽停忽跳]' : '')
+				var _hint = _fps > 65 ? ' [原生帧时间步进:模拟=真实帧时间→运动=面板率(' + _fps.toFixed(0) + 'Hz)→judder 消除；0-step 趋零]' : (_dl.zeroFrames / _dl.frames > 0.05 ? ' [偶发0-step帧→实体忽停忽跳]' : '')
 				console.log('[DIAG] fps=' + _fps.toFixed(1) + ' steps/s=' + _stp.toFixed(1) + ' 0step帧占比=' + (_dl.zeroFrames / _dl.frames * 100).toFixed(1) + '%  alpha[min/avg/max]=' + _dl.aMin.toFixed(3) + '/' + (_dl.aSum / _dl.frames).toFixed(3) + '/' + _dl.aMax.toFixed(3) + '  frameDt[ms min/avg/max]=' + (_dl.eMin * 1000).toFixed(2) + '/' + (_dl.eSum / _dl.frames * 1000).toFixed(2) + '/' + (_dl.eMax * 1000).toFixed(2) + _hint)
 				_dl.frames = 0; _dl.steps = 0; _dl.zeroFrames = 0; _dl.aMin = 9; _dl.aMax = -9; _dl.aSum = 0; _dl.eMin = 9; _dl.eMax = -9; _dl.eSum = 0; _dl.t0 = _n
 			}
@@ -346,7 +350,7 @@ function buildStart(wrap) {
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
 		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
 
-		Log.info('main 就绪：循环启动（fixed step ' + STEP.toFixed(4) + 's）')
+		Log.info('main 就绪：循环启动（原生帧时间步进 + 固定子步 ' + SUBSTEP.toFixed(4) + 's）')
 		global.requestAnimationFrame(frame)
 	}
 

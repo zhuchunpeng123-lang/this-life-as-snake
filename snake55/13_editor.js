@@ -228,9 +228,16 @@
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_t3" style="flex:1;padding:8px;border:1px solid #ff9a3c;border-radius:6px;background:transparent;color:#ff9a3c;cursor:pointer;font:700 12px system-ui">T3 关火焰系视觉：关</button>'
 		diag += '<button id="diag_t4" style="flex:1;padding:8px;border:1px solid #5fd0ff;border-radius:6px;background:transparent;color:#5fd0ff;cursor:pointer;font:700 12px system-ui">T4 冰池只描边：关</button></div>'
 		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_hud" style="flex:1;padding:8px;border:1px solid #7CFC00;border-radius:6px;background:transparent;color:#7CFC00;cursor:pointer;font:700 12px system-ui">性能HUD(精简)：关</button></div>'
-		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_camsnap" style="flex:1;padding:8px;border:1px solid #6ad0ff;border-radius:6px;background:transparent;color:#6ad0ff;cursor:pointer;font:700 12px system-ui">像素吸附(消世界shimmer)：开</button><button id="diag_camlock" style="flex:1;padding:8px;border:1px solid #ffd76b;border-radius:6px;background:transparent;color:#ffd76b;cursor:pointer;font:700 12px system-ui">相机锁定插值头(消头抖)：关</button></div>'
+		diag += '<div style="display:flex;gap:6px;margin:4px 0"><button id="diag_camsnap" style="flex:1;padding:8px;border:1px solid #6ad0ff;border-radius:6px;background:transparent;color:#6ad0ff;cursor:pointer;font:700 12px system-ui">像素吸附(消世界shimmer)：开</button></div>'
 		diag += '<div style="font:600 11px system-ui;opacity:.7;margin:6px 0 0">T3 关「火焰系 per-enemy 视觉」（点火演出+火焰光环+蓝环），与 T1/T2 配合一次录屏 isolate 全部嫌疑。蒸汽齐爆上限/帧 滑条见「实时标定（手感沙盒）」底部；拉到 <b>1</b> = 白爆骤减</div>'
 		secs.push({ title: '性能诊断（b9 对照实验）', body: diag, open: true })
+		// —— 中心闪自动诊断 v2（2026-07-23）：修正指标 + 中心/边缘相位自动拆分 + 可调时长 ——
+		var flk = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">一键矩阵：自动切 4 种吸附/相机组合（C1 开/动 · C2 关/动 · C3 开/锁 · C4 关/锁）。采样时<b>先在地图中心走几圈，再去边缘走几圈</b>——报告会自动按「中心相位 / 边缘相位」拆分对比。</div>'
+		flk += '<div style="display:flex;gap:6px;margin:4px 0;align-items:center"><span style="font:600 11px system-ui;opacity:.7">时长(秒)</span><input id="flk_dur" type="number" min="4" max="60" value="16" style="width:64px;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui"></div>'
+		flk += '<div style="display:flex;gap:6px;margin:4px 0"><button id="flk_run" style="flex:1;padding:8px;border:0;border-radius:6px;background:#2de1a8;color:#063;font:700 12px system-ui;cursor:pointer">▶ 一键采样矩阵</button>'
+		flk += '<button id="flk_copy" style="flex:1;padding:8px;border:1px solid #2de1a8;border-radius:6px;background:transparent;color:#2de1a8;cursor:pointer;font:700 12px system-ui">📋 复制报告</button></div>'
+		flk += '<pre id="flk_report" style="white-space:pre-wrap;font:11px monospace;background:#0d0f1a;border:1px solid #2a3358;border-radius:6px;padding:8px;margin:6px 0;max-height:260px;overflow:auto;color:#cfe">点「一键采样矩阵」开始</pre>'
+		secs.push({ title: '中心闪自动诊断', body: flk, open: true })
 		// —— 阶段跳转（测试）：按 STAGE.segments 生成，点击即把 GS.timeSec 写到目标段起点，免手动熬时间 ——
 		var jp = '<div style="font:600 11px system-ui;opacity:.7;margin-bottom:4px">点击直接跳到该阶段（写运行时 GS.timeSec，即时生效）</div>'
 		var segsCfg = (CONFIG.STAGE && CONFIG.STAGE.segments) ? CONFIG.STAGE.segments : []
@@ -433,11 +440,12 @@
 	if (t4) { t4.onclick = function () { diagIceFillOn = !diagIceFillOn; Editor.rtSet('PERF.suppressIceFill', diagIceFillOn ? 1 : 0); this.textContent = 'T4 冰池只描边：' + (diagIceFillOn ? '开' : '关'); this.style.color = diagIceFillOn ? '#7CFC00' : '#5fd0ff'; this.style.borderColor = diagIceFillOn ? '#7CFC00' : '#5fd0ff' } }   // b9-measure T4：冰池只描边不填充（零 gameplay）
 		var dh = panel.querySelector('#diag_hud')
 		if (dh) { dh.onclick = function () { diagHudOn = !diagHudOn; Editor.rtSet('PERF.debugHud', diagHudOn ? 1 : 0); this.textContent = '性能HUD(精简)：' + (diagHudOn ? '开' : '关') } }   // 精简性能HUD：仅 FPS/CPU/GPU 帧耗时，详细数据见 L 剖析面板
-		// A/B 相机修复开关（window 全局，零 gameplay）：像素吸附=消世界硬边 shimmer；相机锁定插值头=消头相对屏幕抖动（中段一顿一顿）
+		// A/B 相机修复开关(window 全局,零 gameplay):像素吸附=消世界硬边 shimmer。注:原"相机锁定插值头"(__CAM_LOCK) 为失败实验,2026-07-23z 已移除(硬锁绕缓动反致中心顿)
 		var cs = panel.querySelector('#diag_camsnap')
 		if (cs) { cs.onclick = function () { window.__PIXEL_SNAP = (window.__PIXEL_SNAP === false); var _on = (window.__PIXEL_SNAP !== false); this.textContent = '像素吸附(消世界shimmer)：' + (_on ? '开' : '关'); this.style.color = _on ? '#7CFC00' : '#6ad0ff'; this.style.borderColor = _on ? '#7CFC00' : '#6ad0ff' } }
-		var cl = panel.querySelector('#diag_camlock')
-		if (cl) { cl.onclick = function () { window.__CAM_LOCK = !window.__CAM_LOCK; this.textContent = '相机锁定插值头(消头抖)：' + (window.__CAM_LOCK ? '开' : '关'); this.style.color = window.__CAM_LOCK ? '#7CFC00' : '#ffd76b'; this.style.borderColor = window.__CAM_LOCK ? '#7CFC00' : '#ffd76b' } }
+		// 中心闪自动诊断：一键矩阵 + 复制报告
+		var fr = panel.querySelector('#flk_run'); if (fr) { fr.onclick = flkStart }
+		var fc = panel.querySelector('#flk_copy'); if (fc) { fc.onclick = function () { if (flkReportText) { try { if (global.navigator && global.navigator.clipboard) { global.navigator.clipboard.writeText(flkReportText) } else if (global.clipboardData) { global.clipboardData.setData('Text', flkReportText) } } catch (e) {} Log.info('[中心闪诊断] 报告已复制到剪贴板') } else { Log.warn('[中心闪诊断] 还没有报告,先点「一键采样矩阵」') } } }
 
 		// 性能自适应：自动开关 + 强制固定档位（运行时即时，零 gameplay）
 		function updPerfCur() { var el = panel && panel.querySelector('#perf_cur'); if (el && global.PerfTier) { el.textContent = global.PerfTier.tier + (global.PerfTier.auto ? '（自动）' : '（固定）') } }
@@ -508,6 +516,125 @@
 		}
 	}
 
+	// —— 中心闪自动诊断矩阵 v2（2026-07-23 · 修正指标）——
+	// 旧版两处 bug 致全 0：①要求"蛇头真值逐帧位移>0.2px"才计数，但相机跟随使蛇头屏上≈静止→漏采；
+	//   ②prev 直接存 getFlickerSample() 返回的同一个被 render 每帧 mutate 的 _flk 对象引用→前后帧恒等→差恒为 0。
+	// 修正：深拷贝 prev；直接测"蛇头屏幕渲染位置(disp)相对它本该在的连续位置(true)的逐帧跳变"。
+	//   屏幕跳了≥1设备像素、真值却几乎没动(<0.5px)→伪影(肉眼之闪)。
+	//   并按"蛇头离屏心距离"自动拆 中心相位(相机自由跟随)/边缘相位(相机clamp冻)，一次长采样即可对比走中心vs走边缘。
+	var flkRunning = false, flkReportText = ''
+	function pad(v, n) { var s = String(v); while (s.length < n) { s = ' ' + s } return s }
+	function padR(v, n) { var s = String(v); while (s.length < n) { s += ' ' } return s }
+	function flkStart() {
+		if (flkRunning) { return }
+		var R = Registry.get('render'); if (!R || !R.getFlickerSample) { Log.warn('[中心闪诊断] Render 未就绪'); return }
+		if (GS.status !== 'playing') { Log.warn('[中心闪诊断] 请先进入游戏(playing)再采样'); return }
+		var di = panel.querySelector('#flk_dur'); var totalSec = di ? (parseInt(di.value, 10) || 16) : 16
+		if (!(totalSec >= 4)) { totalSec = 16 }
+		var cfgs = [
+			{ n: 'C1 snap=开 cam=动', snap: true },
+			{ n: 'C2 snap=关 cam=动', snap: false }
+		]
+		var N = cfgs.length, DUR = totalSec * 1000 / N
+	var mk = function () { return { frames: 0, art: 0, step: 0, tog: 0 } }   // step=诚实1px台阶帧(屏幕跳≥1px且真值也在动≥0.5px)：浮点蛇的前向步进,非 flicker；tog=真toggle帧(显示翻转但真值仍同向=纯取整来回翻=舌头卡动)
+	function mkPh() { return { all: mk(), center: mk(), edge: mk() } }
+	var acc = cfgs.map(function () { return { head: mkPh(), body: mkPh() } })   // 每格: 头(烘焙位图)/身(矢量圆) 各 整体+中心相位+边缘相位
+	var prev = { head: null, body: null }, p2 = { head: null, body: null }, idx = -1, startT = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+		var origSnap = window.__PIXEL_SNAP
+		var EDGE = 220   // 蛇头离屏心(设备像素)阈值：>此值=边缘相位(相机clamp冻)。S=1.6 时≈屏心 137 世界单位外
+		flkRunning = true
+		window.__DIAG_FLICKER = true   // 开启 render 每帧采样
+		var pre = panel.querySelector('#flk_report'); if (pre) { pre.textContent = '采样中…（先中心走几圈再去边缘走几圈，共 ' + totalSec + 's）' }
+		function apply(i) { window.__PIXEL_SNAP = cfgs[i].snap }
+		function procSample(ph, o, pr, p2o) {   // 单样本(头或身)逐帧判定：伪影/台阶/真toggle；o=本帧,pr=上一帧,p2o=两帧前(均深拷贝)
+			if (!pr || !p2o) { return }
+			var jump = Math.abs(o.dispX - pr.dispX) + Math.abs(o.dispY - pr.dispY)   // 实际渲染位逐帧跳变(设备像素)=getTransform 回读真值,非写死
+			var tmov = Math.abs(o.trueX - pr.trueX) + Math.abs(o.trueY - pr.trueY)   // 理想连续位逐帧变化(设备像素)
+			var ed = Math.sqrt(o.trueX * o.trueX + o.trueY * o.trueY)   // 离屏心距离(设备像素)
+			var pha = ed > EDGE ? 'edge' : 'center'
+			ph.all.frames++; ph[pha].frames++
+			if (jump >= 0.5 && tmov < 0.5) { ph.all.art++; ph[pha].art++ }   // 伪影：屏跳≥1px 真值却没动(本该静止)→肉眼闪
+			if (jump >= 0.5 && tmov >= 0.5) { ph.all.step++; ph[pha].step++ }   // 诚实台阶：屏跳≥1px 真值也在动→前向步进,非 flicker
+			var dxc = o.dispX - pr.dispX, dyc = o.dispY - pr.dispY
+			var dxp = pr.dispX - p2o.dispX, dyp = pr.dispY - p2o.dispY
+			var txc = o.trueX - pr.trueX, tyc = o.trueY - pr.trueY
+			var txp = pr.trueX - p2o.trueX, typ = pr.trueY - p2o.trueY
+			var flipX = ((dxc >= 1 && dxp <= -1) || (dxc <= -1 && dxp >= 1)) && !((txc >= 0.5 && txp <= -0.5) || (txc <= -0.5 && txp >= 0.5))
+			var flipY = ((dyc >= 1 && dyp <= -1) || (dyc <= -1 && dyp >= 1)) && !((tyc >= 0.5 && typ <= -0.5) || (tyc <= -0.5 && typ >= 0.5))
+			if (flipX || flipY) { ph.all.tog++; ph[pha].tog++ }   // 真toggle：显示翻转但真值同向=纯取整来回=舌头卡动
+		}
+		function copyO(o) { return { dispX: o.dispX, dispY: o.dispY, trueX: o.trueX, trueY: o.trueY } }
+		function step() {
+			var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
+			var el = now - startT
+			var i = Math.min(N - 1, Math.floor(el / DUR))
+			if (i !== idx) { idx = i; apply(i); prev = { head: null, body: null }; p2 = { head: null, body: null } }   // 切格重置 prev/p2，避免跨格污染
+		var s = R.getFlickerSample()
+		if (s && s.head && s.body && s.head.has && s.body.has) {
+			procSample(acc[i].head, s.head, prev.head, p2.head)
+			procSample(acc[i].body, s.body, prev.body, p2.body)
+		}
+		p2.head = prev.head; p2.body = prev.body
+		prev.head = copyO(s.head); prev.body = copyO(s.body)
+			if (el < DUR * N) { global.requestAnimationFrame(step) } else { finish() }
+		}
+		function finish() {
+			flkRunning = false
+			window.__DIAG_FLICKER = false
+		window.__PIXEL_SNAP = origSnap   // 还原用户原设置
+		var cs = panel.querySelector('#diag_camsnap'); if (cs) { var on = (window.__PIXEL_SNAP !== false); cs.textContent = '像素吸附(消世界shimmer)：' + (on ? '开' : '关'); cs.style.color = on ? '#7CFC00' : '#6ad0ff'; cs.style.borderColor = on ? '#7CFC00' : '#6ad0ff' }
+			flkRenderReport(cfgs, acc, EDGE, totalSec)
+		}
+		global.requestAnimationFrame(step)
+	}
+	function flkRenderReport(cfgs, acc, EDGE, totalSec) {
+		var R = Registry.get('render'); var ws = (R && R.getWorldScale) ? R.getWorldScale() : 0.8
+		var dpr = (global.devicePixelRatio || 1)
+		var S = ws * dpr
+		var hr = (CONFIG.PLAYER && CONFIG.PLAYER.headRadiusRender) || (CONFIG.PLAYER && CONFIG.PLAYER.headRadius) || 14
+		var hc = (CONFIG.PLAYER && CONFIG.PLAYER.headRadius) || 14
+		function pct(a) { return a.frames > 0 ? Math.round(a.art / a.frames * 100) : 0 }
+		function pstep(a) { return a.frames > 0 ? Math.round(a.step / a.frames * 100) : 0 }   // 台阶帧占比%
+		function ptog(a) { return a.frames > 0 ? Math.round(a.tog / a.frames * 100) : 0 }   // 真toggle帧占比%=舌头卡动真实严重度
+		var fps = (R && R.diag) ? R.diag().fps : 60   // 实时fps供台阶频率估算(次/秒)
+		function hz(a) { return a.frames > 0 ? (a.step / (a.frames / (fps || 60))).toFixed(1) : '0.0' }   // 台阶频率≈次/秒
+		var L = []
+		L.push('==== 中心闪诊断矩阵 v3 ' + new Date().toISOString().slice(0, 19) + ' ====')
+		L.push('环境: dpr=' + dpr + ' ws=' + ws + ' S(设备像素/世界单位)=' + S.toFixed(3) + ' 头渲染半径=' + hr + ' 头判定半径=' + hc)
+		L.push('采样: 总' + totalSec + 's / 4格各' + (totalSec / 4).toFixed(1) + 's · 玩家先中心后边缘 · 边缘阈值=' + EDGE + '设备px')
+		L.push('指标: disp=实际矩阵(getTransform)作用到「真实绘制点」的设备像素(回读真值,非写死); true=理想连续 S·(wx−rcx)。disp≡true 仅当 6拆正确+补偿正确 才成立→漏拆/符号错/补偿放错/坐标用混 任一事故→disp≠true→台阶>0 被抓出')
+		L.push('')
+		function metrics(title, sel) {   // sel=由每格 acc 取 head 或 body 的 {all,center,edge}
+			L.push('——— ' + title + ' ———')
+			L.push('〔伪影率〕屏幕跳≥1设备px 且 真值几乎未动(<0.5px) 的帧占比；越高=越闪')
+			L.push(padR('配置', 18) + '中心相位          边缘相位          整体')
+			L.push(padR('', 18) + '帧   伪影率    帧   伪影率    帧   伪影率')
+			for (var i = 0; i < cfgs.length; i++) { var a = sel(acc[i]), c = a.center, e = a.edge; L.push(padR(cfgs[i].n, 18) + pad(c.frames, 4) + ' ' + pad(pct(c), 4) + '%  ' + pad(e.frames, 4) + ' ' + pad(pct(e), 4) + '%  ' + pad(a.all.frames, 4) + ' ' + pad(pct(a.all), 4) + '%') }
+			L.push('')
+			L.push('〔诚实1px台阶率〕屏幕跳≥1px 且 真值也在动(≥0.5px)=前向步进,非 flicker；方向1 后头/身应↓≈0')
+			L.push(padR('配置', 18) + '中心相位             边缘相位')
+			L.push(padR('', 18) + '台阶%   次/秒     台阶%   次/秒')
+			for (var j = 0; j < cfgs.length; j++) { var b = sel(acc[j]), cb = b.center, eb = b.edge; L.push(padR(cfgs[j].n, 18) + pad(pstep(cb), 5) + '% ' + pad(hz(cb), 5) + '   ' + pad(pstep(eb), 5) + '% ' + pad(hz(eb), 5)) }
+			L.push('')
+			L.push('〔真 toggle 率〕显示翻转但真值同向=纯取整来回=舌头卡动；Snap-off(C2/C4) 应≈0 对照组')
+			L.push(padR('配置', 18) + '中心相位          边缘相位          整体')
+			L.push(padR('', 18) + '帧   真toggle%   帧   真toggle%   帧   真toggle%')
+			for (var k = 0; k < cfgs.length; k++) { var g = sel(acc[k]), cg = g.center, eg = g.edge; L.push(padR(cfgs[k].n, 18) + pad(cg.frames, 4) + ' ' + pad(ptog(cg), 4) + '%  ' + pad(eg.frames, 4) + ' ' + pad(ptog(eg), 4) + '%  ' + pad(g.all.frames, 4) + ' ' + pad(ptog(g.all), 4) + '%') }
+			L.push('')
+		}
+		metrics('蛇头(烘焙位图 PNG)', function (a) { return a.head })
+		metrics('蛇身(矢量圆 tube)', function (a) { return a.body })
+		L.push('判读(给AI):')
+		L.push('- 方向1(整条蛇浮点+残差补偿)生效后: 头与身 的 中心相位台阶率/伪影率/真toggle率 都应↓≈0(慢移时 disp≡true,无台阶);C2/C4(关吸附)仍≈0 对照组')
+		L.push('- 若头或身 任一项 台阶率仍高(如 C1 中心>5%)→ 6拆未净 或 残差补偿符号错/放错→ 矩阵已抓出(结构性假阴性已消),回退方向3')
+		L.push('- 头 vs 身 两表应高度一致(同一浮点投影)→ 若不一致=某视觉漏在补偿外,查 drawSnake/drawSkillAura 之外的头锚静态元素')
+		L.push('- 边缘相位台阶% 常更低: 边缘相机冻、头快速扫过台阶被运动掩盖;中心死盯头才显')
+		L.push('- 高速移动(中心→边缘)时 disp/true 同步跳≥1px → 记良性前向 step,非 flicker,勿追')
+		var txt = L.join('\n')
+		var pre = panel.querySelector('#flk_report'); if (pre) { pre.textContent = txt }
+		flkReportText = txt
+		Log.info('[中心闪诊断] 完成,点「复制报告」发给我')
+	}
 	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render(); if (tuneTimer) { clearInterval(tuneTimer) } tuneTimer = setInterval(refreshTuneLevels, 300) } else { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = null } } }   // 面板开时每 300ms 实时刷新等级/高亮；关时清理
 
 	document.addEventListener('keydown', function (e) { if (e.key === '`' || e.key === '~') { if (!panel) { build() } toggle() } })

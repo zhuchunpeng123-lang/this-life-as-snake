@@ -22,7 +22,7 @@
 	var bossWarnUntil = 0
 	var hurtVignetteUntil = 0
 
-	var canvas = null, ctx = null, dpr = 1
+	var canvas = null, ctx = null, dpr = 1, _snapGrid = 0   // _snapGrid：设备像素吸附网格(_snap=ws*dpr)；每帧在 draw() 写入，供 _ix/_iy/snapW 把移动实体也吸附到整数设备像素(相机只吸静态世界→移动实体仍亚像素闪，本次补齐)
 	var worldScale = 1          // round6：视图缩放(0.8)已移除，还原 commit 无缩放原画面；worldScale 恒 1，碰撞/世界坐标不变，相机 1:1 跟随蛇身
 	var cam = { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 }
 	var camPrev = { x: cam.x, y: cam.y }   // 相机上一模拟步位姿：每模拟步(GS.frame 变化)推进一次(updateCamera 用模拟头 h.x)，渲染按 _ra 在 camPrev→cam 间线性插值 → 与蛇头(lerp(px,x,_ra))共用同一 _ra、同匀速 → 相对静止、零抖；2026-07-23e 误改"每帧追 interpHead"使相机 followLerp 指数追每帧因 _ra 变化的插值头→相对滑动=移动糊，已回退
@@ -80,6 +80,27 @@
 		}
 		_diagHead.x = sx; _diagHead.y = sy
 	}
+	// 中心闪诊断(2026-07-23 · 供 GM 矩阵一键采样)：每帧算蛇头"显示屏幕设备像素位置"(受吸附,=round(ih·S)-round(cam·S))与"真值"(连续,=(ih-cam)·S)的逐帧差，矩阵据此检测双重取整 toggle。关 PIXEL_SNAP 时两者恒等→art=0(对照组基准)
+	// 中心闪诊断(2026-07-23 · 方向1 双采样)：head=蛇头(烘焙位图)真实绘制坐标, body=蛇身中段(矢量圆)真实绘制坐标(均浮点,post-6拆)
+	//   disp=实际矩阵(getTransform)作用到「真实绘制点」的设备像素(回读真值,非写死); true=理想连续 S·(wx−rcx)。
+	//   disp≡true 仅当「6拆正确(绘制坐标=浮点)+补偿正确(实际矩阵有效中心=rcx)」成立→漏拆/符号错/补偿放错/坐标用混 任一事故→disp≠true→台阶>0 被矩阵抓出(结构性假阴性已消)。
+	var _flkHead = { x: 0, y: 0, has: false }, _flkBody = { x: 0, y: 0, has: false }
+	var _snakeMtx = null, _shakeOx = 0, _shakeOy = 0   // 蛇补偿后实际变换矩阵(getTransform 回读) + 本帧屏震偏移(设备px):disp 据真值算
+	function diagFlickerTick(rcx, rcy, rcxS, rcyS) {
+		if (GS.status !== 'playing' || !_snakeMtx || !_flkHead.has || !_flkBody.has) { return }
+		var S = worldScale * dpr
+		var CDX = dpr * GAME.logicalWidth / 2, CDY = dpr * GAME.logicalHeight / 2   // 屏幕中心(设备px)
+		var SX = dpr * _shakeOx, SY = dpr * _shakeOy   // 屏震(设备px)常量:disp 须扣,否则随机 shake 污染台阶
+		function setSample(o, wx, wy) {   // disp=实际矩阵作用到绘制点−中心/屏震常量=蛇真实设备偏移(与 true 同基准);true=理想连续
+			o.dispX = _snakeMtx.a * wx + _snakeMtx.c * wy + _snakeMtx.e - CDX - SX
+			o.dispY = _snakeMtx.b * wx + _snakeMtx.d * wy + _snakeMtx.f - CDY - SY
+			o.trueX = S * (wx - rcx)
+			o.trueY = S * (wy - rcy)
+			o.has = true
+		}
+		setSample(_flkHead, _flkHead.x, _flkHead.y)   // 头(烘焙位图):wx=实际绘制的浮点头坐标
+		setSample(_flkBody, _flkBody.x, _flkBody.y)   // 身(矢量圆):wx=实际绘制的浮点身节
+	}
 	function wrapDc(c) {
 		var names = ['fill', 'stroke', 'fillText', 'drawImage', 'fillRect', 'beginPath', 'arc']
 		for (var _w = 0; _w < names.length; _w++) { (function (nm) { var o = c[nm]; if (typeof o === 'function') { c[nm] = function () { _dc[nm]++; return o.apply(c, arguments) } } })(names[_w]) }
@@ -127,21 +148,27 @@
 			_spriteCache[key] = rec
 		}
 	}
-	// 头 PNG 预渲染到「显示分辨率」离屏 canvas：仅半径(r)变化才重绘；每帧 drawSprite 只 1:1 平移+旋转该离屏图，消除「1024 大图每帧缩放+子像素重采样」导致的位图爬行/shimmer（矢量身体圆无此问题、故仅头显顿挫）
+	// 头 PNG 预渲染到「显示分辨率」离屏 canvas，并把旋转角烘焙进位图（按 ROT_BUCKET 分桶缓存）：同桶内角位图只栅格化一次→每帧 1:1 取用、零每帧旋转重采样→消头位图爬行/shimmer（矢量身体圆无此问题、故仅头显顿挫）；旧版只预渲染未旋转图、由 drawSnake 每帧 ctx.rotate 旋转该位图→每帧重采样=头闪根因
 	var _spriteOff = {}
-	function getSpriteOff(key, r) {
-		var o = _spriteOff[key]
-		if (o && o.r === r) { return o }
+	var ROT_BUCKET = Math.PI / 60   // 旋转角缓存桶(3°)：桶内角共享同一预栅格化位图；跨桶才重栅格化→方向每 3° 干净跳变(非 shimmer)、肉眼无碍
+	function getSpriteOff(key, r, angle) {
+		var angQ = angle != null ? Math.round((angle || 0) / ROT_BUCKET) * ROT_BUCKET : 0
+		var ck = key + '|' + r + '|' + angQ
+		var o = _spriteOff[ck]
+		if (o) { return o }
 		var c = _spriteCache[key]
 		if (!c || !c.ready || !c.img) { return null }
 		var entry = SPRITE_MANIFEST[key]
 		var sd = (entry.solidDiameterPx > 0) ? entry.solidDiameterPx : (c.img.naturalWidth || 1)
 		var dispCss = r * 2
-		var dispPx = Math.max(1, Math.round(dispCss * (global.devicePixelRatio || 1)))
-		var cv = document.createElement('canvas'); cv.width = dispPx; cv.height = dispPx
+		var dpr = global.devicePixelRatio || 1
+		var dispPx = Math.max(1, Math.round(dispCss * dpr))
+		var cvSize = Math.max(1, Math.ceil(dispPx * 1.5))   // 留旋转余量(√2≈1.414<1.5)防裁角；内容居中于画布
+		var cv = document.createElement('canvas'); cv.width = cvSize; cv.height = cvSize
 		var g = cv.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'
-		g.drawImage(c.img, 0, 0, dispPx, dispPx)   // 整张 PNG 一次性缩到显示分辨率（内容直径=dispCss，pivot 居中）
-		o = { r: r, canvas: cv, sizeCss: dispCss }; _spriteOff[key] = o
+		g.translate(cvSize / 2, cvSize / 2); g.rotate(angQ)   // 绕画布中心烘焙旋转角一次(同桶复用)
+		g.drawImage(c.img, -dispPx / 2, -dispPx / 2, dispPx, dispPx)
+		o = { r: r, canvas: cv, sizeCss: cvSize / dpr }; _spriteOff[ck] = o
 		return o
 	}
 	// 返回 true=已用图绘制；false=未就绪/不可用 → 调用方须 fallback 代码画。绝不抛错、绝不在函数内 new Image/发请求、绝不留半截 NaN 进 drawImage。
@@ -158,11 +185,11 @@
 		if (!(scale > 0)) { return false }                    // !(scale>0) 同时兜住 NaN/0/负 → 永不进 drawImage
 		ctx.save()
 		ctx.translate(x, y)
-		ctx.rotate(angle || 0)
-		var off = getSpriteOff(key, r)                          // 预渲染离屏（显示分辨率）→ 每帧只 1:1 平移+旋转，消位图爬行/shimmer
+		var off = getSpriteOff(key, r, angle)                  // 预渲染离屏(已烘焙旋转角)→每帧 1:1 取用，消位图旋转爬行/shimmer
 		if (off) {
-			ctx.drawImage(off.canvas, -off.sizeCss / 2, -off.sizeCss / 2, off.sizeCss, off.sizeCss)
+			ctx.drawImage(off.canvas, -off.sizeCss / 2, -off.sizeCss / 2, off.sizeCss, off.sizeCss)   // 离屏已含旋转→不再旋转上下文(避免双重旋转)
 		} else {
+			ctx.rotate(angle || 0)
 			ctx.scale(scale, scale)                            // 退化：直接用原图（首帧未就绪等）
 			ctx.drawImage(img, -entry.pivot[0] * nw, -entry.pivot[1] * nh)
 		}
@@ -206,12 +233,13 @@
 		if (GS.status === 'playing' && h.px != null) { x = M.lerp(h.px, h.x, _ra); y = M.lerp(h.py, h.y, _ra); a = lerpAngle(h.pangle, h.angle || 0, _ra) }
 		return { x: x, y: y, ang: a }
 	}
-	function updateCamera() {   // 每模拟步(GS.frame 变化)调用一次：用模拟头 h.x/h.angle 推进相机目标；渲染再按 _ra 在 camPrev→cam 间线性插值 → 与蛇头(lerp(px,x,_ra))同源同步、相对静止
+	function updateCamera() {   // 每渲染帧调用一次：用真实头 h.x/h.angle 推进相机目标；内部按 __FRAME_DT 做帧率无关缓动 → 原生刷新率平滑、与蛇头同源同步
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var h = s.head
 		var tx = h.x + Math.cos(h.angle || 0) * CAM.lookAhead, ty = h.y + Math.sin(h.angle || 0) * CAM.lookAhead
-		var dx = tx - cam.x, dy = ty - cam.y, d = Math.sqrt(dx * dx + dy * dy)
-		if (d > CAM.deadZone) { cam.x += dx * CAM.followLerp; cam.y += dy * CAM.followLerp }
+		var dx = tx - cam.x, dy = ty - cam.y
+		var _fdt = (global.__FRAME_DT) || (1 / GAME.fps)
+		var _ck = 1 - Math.pow(1 - CAM.followLerp, _fdt * 60); cam.x += dx * _ck; cam.y += dy * _ck   // 2026-07-23·相机封板: 删 deadZone 闸门(原 if(d>deadZone) 在常速下冻结相机→30世界px冻-扑锯齿=中心顿, 实测 __CAM_DZ=0 消顿坐实), 改每帧帧率无关缓动连续跟随(followLerp=60Hz 步语义→任意步率手感一致)
 		var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0)
 		var halfW = GAME.logicalWidth / 2 / ws, halfH = GAME.logicalHeight / 2 / ws   // 缩放后可见半幅=半宽/worldScale（ws<1 时看得更广→clamp 边界更宽，避免视图越出世界）；ws=1 退化为原值
 		cam.x = M.clamp(cam.x, halfW, GAME.worldWidth - halfW)
@@ -226,18 +254,19 @@
 		var f = pk.foods
 		for (var i = 0; i < f.length; i++) {
 			var o = f[i]; if (!o.active) { continue }
+			var _px = snapWX(o.x), _py = snapWY(o.y)   // 拾取物相对相机单次取整吸附（你常追的显眼实体，消亚像素闪+中心闪）
 			if (o.kind === 'skill') {                                  // 技能食物：发光 + 呼吸脉冲 + 星标 + 头顶「!」
 				var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 6)
 				ctx.globalAlpha = 0.22 + pulse * 0.22
-				ctx.beginPath(); ctx.arc(o.x, o.y, o.radius + 6 + pulse * 4, 0, M.PI2); ctx.fillStyle = COL.skillDrop; ctx.fill()
+				ctx.beginPath(); ctx.arc(_px, _py, o.radius + 6 + pulse * 4, 0, M.PI2); ctx.fillStyle = COL.skillDrop; ctx.fill()
 				ctx.globalAlpha = 1
-				circle(o.x, o.y, o.radius, COL.skillDrop)
-				drawStar(o.x, o.y, o.radius + 2)
+				circle(_px, _py, o.radius, COL.skillDrop)
+				drawStar(_px, _py, o.radius + 2)
 				ctx.fillStyle = '#fff'; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'
-				ctx.fillText('!', o.x, o.y - o.radius - 6)
+				ctx.fillText('!', _px, _py - o.radius - 6)
 			} else {                                                   // 普通/回血：素色无光
 				var c = o.kind === 'heal' ? COL.heal : COL.food
-				circle(o.x, o.y, o.radius, c)
+				circle(_px, _py, o.radius, c)
 			}
 		}
 	}
@@ -338,9 +367,17 @@ function drawChargeArrow(e) {
 		if (d > Math.PI) { d -= M.PI2 } else if (d < -Math.PI) { d += M.PI2 }
 		return a + d * t
 	}
+	// 相对相机单次取整吸附（中心闪修复·2026-07-23f）：旧 snapW 对「蛇头」与「相机」各自 round→头≈屏心时 round(头)-round(相机) 非单调 ±1 设备像素抖=中心闪。
+	//   改为：先把坐标变到「相对相机」(v-_camX)→round 一次→再加回「相机吸附偏移」round(_camX*_snapGrid)/_snapGrid → 等价 round((v-rcx)*S) 单次取整；
+	//   头相对相机平滑移动→屏幕位置单调步进→中心闪消除（边缘因相机冻结本就不闪，维持）。静态世界(边界/相机平移)仍走 -rcxS 整数设备像素→不丢 shimmer 修复。
+	//   _camX/_camY 在 draw() 相机块后写入（未吸附真值 rcx/rcy），__PIXEL_SNAP=false 时 _snapGrid=0→snapWX/Y 直接返回 v（保留调试开关）。
+	var _camX = 0, _camY = 0
+	function snapWX(v) { return (_snapGrid > 0) ? (Math.round((v - _camX) * _snapGrid) + Math.round(_camX * _snapGrid)) / _snapGrid : v }
+	function snapWY(v) { return (_snapGrid > 0) ? (Math.round((v - _camY) * _snapGrid) + Math.round(_camY * _snapGrid)) / _snapGrid : v }
+	function snapAngle(a) { return (window.__HEAD_ROT_SNAP === false) ? (a || 0) : Math.round((a || 0) / ROT_BUCKET) * ROT_BUCKET }   // 头旋转角吸附 3° 桶：配合离屏烘焙→位图仅跨桶时重栅格化一次，消每帧旋转重采样爬行(shimmer)；__HEAD_ROT_SNAP=false 还原旧行为
 	// 渲染插值（CAM-STUTTER 修复·方案A）：任意带 prevX/prevY 扁平字段的实体，按同一 _ra（已 clamp[0,1]）在「上一步→当前步」间插值。判定位移/碰撞逻辑只读真实 x/y，不碰
-	function _ix(o) { return (o.prevX != null) ? M.lerp(o.prevX, o.x, _ra) : o.x }
-	function _iy(o) { return (o.prevY != null) ? M.lerp(o.prevY, o.y, _ra) : o.y }
+	function _ix(o) { return snapWX((o.prevX != null) ? M.lerp(o.prevX, o.x, _ra) : o.x) }
+	function _iy(o) { return snapWY((o.prevY != null) ? M.lerp(o.prevY, o.y, _ra) : o.y) }
 	// 双眼/瞳孔：PNG 之上叠代码眼（PNG 自带眼/无眼都叠一层保证可见；瞳孔朝局部 +x=前进；全比例禁裸像素）
 	// 身体：逐节离散步圆（与改动前一致、干净不丑）；各节 prev→cur 插值 → 165Hz 平滑（消身体一顿一顿）；颈缝=圆身(r≈12)略宽于 PNG 自带脖子(~7)，由头图盖住前段，与「改前」视觉一致
 	function drawBodyTube(pts, headR, bodyR) {
@@ -355,33 +392,38 @@ function drawChargeArrow(e) {
 		// 插值中心线（head + 各节 prev→cur 插值）：整条蛇平滑，消 fixed-step 无插值导致的身体一顿一顿（与头部同源，165Hz 不再逐帧跳）
 		var h = s.head
 		var _ih = interpHead()   // 与相机同源插值基准：所画蛇头位姿 == 相机跟随目标，直行无 bob
-		var hx = _ih.x, hy = _ih.y, hAng = _ih.ang
+		var hx = _ih.x, hy = _ih.y, hAng = _ih.ang   // 方向1：蛇坐标走浮点(由外层残差补偿抵消相机锯齿),不再自身 snapWX→整条蛇连续投影
 		var pts = [{ x: hx, y: hy }]
 		for (var _i = 1; _i < segs.length; _i++) {
 			var _g = segs[_i], _ix = _g.x, _iy = _g.y
 			if (GS.status === 'playing' && _g.px != null) { _ix = M.lerp(_g.px, _g.x, _ra); _iy = M.lerp(_g.py, _g.y, _ra) }
-			pts.push({ x: _ix, y: _iy })
+			pts.push({ x: _ix, y: _iy })   // 方向1：身体逐节浮点(残差补偿后整条蛇连续投影,无链内接缝)
 		}
-		drawBodyTube(pts, headR, bodyR)                 // 先画身体管（头/脖子图随后盖前段）
-		// 蛇头：旋转坐标系内画 PNG 头（具名 +90° 偏移对齐「朝上」）+ 叠代码眼（PNG 无眼时保底、且保证"有眼睛"）
+		var _mi = Math.floor(pts.length / 2)   // 诊断采样点:身体中段(矢量圆)
+		_flkHead.x = hx; _flkHead.y = hy; _flkHead.has = true   // 实际绘制头坐标(浮点,post-6拆)→诊断 disp 据此算真值
+		_flkBody.x = pts[_mi].x; _flkBody.y = pts[_mi].y; _flkBody.has = true
+		var hAngQ = snapAngle(hAng)   // 头旋转角量化(3°桶)→与离屏烘焙对齐、消每帧旋转重采样爬行(shimmer)；中心转向最明显
 		var inv = GS.invincibleUntil > GS.timeSec
 		var blink = inv && (Math.floor(GS.timeSec * 16) % 2 === 0)
+		var _ba = blink ? 0.35 : 1   // 整蛇(身+头)同 alpha 闪：无敌时头下属身圆随头同淡出→不再单独露亮核=消"两个画面重叠闪烁"
+		ctx.save(); ctx.globalAlpha = _ba
+		drawBodyTube(pts, headR, bodyR)                 // 先画身体管（头/脖子图随后盖前段）
+		// 蛇头：整角烘焙进离屏(量化角)1:1 取用→零每帧旋转重采样；再叠代码眼（PNG 无眼时保底、且保证"有眼睛"）
 		ctx.save()
 		ctx.translate(hx, hy)
-		ctx.rotate(hAng)
-		if (blink) { ctx.globalAlpha = 0.35 }  // 无敌帧：整头闪（含眼，忠实原图不挤压）
-		// 忠实绘制 PNG（加 ART_FORWARD_OFFSET_RAD 使「朝上」图 snout 指向 +x=前进）；fallback 圆对称无影响
-		if (!drawSprite(ctx, 'snake_head', 0, 0, ART_FORWARD_OFFSET_RAD)) {
+		// 忠实绘制 PNG（整角=量化头角+具名 +90° 偏移；离屏已烘焙旋转→drawSprite 不再旋转上下文）；fallback 圆对称无影响
+		if (!drawSprite(ctx, 'snake_head', 0, 0, hAngQ + ART_FORWARD_OFFSET_RAD)) {
 			circle(0, 0, headR, GS.coreHp <= 1 ? COL.enemyChaser : SNAKE_HEAD)
 		}
-		// 代码眼睛（PNG 自带眼/无眼都叠一层，保证可见；局部 +x=前进，瞳孔朝前=朝向移动方向；全部按 headR 比例，零裸像素）
+		ctx.rotate(hAngQ)   // 眼睛随量化角旋转(矢量,无位图重采样)
+		// 代码眼睛（局部 +x=前进，瞳孔朝前=朝向移动方向；全部按 headR 比例，零裸像素）
 		var EYE_DX = headR * 0.18, EYE_DY = headR * 0.42, EYE_R = headR * 0.22, PUPIL_R = headR * 0.11, PUPIL_FWD = headR * 0.08
 		for (var _ei = -1; _ei <= 1; _ei += 2) {
 			var _ex = EYE_DX, _ey = EYE_DY * _ei
 			circle(_ex, _ey, EYE_R, '#f7f7fa')                 // 眼白
 			circle(_ex + PUPIL_FWD, _ey, PUPIL_R, '#0a0a0f')   // 瞳孔朝前
 		}
-		ctx.restore(); ctx.globalAlpha = 1
+		ctx.restore(); ctx.restore()   // 恢复 _ba(整蛇淡出)
 		if (inv) {                                                   // 无敌光环（白闪脉动）
 			var ha = 0.3 + 0.3 * Math.sin(GS.timeSec * 16)
 			ctx.globalAlpha = ha; ctx.beginPath(); ctx.arc(hx, hy, headR + 6, 0, M.PI2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1
@@ -394,6 +436,7 @@ function drawChargeArrow(e) {
 		var T4 = RT('PERF.suppressIceFill', perfFB('suppressIceFill', false) ? 1 : 0) > 0   // 自适应分级：POTATO 档冰池只描边；GM 经 editor.rtSet 仍优先
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
 	var _ihA = interpHead() || h   // 护盾光球绕「插值头」公转（与所画蛇头同源），消 165Hz 光球相对头错位跳
+	var _iax = _ihA.x, _iay = _ihA.y   // 方向1：护盾/火墙基底浮点(残差补偿后随蛇一起连续投影)
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		var segs = s.segments || []
 		var flick = 0.7 + 0.3 * Math.sin(GS.timeSec * FIRE_FLICKER_HZ)   // 火跳动
@@ -405,7 +448,7 @@ function drawChargeArrow(e) {
 			ctx.beginPath()
 			for (var sf = 0; sf < segs.length; sf += stepF) {
 				var sg = segs[sf]
-				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y   // 火墙贴插值蛇身（段 px/py 同 _ra），消 165Hz 火墙跳
+				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y   // 方向1：火墙贴插值蛇身浮点(残差补偿后连续投影)
 				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
 			}
 			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
@@ -419,9 +462,9 @@ function drawChargeArrow(e) {
 			var base2 = (GS.timeSec / SKC.shield.orbitSec) * M.PI2
 			for (var o = 0; o < sc; o++) {
 			var a2 = base2 + o / sc * M.PI2
-			var ox2 = _ihA.x + Math.cos(a2) * orbR, oy2 = _ihA.y + Math.sin(a2) * orbR
+			var ox2 = _iax + Math.cos(a2) * orbR, oy2 = _iay + Math.sin(a2) * orbR   // 方向1：护盾球浮点(残差补偿后连续投影)
 			var at = a2 - SHIELD_GLOW_TRAIL   // 拖影（沿轨道后方）
-			var oxt = _ihA.x + Math.cos(at) * orbR, oyt = _ihA.y + Math.sin(at) * orbR
+			var oxt = _iax + Math.cos(at) * orbR, oyt = _iay + Math.sin(at) * orbR   // 方向1：护盾拖影浮点(残差补偿后连续投影)
 				ctx.globalAlpha = 0.3; ctx.strokeStyle = 'rgba(255,225,140,0.9)'; ctx.lineWidth = 5; ctx.lineCap = 'round'
 				ctx.beginPath(); ctx.moveTo(oxt, oyt); ctx.lineTo(ox2, oy2); ctx.stroke(); ctx.globalAlpha = 1
 				ctx.beginPath(); ctx.arc(ox2, oy2, 6, 0, M.PI2); ctx.fillStyle = 'rgba(255,235,160,0.95)'; ctx.fill()   // 发光球（白金）
@@ -473,22 +516,12 @@ function drawChargeArrow(e) {
 	if (_fpsAcc >= 0.5) { _fps = Math.round(_fpsFrames / _fpsAcc); _fpsAcc = 0; _fpsFrames = 0 }
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 	ctx.fillStyle = '#0d0f1a'; ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
-	// 相机：每模拟步(GS.frame 变化)推进一次(updateCamera 用模拟头 h.x)；渲染按 _ra 在 camPrev→cam 间线性插值 → 与蛇头(lerp(px,x,_ra))共用同一 _ra、同匀速 → 头相对相机恒定、零抖（2026-07-23e 误改"每帧追 interpHead"已回退：该改使相机 followLerp 指数追每帧因 _ra 变化的插值头→相对滑动=移动糊）
+	// 相机(原生帧时间步进·2026-07-23t)：模拟按真实帧时间推进→蛇头/相机均渲染当前真实位姿(_ra=1)，运动=面板刷新率→零 judder。相机每帧按 __FRAME_DT 做帧率无关缓动(updateCamera 内部)，不再用 camPrev/_ra 二次插值
 	var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0); worldScale = ws   // ws 提到此处：供下方锁定模式 clamp 与像素吸附共用（单一真相源）
 	var rcx, rcy
-	if (window.__CAM_LOCK) {
-		// 锁定插值头(A/B 候选·消头抖)：相机每帧直接 = interpHead + lookAhead，去除 followLerp 滞后与 camPrev/cam 插值节拍差 → 头相对屏幕恒定、彻底消"中段一顿一顿"。~ 调参器可开关
-		var _ih = interpHead(); if (!_ih) { _ih = { x: cam.x, y: cam.y, ang: 0 } }
-		var _lk = (CAM && CAM.lookAhead) || 0
-		rcx = _ih.x + Math.cos(_ih.ang) * _lk; rcy = _ih.y + Math.sin(_ih.ang) * _lk
-		var _hw = GAME.logicalWidth / 2 / ws, _hh = GAME.logicalHeight / 2 / ws   // 缩放后可见半幅（与 updateCamera 一致，clamp 边界不越界）
-		rcx = M.clamp(rcx, _hw, GAME.worldWidth - _hw); rcy = M.clamp(rcy, _hh, GAME.worldHeight - _hh)
-		cam.x = rcx; cam.y = rcy   // 回写 cam：inView 剔除(287) 与 profiler 可见数(15_profiler:35) 依赖 cam，锁模式须同步否则误剔除
-	} else {
-		// 默认：相机每模拟步推进一次(camPrev→cam)，渲染按 _ra 插值（旧逻辑，保留作对照）
-		if (GS.frame !== _lastFrame) { _lastFrame = GS.frame; camPrev.x = cam.x; camPrev.y = cam.y; updateCamera() }
-		rcx = M.lerp(camPrev.x, cam.x, _ra); rcy = M.lerp(camPrev.y, cam.y, _ra)
-	}
+	// 相机(2026-07-23z·移除 __CAM_LOCK 失败实验)：永远走 updateCamera 帧率无关缓动(低通滤波消逐帧微抖动)。__CAM_LOCK 曾 1:1 硬锁蛇头→绕过缓动把蛇速逐帧起伏透传到世界滚动→中心区顿(用户实测确诊)；其默认本就关，删除杜绝 footgun
+	updateCamera()
+	rcx = cam.x; rcy = cam.y
 	diagCamTick(rcx, rcy)   // DIAG：相机屏幕位移直方图（window.__SNAKE_DIAG=true 时生效）
 	diagHeadTick(rcx, rcy)  // DIAG：蛇头屏幕位移直方图（区分"相对运动不同步" vs "worldScale shimmer"）
 	// 任务2+❷：本帧蒸汽齐爆聚合 → T1 轻档一次（addTrauma 节流防常震脱敏）；单体(<manyMin)→T0 不震
@@ -500,9 +533,10 @@ function drawChargeArrow(e) {
 	var traumaMag = trauma * SHK.maxComposite   // ④-B：trauma 通道折算成屏震幅度（≤maxComposite）
 	if (traumaMag > mag) { mag = traumaMag }
 	if (RT('PERF.suppressShake', perfFB('suppressShake', false) ? 1 : 0) > 0) { mag = 0 }   // 自适应分级：POTATO 档关屏震；GM 经 editor.rtSet 仍优先
-	trauma = Math.max(0, trauma - SHK.steam.decayPerSec / GAME.fps)   // ④-B：trauma 时间窗衰减，多次引爆不线性叠加（N爆≠N震）
+	trauma = Math.max(0, trauma - SHK.steam.decayPerSec * (global.__FRAME_DT || (1 / GAME.fps)))   // ④-B：trauma 时间窗衰减(帧率无关，*真实帧时间)
 	var ox = 0, oy = 0
 	if (mag > 0) { ox = M.rand(-mag, mag); oy = M.rand(-mag, mag) }
+	_shakeOx = ox; _shakeOy = oy   // 暴露本帧屏震偏移(设备px)给诊断:disp 须扣,否则随机 shake 污染台阶
 	ctx.save()
 	ctx.translate(GAME.logicalWidth / 2 + ox, GAME.logicalHeight / 2 + oy)   // 屏幕中心为锚（shake 在屏幕空间，不随缩放变）
 	ctx.scale(ws, ws)                       // ① 先缩放（围绕屏幕中心）：ws 已在相机块计算（worldScale 仅改显示尺寸，不掺入相机平移）
@@ -511,7 +545,9 @@ function drawChargeArrow(e) {
 	//   且地图中段相机自由滚→抖、边缘 clamp 卡死→不抖，精确对应实测。吸附后世界永远落在像素网格上滚动、不再逐帧重采样，抖动消除。
 	//   残差<1 设备像素(≈0.5 CSS px)肉眼不可见；蛇头仍用未吸附 rcx/rcy 画、不引入顿挫。性能零损耗(仅 2 次 Math.round/帧)。
 	var rcxS = rcx, rcyS = rcy
-	if (window.__PIXEL_SNAP !== false) { var _snap = ws * dpr; rcxS = Math.round(rcx * _snap) / _snap; rcyS = Math.round(rcy * _snap) / _snap }
+	if (window.__PIXEL_SNAP !== false) { var _snap = ws * dpr; rcxS = Math.round(rcx * _snap) / _snap; rcyS = Math.round(rcy * _snap) / _snap; _snapGrid = _snap } else { _snapGrid = 0 }   // _snapGrid 暴露给 _ix/_iy/snapWX/Y：移动实体相对相机单次取整吸附→整片世界(含蛇)落整数设备像素滚动，亚像素重采样 shimmer 消除；中心闪修复见 snapWX/Y
+	_camX = rcx; _camY = rcy   // 暴露未吸附真值相机给 snapWX/Y 做「相对相机单次取整」(中心闪修复·2026-07-23f)
+	if (window.__DIAG_FLICKER) { diagFlickerTick(rcx, rcy, rcxS, rcyS) }   // 中心闪诊断：每帧采样蛇头屏幕位置(受吸附 vs 真值)，供 GM 矩阵检测双重取整 toggle
 	ctx.translate(-rcxS, -rcyS)
 	drawBounds()
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
@@ -644,7 +680,7 @@ function drawDebugHud() {
 	})
 	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零
 
-	var Render = { init: init, resize: resize, draw: draw, camera: cam, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
+	var Render = { init: init, resize: resize, draw: draw, camera: cam, getFlickerSample: function () { return { head: _flkHead, body: _flkBody } }, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
 	Registry.register('render', Render)
 	Log.info('render 就绪：镜头跟随 + 世界绘制 + 四档屏震')
 
