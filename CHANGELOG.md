@@ -13,6 +13,16 @@
 - **是否动 §9 / core / collision / 玩法数值 / 阶段1-3 渲染**：**否**（纯 UI 布局/配色）。
 - **验收**：①按 B/V 不再有顶部横幅、波次条可见；②回血文字贴近心形；③HUD 胶囊贴内容不空、配方提示折行不溢出；④结算框外见游戏、框内实底清晰；⑤九项文字清晰；⑥失败按钮深底彩描边不丑。
 
+## 2026-07-25c · fix(ui): 左上状态簇重排(fit-content 不裁切) + 结算九项图标左/标签中/数值右 + 走马灯连续不重复（build 20260725c）
+- **目标**：用户实测反馈三处——①结算居中方向做反了(应"图标左/标签中/数值右、数值正常亮度")；②HUD 左上数据框是固定短宽裁切框(超框/截断根因)，且生命框与数据框非一组；③走马灯"再贪一口"等长蛇池耗尽后重复。
+- **改动文件**：`12_ui.js`（`init` 布局 / `refreshHUD` / `renderScoreboard` / `buildFlashbackLines`）。
+- **①左上状态簇重排(HUD 硬约束)**：`hudLife`+`hudData` 收进新容器 `hudStatus`(absolute, left/top:16px+safe-area, flex column, gap:8px)，整体作一组。两框均 `position:relative`+`width:fit-content`+`max-width:calc(100vw - 32px)`+`padding:6px 12px`(左右≥12px)、**删 overflow:hidden/ellipsis**；`hudData` 改 `display:inline-flex;flex-wrap:wrap;white-space:normal`，每指标 nowrap 成块、超宽自动换行绝不裁字。数据格式改为「长度 X ｜ 击杀 X ｜ 得分 X ｜ 连杀 ×X」(× 全角)。`refreshHUD` 加 CB 自检：`scrollWidth ≤ clientWidth` 否则 `Log.warn('[ui][CB] ... 溢出')`。
+- **②结算九项方向修正**：图标 `flex:none` 靠左；标签 `flex:1;text-align:center` 居中；数值 `flex:none;text-align:right;font-weight:800` 靠右且**恢复正常亮度**(textMain，不再 textDim)，成就显著；两行均 textMain 统一。
+- **③走马灯连续不重复**：`buildFlashbackLines` 重写——候选1=未用过且≠上一句(优先)，候选2=任何≠上一句(池耗尽时退用已用行)，兜底=全池；`seenStage` 仍扩散使用；收尾 `headClosingLine` 与末句相同则跳过。彻底消除"再贪一口——这个念头，它听过很多次"等连续/重复行(长蛇每节 push token→48 节 48 token 已验证不破此约束)。
+- **Combo 状态**：保持图标化(`renderComboBadges`，P0-4 已做，未动)。
+- **是否动 §9 / core / collision / 玩法数值 / Bus 链路 / 阶段1-3 渲染**：**否**（纯 CSS 布局 + 文案）。
+- **验收**：①左上为一组两行、16px 边距、数值完整；②得分/连杀临时改 6 位数仍不破版不截断(`flex-wrap`+`fit-content`)；③结算图标左/标签中/数值右且数值亮；④走马灯无连续重复；⑤lint 全清、无悬挂引用；⑥console 无 `[ui][CB] 溢出` 告警。
+
 ## 2026-07-25b · fix(ui): 结算九项居中 + 「连携」回归 GDD 真源词「羁绊」（build 20260725b）
 - **目标**：用户实测反馈——结算九项文字未居中；且「连携」一词查 GDD §8.7.3 应为「羁绊」。
 - **改动文件**：`12_ui.js`（`renderScoreboard`）。
