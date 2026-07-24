@@ -2,6 +2,26 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-24j · fix: 修"一进游戏卡暂停/只在点击后跑"（updateJoyVisual 作用域错位）（build 20260724j）
+- **目标**：修复进入 playing 后蛇不前进、必须点击激活摇杆才运行的致命 bug（控制台稳定报 `Uncaught ReferenceError: updateJoyVisual is not defined`）。
+- **改动文件**：`snake55/14_main.js`（仅输入层；`02_config.js` 无变化）。
+- **一句话**：`updateJoyVisual` 被误置于 `boot()` 内嵌套作用域，而模块级 `frame()` 每帧于仿真循环**之前**调用它；playing 态且未激活摇杆（`!joy.active`）时每帧抛 `ReferenceError` → 仿真循环永不执行 → 表现为「卡住/暂停」，仅有点击激活摇杆（`joy.active=true` 跳过该分支）才跑。修复=将 `updateJoyVisual` 提升为模块级函数（与 `joyBaseScreen`/`joyBaseLogical` 同级），崩溃消除，playing 态持续仿真。
+- **是否动 §9 / core / collision / 玩法数值 / 02_config**：**否**（纯输入层作用域修复）。
+- **验收**：①强刷见绿色横幅 `build v=20260724j`（排除旧缓存）；②点「开始」后蛇立即持续前进，不再需额外点击；③桌面鼠标移动即转向（无需按住）；④控制台不再出现 `updateJoyVisual is not defined`。
+
+## 🗄 遗留可回退版本 · 无摇杆·鼠标悬停绝对瞄准（git tag: `pre-joystick`）
+- **背景**：2026-07-24e~j 引入「固定锚点浮动虚拟摇杆」替代原「鼠标悬停绝对瞄准 + 键盘 + 触摸相对摇杆」输入方案。用户要求保留一键改回原方案的能力（不排除未来回退），故锁定基线并记下还原法。
+- **基线**：`git tag pre-joystick` = 引入摇杆前最后一次提交（`89dfb69`，build `20260724b`）。该基线 `14_main.js` **不含** `joyBase/joyDown/updateJoyVisual/固定锚点摇杆`；`02_config.js` 的 `INPUT.touch` 仅 `{ deadZone: 18 }`（无 `baseFracX/Y/baseRadius/knobRadius/travelFrac/idleOpacity/activeOpacity`）。
+- **原方案设计**（基线内 `14_main.js` 顶部注释「2025-07-10 鼠标绝对瞄准」）：鼠标移动即转向（`cursor.angle` 相对屏心，pointermove 免按住）+ 键盘(Arrow/WASD) + 触摸相对摇杆；无浮动摇杆 DOM、无 `aimFromEvent` 外的常驻视觉。
+- **一键改回**（仅还原输入层两文件，不动 `06_snake`/core/collision/§9/其他系统）：
+  ```bash
+  git checkout pre-joystick -- snake55/14_main.js snake55/02_config.js
+  ```
+  随后浏览器强刷（Ctrl+Shift+R）即可回到无摇杆·鼠标悬停方案。
+- **⚠ 配套约束**：`14_main.js` 与 `02_config.js.INPUT.touch` **必须一起还原**（两者配套）。仅还原其一会使旧代码读不到新 `touch` 字段（无害但不配对）。该基线无摇杆 DOM/瞄准逻辑，无需改 `index.html`（仍只加载 `14_main.js`）。
+- **是否动 §9 / core / collision**：回退本身零改动数值/底层；仅输入层两文件回到基线状态。
+- **验收（回退后）**：①`git show pre-joystick:snake55/14_main.js | grep -c updateJoyVisual` 返回 0（确认无摇杆代码）；②强刷后鼠标移动即转向、无浮动摇杆；③控制台无 joystick 相关异常。
+
 ## 2026-07-24e · fix(ui): GATE B 收尾·顶部横幅/结算框/九项提亮/回血间距/胶囊比例（build 20260724d）
 - **目标**：按用户实测反馈修 GATE B 遗留的 6 处 UI 问题，纯表现/布局，零玩法改动。
 - **①顶部监测横幅**：删除 `14_main.js` 的 `_statusBanner()` 及 B/V 键调用（B=像素吸附、V=重量特效诊断开关保留、仅不再弹 `top:8px` 居中 z-index 9999 横幅，因其压住顶部波次条）。
