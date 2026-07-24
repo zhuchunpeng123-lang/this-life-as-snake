@@ -227,17 +227,18 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			[SCORE_ICON.kills, '斩获', '撞咬 ' + GS.kills + ' 次'],
 			[SCORE_ICON.streak, '最高连杀', GS.killStreakMax + ' 连杀'],
 			[SCORE_ICON.score, '割草得分', String(GS.score + GS.comboScore)],
-			[SCORE_ICON.combo, '发现的连携', '连携 ' + comboCount + ' / 5'],
+			[SCORE_ICON.combo, '发现的羁绊', '羁绊 ' + comboCount + ' / 5'],
 			[SCORE_ICON.verdict, '蛇生评语', verdict],
 			[SCORE_ICON.highlight, '高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
 			[SCORE_ICON.lives, '第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
 		]
 		var box = mk('div', 'margin-top:8px;width:100%;display:flex;flex-direction:column;gap:6px', stage)
 		for (var i = 0; i < rows.length; i++) {
-			var card = mk('div', 'display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)
+			var card = mk('div', 'display:flex;align-items:center;justify-content:center;gap:10px;padding:7px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)
 			mk('span', 'font-size:18px;line-height:1', card).textContent = rows[i][0]
-			mk('span', 'flex:1;color:' + STYLE.textMain + ';font:500 14px system-ui', card).textContent = rows[i][1]
-			mk('span', 'color:' + STYLE.textMain + ';font-weight:700;font:600 14px system-ui;text-align:right', card).textContent = rows[i][2]
+			var t = mk('span', 'color:' + STYLE.textMain + ';font:600 14px system-ui;text-align:center', card)
+			mk('b', 'font-weight:800', t).textContent = rows[i][1]
+			mk('span', 'font-weight:500;color:' + STYLE.textDim, t).textContent = '　' + rows[i][2]
 		}
 	}
 
