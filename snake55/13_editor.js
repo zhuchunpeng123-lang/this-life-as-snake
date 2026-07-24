@@ -305,7 +305,7 @@
 
 		// 关闭按钮（移动端无 ~ 键也能关 GM 面板）
 		var closeBtn = panel.querySelector('#ed_close')
-		if (closeBtn) { closeBtn.onclick = toggle }
+		if (closeBtn) { closeBtn.onclick = function () { Bus.emit('editor:toggle') } }   // ×按钮同样走 Bus（不再直接 toggle），与 ~键统一，避免 _gmOpen 错位卡死
 
 
 		// 折叠
@@ -638,11 +638,12 @@
 	}
 	function toggle() { open = !open; panel.style.display = open ? 'block' : 'none'; if (open) { dirty = false; SLIDERS = []; render(); if (tuneTimer) { clearInterval(tuneTimer) } tuneTimer = setInterval(refreshTuneLevels, 300) } else { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = null } } }   // 面板开时每 300ms 实时刷新等级/高亮；关时清理
 
-	document.addEventListener('keydown', function (e) { if (e.key === '`' || e.key === '~') { if (!panel) { build() } toggle() } })
+	document.addEventListener('keydown', function (e) { if (e.key === '`' || e.key === '~') { Bus.emit('editor:toggle') } })   // 统一走 Bus：~ 键 / ⚙按钮 / ×按钮 三个入口全都 emit，确保 13_editor.open 与 14_main._gmOpen 永远同步翻转（修"面板关但摇杆卡死"错位）
 	Bus.on('editor:toggle', function () { if (!panel) { build() } toggle() })   // 移动端无 ~ 键：经 12_ui 的 ⚙GM 按钮触发
 
 	function build() {
 		panel = document.createElement('div')
+		panel.id = 'gm_editor_panel'   // 暴露 id 供 14_main 摇杆在 GM 面板内拖拽时排除误触（GM 开着也能操控摇杆）
 		panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:320px;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:60;box-shadow:-4px 0 18px #000'
 		document.body.appendChild(panel)
 		GS.tuningSandbox = GS.tuningSandbox || false   // B-GM 沙盒标志（dev，默认关）

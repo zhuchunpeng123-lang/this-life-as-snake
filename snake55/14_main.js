@@ -117,8 +117,8 @@
 	var joy = { active: false, dx: 0, dy: 0, pid: null }
 	var _gmOpen = false   // GM 编辑器打开标志：经 Bus('editor:toggle') 与 13_editor 内部 open 同步翻转（零改 editor）
 	var joyBase = null, joyKnob = null   // 摇杆视觉 DOM（固定锚点、常驻淡显；pointer-events:none 不吞 UI 点击）
-	// 6① 挂起：任一模态/面板打开时摇杆不接管（不误转向、不吞 UI 点击）——菜单 / 3选1 / 暂停 / 结算 / GM
-	function inputBlocked() { return GS.status !== 'playing' || _gmOpen }
+	// 6① 挂起：菜单 / 3选1 / 暂停 / 结算 时摇杆不接管——GM 不再禁摇杆（用户要 GM 开着也能试玩操控；面板内拖拽由 joyDown 排除 #gm_editor_panel 防误触）
+	function inputBlocked() { return GS.status !== 'playing' }
 	function joyRelease() {
 		joy.active = false; joy.pid = null; joy.dx = 0; joy.dy = 0
 		if (joyKnob) { joyKnob.style.opacity = '0' }   // 底座常驻淡显由 frame() 驱动；仅推钮归零
@@ -127,7 +127,9 @@
 	function joyBaseScreen() {
 		var r = canvas.getBoundingClientRect()
 		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		return { x: r.left + r.width * (jc.baseFracX != null ? jc.baseFracX : 0.84), y: r.top + r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80) }
+		var bx = (jc.baseFracX != null ? jc.baseFracX : 0.84)
+		if (_gmOpen) { bx = 0.16 }   // GM 面板占右侧320px→摇杆锚点移到左侧，避免被面板盖住、方便试玩操控
+		return { x: r.left + r.width * bx, y: r.top + r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80) }
 	}
 	// 固定锚点逻辑坐标（输入死区判定用，与屏幕锚点同源）
 	function joyBaseLogical() {
@@ -317,7 +319,7 @@
 		if (GS.status !== 'playing' && joy.active) { joyRelease() }   // 6① 任何非 playing 模态(3选1/暂停/结算/菜单)弹出即挂起摇杆（不误转向/不吞点击）
 		// 固定锚点摇杆常驻：playing 且未开 GM → 底座淡显(常驻提示操作区)，激活时转亮；非 playing/GM → 整体隐藏（含推钮）
 		var _jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		var _showBase = (GS.status === 'playing' && !_gmOpen)
+		var _showBase = (GS.status === 'playing')   // GM 开着也显示摇杆底座（用户要 GM 时也能操控；锚点由 joyBaseScreen 移到左侧避开面板）
 		if (joyBase) { joyBase.style.opacity = _showBase ? (joy.active ? String(_jc.activeOpacity != null ? _jc.activeOpacity : 0.96) : String(_jc.idleOpacity != null ? _jc.idleOpacity : 0.5)) : '0' }
 		if (!_showBase && joyKnob) { joyKnob.style.opacity = '0' }
 		if (_showBase && !joy.active) { var _bs = joyBaseScreen(); updateJoyVisual(_bs.x, _bs.y) }   // 常驻(未激活)时也把底座钉在固定锚点，否则停在初始 (0,0) 左上角
@@ -423,6 +425,7 @@ function buildStart(wrap) {
 			if (joy.active) { return }                  // 6② 已锁定首指，多指忽略（不重置锚点）
 			// HUD 按钮(暂停/全屏/GM，均在 #ui-stage 内且 pointer-events:auto)点击不误触摇杆；游戏画布/开始/结算遮罩不在 #ui-stage → 正常激活
 			if (GS.status === 'playing' && e.target && e.target.closest && e.target.closest('#ui-stage')) { return }
+			if (e.target && e.target.closest && e.target.closest('#gm_editor_panel')) { return }   // GM 面板(右侧320px)内拖拽不误触摇杆（GM 开着也能操控摇杆→只在面板外激活）
 			var p = toLogical(e), b = joyBaseLogical()
 			joy.dx = p.x - b.x; joy.dy = p.y - b.y     // 方向=指针相对「固定锚点」向量（底座永不居中，不盖蛇）
 			joy.active = true; joy.pid = e.pointerId

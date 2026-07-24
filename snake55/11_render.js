@@ -8,11 +8,12 @@
 	// 配色红线：蛇身/蛇尾读 STYLE.player（= 蛇头 PNG 同一个绿）；旧 COL.snakeBody/snakeHead 仅兼容保留、新代码不引用
 	var SNAKE_BODY = STYLE.player
 	var SNAKE_HEAD = STYLE.player
+	var SNAKE_BODY_HI = STYLE.playerHi   // 身体高光(主绿提亮一档)：径向渐变中心，使平涂圆身有与 PNG 头同源的受光感→消"头身色差"观感
 	// 蛇头朝向/眼睛约定（纯渲染，零 gameplay）
 	// 内部渲染约定：局部 +x = 世界前进方向（ctx.rotate(heading) 后局部 +x 指向移动方向）。
 	// 美术按「朝上=前进」交付（契约 §七），故对 snake_head 精灵加具名 +90° 偏移使其 snout 对齐 +x；fallback 圆对称、不受影响。
 	var ART_FORWARD_OFFSET_RAD = Math.PI / 2
-	// 眼睛/舌头：忠实绘制 PNG（PNG 自带靠后眼睛 + 圆舌头 + 露嘴）；并在其上叠代码眼（PNG 无眼/眼不明显时保底，且保证"一定有眼睛"；比例按 headR，瞳孔朝局部 +x=前进）
+	// 蛇头：忠实绘制 PNG（PNG 自带眼睛）；其上叠代码眼（精准贴 PNG 眼位、盖住小眼，保证"一定有眼睛"且只眨；比例按 headR，瞳孔朝图像前方=前进）
 	// 身体已回退为「逐节离散步圆」（drawBodyTube），不再用收颈连续管 → 删除旧 NECK_R_FRAC/NECK_ARC_FRAC 死常量
 	var TELEGRAPH_BLINK_HZ = 8          // TODO: 冲锋怪蓄力闪红频率（候选 6 / 10）
 	var TELEGRAPH_ARROW_LEN = 22        // TODO: 蓄力方向箭头长度 px（候选 18 / 28）
@@ -117,13 +118,20 @@
 	// 职责：manifest 登记精灵 → init 一次性预载（每帧不 new/decode）→ drawSprite 按判定半径算缩放接图；无图/404/NaN 一律回退代码画（零破功）。
 	// 铁律：①判定半径只读不改（getSpriteRadius 仅从冻结 CONFIG/RT 读）；②缩放系数由判定半径算，禁魔法数字；③保留代码画 fallback，绝不白屏/抛错。
 	var ASSETS_BASE = 'assets/'   // 相对 index.html（index.html 与 assets/ 同处 snake55/）→ 任意服务/打开方式（项目根/ snake55/ 根 / file://）均正确；原 'snake55/assets/' 会被拼成 …/snake55/snake55/assets/ 全 404（#M0 复查修）
+	var SPRITE_VER = 'b838778fc7'   // 贴图缓存戳：与 index.html ?v 同步递增，破浏览器对 PNG 的历史 404/旧响应缓存（贴图 src 不加戳 → 旧 404 被缓存后永 fallback）
 	var SPRITE_MANIFEST = {
 		// file=待放 PNG（当前 assets 为空 → 全部 404 → 永远走 fallback）；radiusKey 即 RT 的 path，也是 SPRITE_BASELINE 的 key
-		// solidDiameterPx = 头部「实际内容直径」(PNG 像素)，缩放 = 渲染半径*2 / solidDiameterPx（视觉=渲染半径·与碰撞解耦）；2026-07-23 用 Python 离线量得 snake_head 内容宽 628px（整张 1024 含脖子 795，脖子底部宽 315≈头宽一半）→ 按 628 缩放使视觉头直径=2×渲染半径(26)；碰撞圈独立用 headRadius(14)；旧按整张 1024 会让头显小、被迫把 headRadius 拉到 27；body/tail 待接真图时同理量取填入
-		snake_head: { file: 'snake_head.png', radiusKey: 'PLAYER.headRadiusRender', solidDiameterPx: 628, pivot: [0.5, 0.5] }
+		// solidDiameterPx = 头部「实际内容直径」(PNG 像素)量测值；⚠️ 2026-07-24b 起头缩放已回退到「整张图缩到 2×渲染半径」(getSpriteOff 用 dispCss=r*2)，此字段不再驱动头大小，仅留作 PNG 量测记录（不透明包围盒宽 612px、颈底 y=909→中心下397px）。headRadiusRender 26→30 仅「改大一点点」，视觉头直径≈1.2×此值(≈36px，比身体24px大一点点)；碰撞圈独立用 headRadius(14)
+		snake_head: { file: 'snake_head.png', radiusKey: 'PLAYER.headRadiusRender', solidDiameterPx: 612, pivot: [0.5, 0.5] }
 		// snake_body/snake_tail 已不用：身体改纯代码逐节圆(drawBodyTube) → 删除其 manifest 项消 404 控制台噪音；待接真图时再加回并量 solidDiameterPx
 	}
 	var _spriteCache = {}   // key → Image（init 一次性创建，每帧复用，绝不 new）
+	// 敌人贴图清单（守卫式）：按 type 加载；缺图/失败 → drawEnemySprite 返回 false → 调用方按 type 走代码画兜底（零破功）。
+	// 文件名严格对应 type；源图 512×512 透明 PNG（本身不带发光/背景），威胁色光环由代码叠加（见 drawEnemySpriteWithFx）。
+	var ENEMY_SPRITE_FILE = {
+		wanderer: 'enemy_wanderer.png', chaser: 'enemy_chaser.png', charger: 'enemy_charger.png',
+		elite: 'enemy_elite.png', boss: 'enemy_boss.png'
+	}
 	// SPRITE_BASELINE：半径读取基线，key = manifest.radiusKey（RT 的 path），值 = 冻结 CONFIG 基线。
 	// 读取时机：本文件在 03_core.deepFreeze(CONFIG) 之后才加载（index.html 顺序）→ PLAYER.headRadiusRender 此刻已是 config-override 注入后的冻结值 → 视觉只读 headRadiusRender（渲染半径），与碰撞 headRadius 解耦（视觉≥判定）。
 	var SPRITE_BASELINE = {
@@ -146,10 +154,22 @@
 			var rec = { img: img, ready: false, failed: false }
 			img.onload = (function (r) { return function () { r.ready = true } })(rec)   // 加载成功 → 标记 ready，drawSprite 才接图
 			img.onerror = (function (r) { return function () { r.failed = true } })(rec)  // 404/损坏 → 标记 failed，drawSprite 永久走 fallback（永不重试）
-			img.src = ASSETS_BASE + entry.file
-			_spriteCache[key] = rec
-		}
+		img.src = ASSETS_BASE + entry.file + '?v=' + SPRITE_VER
+		_spriteCache[key] = rec
 	}
+	// 敌人贴图（守卫式）：缺图/失败 → 该 type 回退代码画（drawEnemySprite 返回 false），不抛错、不报 404 红框（index.html 兜底已忽略资源加载错误）
+	for (var ek in ENEMY_SPRITE_FILE) {
+		if (!ENEMY_SPRITE_FILE.hasOwnProperty(ek)) { continue }
+		var ekey = 'enemy_' + ek
+		if (_spriteCache[ekey]) { continue }
+		var eimg = new Image()
+		var erec = { img: eimg, ready: false, failed: false }
+		eimg.onload = (function (r) { return function () { r.ready = true } })(erec)
+		eimg.onerror = (function (r) { return function () { r.failed = true } })(erec)
+		eimg.src = ASSETS_BASE + ENEMY_SPRITE_FILE[ek] + '?v=' + SPRITE_VER
+		_spriteCache[ekey] = erec
+	}
+}
 	// 头 PNG 预渲染到「显示分辨率」离屏 canvas，并把旋转角烘焙进位图（按 ROT_BUCKET 分桶缓存）：同桶内角位图只栅格化一次→每帧 1:1 取用、零每帧旋转重采样→消头位图爬行/shimmer（矢量身体圆无此问题、故仅头显顿挫）；旧版只预渲染未旋转图、由 drawSnake 每帧 ctx.rotate 旋转该位图→每帧重采样=头闪根因
 	var _spriteOff = {}
 	var ROT_BUCKET = Math.PI / 60   // 旋转角缓存桶(3°)：桶内角共享同一预栅格化位图；跨桶才重栅格化→方向每 3° 干净跳变(非 shimmer)、肉眼无碍
@@ -162,6 +182,8 @@
 		if (!c || !c.ready || !c.img) { return null }
 		var entry = SPRITE_MANIFEST[key]
 		var sd = (entry.solidDiameterPx > 0) ? entry.solidDiameterPx : (c.img.naturalWidth || 1)
+		var nw = c.img.naturalWidth || 1024
+		// 头缩放回退到用户认可的「之前版本」：整张图缩到 2r（视觉头直径≈1.2×渲染半径、与身体 2×bodyR 协调，不撑爆）；此前按 solidDiameterPx 满缩放把头撑到 2r(60px)过大，已弃用。headRadiusRender 仅 26→30「改大一点点」走 config。
 		var dispCss = r * 2
 		var dpr = global.devicePixelRatio || 1
 		var dispPx = Math.max(1, Math.round(dispCss * dpr))
@@ -183,7 +205,7 @@
 		var img = c.img, nw = img.naturalWidth, nh = img.naturalHeight
 		if (!(nw > 0 && nh > 0)) { return false }             // 兜底：naturalWidth=0（损坏）不进 drawImage
 		var sd = (entry.solidDiameterPx > 0) ? entry.solidDiameterPx : nw   // 缩放基准：优先用「头部实际内容直径」(离线量取)，缺省回落整张 nw
-		var scale = (r > 0) ? (r * 2 / sd) : 0   // 按内容直径缩放：视觉头 = 2r（看到=打到），不再被 PNG 透明留白/整张尺寸带偏（#M1 修正）
+		var scale = (r > 0) ? (r * 2 / nw) : 0   // 退化路径与离屏一致：整张图缩到 2r（与 getSpriteOff 同逻辑，首帧/未就绪时头不会突然撑大）
 		if (!(scale > 0)) { return false }                    // !(scale>0) 同时兜住 NaN/0/负 → 永不进 drawImage
 		ctx.save()
 		ctx.translate(x, y)
@@ -198,7 +220,49 @@
 		ctx.restore()
 		return true
 	}
-	function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
+	// —— 敌人守卫式贴图（混合路线：PNG 优先 + 代码画兜底）——
+	// drawEnemySprite：已在头中心 translate 后、由调用方设好 flipX/动画缩放的上下文中绘制；居中铺满直径 d；返回 true=已画 / false=未就绪·失败。绝不抛错、函数内绝不 new Image。
+	function drawEnemySprite(ctx, type, d) {
+		var rec = _spriteCache['enemy_' + type]
+		if (!rec || rec.failed || !rec.ready) { return false }
+		var img = rec.img, nw = img.naturalWidth, nh = img.naturalHeight
+		if (!(nw > 0 && nh > 0)) { return false }   // 损坏图不进 drawImage
+		ctx.drawImage(img, -d / 2, -d / 2, d, d)     // 512 源图等比缩到直径 d（billboard：调用方已做 flipX/缩放变换）
+		return true
+	}
+	// 敌人贴图 + 威胁色光环 + 程序化动画（idle bob + squash&stretch）；billboard 只 flipX 不旋转。
+	// 缺图/失败 → 返回 false → drawEnemies 走代码画兜底。贴图任何情况都画出来（glowMax 超量只降发光、不降贴图本身）。
+	function drawEnemySpriteWithFx(e, t, ix, iy, hx, hy) {
+		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
+		var vs = vsTab[e.type] || 1.2
+		var d = e.radius * 2 * vs
+		// billboard：仅水平速度 flipX（左移翻面）；绝不旋转（只有蛇头旋转）
+		var vx = (e.prevX != null) ? (e.x - e.prevX) : Math.cos(e.angle || 0)
+		var flipX = vx < 0
+		// 程序化动画：idle 上下 bob + 轻微 squash&stretch（纯视觉，snake 节奏）
+		var bob = Math.sin(t * 2 + e.id * 1.3) * (e.radius * 0.08)
+		var sq = 0.05 * Math.sin(t * 3 + e.id)
+		var sx = 1 + sq, sy = 1 - sq
+		// 威胁色光环（下层发光，贴图本身不带光）：缓存径向渐变 drawImage，便宜且不受 glowMax 影响（任何情况都画）
+		drawHalo('enemy_' + e.type, ix, iy, d * 0.72, enemyColorByType(e.type), 0.22)
+		ctx.save()
+		ctx.translate(ix, iy + bob)
+		ctx.scale(flipX ? -1 : 1, 1)   // 水平翻转（billboard）
+		ctx.scale(sx, sy)              // squash&stretch
+		var ok = drawEnemySprite(ctx, e.type, d)
+		ctx.restore()
+		return ok
+	}
+	// 受击白闪覆盖（套在贴图之上，不替换贴图）：白圆按视觉直径覆盖
+	function drawEnemyFlashOverlay(e, ix, iy) {
+		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
+		var vs = vsTab[e.type] || 1.2
+		ctx.save()
+		ctx.globalAlpha = 0.6
+		ctx.beginPath(); ctx.arc(ix, iy, e.radius * vs, 0, M.PI2); ctx.fillStyle = COL.damageText; ctx.fill()
+		ctx.restore()
+	}
+function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
 
 	// 任务2：屏震分档节流（真源 §2.2.1「严禁单一强度轰炸·防脱敏」）
 	//   rank: 1=T1 light / 2=T2 process / 3=T3 crit·death；gate 来自 SHK.gateSec
@@ -406,32 +470,66 @@
 			ctx.beginPath(); ctx.arc(x, y, r * 1.35, 0, M.PI2); ctx.strokeStyle = STYLE.elite; ctx.lineWidth = 2; ctx.stroke()
 		})
 	}
-	function drawBossBody(b, t) {   // Boss 专属轮廓 + 读现有 boss.phase 分阶段变色（不新增字段/数值）+ 呼吸光环 + 无敌白热闪 + 受击浅闪
+	function drawBossBody(b, t) {   // Boss=owl PNG（enemy_boss）+ 呼吸动作 + 相位环 + 无敌白热闪 + 受击浅闪；缺图回退尖壳
 		var x = _ix(b), y = _iy(b), r = b.radius
-		var col = b.phase >= 2 ? '#ff5ab0' : STYLE.boss           // 阶段2 更烈的品红
-		if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { col = '#ffffff' }   // 换阶段无敌期白热闪（读 invuln）
-		else if (b.flashT > 0) { col = '#ffdff0' }               // 受击浅闪（读 flashT）
+		var vs = (CONFIG.RENDER.spriteVisualScale && CONFIG.RENDER.spriteVisualScale.boss) || 2.4
+		var d = r * 2 * vs
+		// 呼吸：平时慢呼吸(±3%)；开火前(fireT<0.4 且非无敌期)吸气鼓大→释放（纯视觉，不动 radius/弹幕逻辑）
+		var breath = 1 + 0.03 * Math.sin(t * 2.1)
+		if (b.invuln <= 0 && b.fireT < 0.4) {
+			var inh = Math.max(0, Math.min(1, (0.4 - b.fireT) / 0.4)); breath += inh * inh * 0.12
+		}
+		var ringCol = b.phase >= 2 ? '#ff5ab0' : STYLE.boss
+		var ready = _spriteCache['enemy_boss'] && _spriteCache['enemy_boss'].ready
+		ctx.save(); ctx.translate(x, y)
+		var vx = (b.prevX != null) ? (b.x - b.prevX) : 0
+		if (vx < 0) { ctx.scale(-breath, breath) } else { ctx.scale(breath, breath) }   // billboard 仅 flipX + 呼吸缩放
+		if (ready) {
+			drawHalo('boss', 0, 0, d * 0.72, ringCol, 0.22)   // 相位色光环（owl 之下）
+			drawEnemySprite(ctx, 'boss', d)                   // owl PNG（居中铺满直径 d）
+		} else {
+			ctx.scale(1 / breath, 1 / breath)                 // 回退路径撤销呼吸缩放
+			drawBossFallback(ctx, r, t, b)
+		}
+		ctx.restore()
+		// 受击浅闪 / 换阶段无敌白热闪（套在贴图之上，与随从敌一致）
+		if (b.flashT > 0) { ctx.globalAlpha = 0.5; circle(x, y, d * 0.5, '#ffdff0'); ctx.globalAlpha = 1 }
+		else if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { ctx.globalAlpha = 0.5; circle(x, y, d * 0.5, '#ffffff'); ctx.globalAlpha = 1 }
+		// 相位环（不随呼吸缩放）：脉动描边，直径≈owl 外圈
 		var pulse = 0.5 + 0.5 * Math.sin(t * 2.5)
-		drawHalo('boss', x, y, r * 1.9, col, 0.18 + pulse * 0.2)
-		ctx.beginPath(); addSpikedShell(x, y, r, t * 0.4, 8); ctx.fillStyle = col; ctx.fill()
-		ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, M.PI2); ctx.fillStyle = '#2a0a1e'; ctx.fill()
-		ctx.globalAlpha = 0.6 + pulse * 0.4; circle(x, y, r * 0.3, col); ctx.globalAlpha = 1
+		ctx.globalAlpha = 0.5 + pulse * 0.4
+		ctx.lineWidth = 4 + pulse * 2; ctx.strokeStyle = ringCol
+		ctx.beginPath(); ctx.arc(x, y, d * 0.5 + 8, 0, M.PI2); ctx.stroke()
+		ctx.globalAlpha = 1
+	}
+	function drawBossFallback(g, r, t, b) {   // 缺图回退：原尖壳+圆核（保留视觉占位，等 owl PNG 就绪即切换）
+		var col = b.phase >= 2 ? '#ff5ab0' : STYLE.boss
+		var pulse = 0.5 + 0.5 * Math.sin(t * 2.5)
+		drawHalo('boss', 0, 0, r * 1.9, col, 0.18 + pulse * 0.2)
+		g.beginPath(); addSpikedShell(0, 0, r, t * 0.4, 8); g.fillStyle = col; g.fill()
+		g.beginPath(); g.arc(0, 0, r * 0.55, 0, M.PI2); g.fillStyle = '#2a0a1e'; g.fill()
+		g.globalAlpha = 0.6 + pulse * 0.4; circle(0, 0, r * 0.3, col); g.globalAlpha = 1
 	}
 	function drawEnemies() {
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉；GM 经 editor.rtSet 仍优先
 		var l = En.list, t = GS.timeSec
 		var sn = Registry.get('snake'), hx = sn && sn.head ? sn.head.x : 0, hy = sn && sn.head ? sn.head.y : 0
-		// 第一遍：boss/白闪/charger蓄力 单独处理；其余按 type 分组，每型 1 path + 1 fill（延续"同色 1 次 fill"填充率优化，GPU 自动裁视口外几何）
-		var groups = {}, elites = [], bosses = []
-		for (var i = 0; i < l.length; i++) {
-			var e = l[i]; if (!e.active) { continue }
-			if (e.type === 'boss') { bosses.push(e); continue }
-			if (e.flashT > 0) { drawEnemyFlash(e, hx, hy, t); continue }   // ⑥ 受击白闪
-			if (e.type === 'charger' && e.state === 'windup') { drawChargerWindup(e, t); continue }   // ⑤ 蓄力 telegraph
-			if (e.type === 'elite') { elites.push(e) }
-			var ty = e.type; if (!groups[ty]) { groups[ty] = [] }; groups[ty].push(e)
+	// 第一遍：boss 单独处理；其余先试守卫式贴图（成功→画贴图+光环+动画，并保留受击白闪套在贴图上），失败→走代码画兜底（逐字保留原分组填充优化）
+	var groups = {}, elites = [], bosses = []
+	for (var i = 0; i < l.length; i++) {
+		var e = l[i]; if (!e.active) { continue }
+		if (e.type === 'boss') { bosses.push(e); continue }
+		// 守卫式贴图：成功 → 画贴图(+光环+动画)；受击白闪套在贴图之上（不替换贴图）；失败 → 走下方代码画兜底
+		if (drawEnemySpriteWithFx(e, t, _ix(e), _iy(e), hx, hy)) {
+			if (e.flashT > 0) { drawEnemyFlashOverlay(e, _ix(e), _iy(e)) }   // ⑥ 受击白闪（套在贴图之上）
+			continue
 		}
+		if (e.flashT > 0) { drawEnemyFlash(e, hx, hy, t); continue }   // ⑥ 受击白闪（代码画兜底分支）
+		if (e.type === 'charger' && e.state === 'windup') { drawChargerWindup(e, t); continue }   // ⑤ 蓄力 telegraph
+		if (e.type === 'elite') { elites.push(e) }
+		var ty = e.type; if (!groups[ty]) { groups[ty] = [] }; groups[ty].push(e)
+	}
 		for (var gk in groups) {
 			var arr = groups[gk]
 			ctx.beginPath()
@@ -519,13 +617,51 @@ function drawChargeArrow(e) {
 	// 渲染插值（CAM-STUTTER 修复·方案A）：任意带 prevX/prevY 扁平字段的实体，按同一 _ra（已 clamp[0,1]）在「上一步→当前步」间插值。判定位移/碰撞逻辑只读真实 x/y，不碰
 	function _ix(o) { return snapWX((o.prevX != null) ? M.lerp(o.prevX, o.x, _ra) : o.x) }
 	function _iy(o) { return snapWY((o.prevY != null) ? M.lerp(o.prevY, o.y, _ra) : o.y) }
-	// 双眼/瞳孔：PNG 之上叠代码眼（PNG 自带眼/无眼都叠一层保证可见；瞳孔朝局部 +x=前进；全比例禁裸像素）
-	// 身体：逐节离散步圆（与改动前一致、干净不丑）；各节 prev→cur 插值 → 165Hz 平滑（消身体一顿一顿）；颈缝=圆身(r≈12)略宽于 PNG 自带脖子(~7)，由头图盖住前段，与「改前」视觉一致
+	// 身体同料受光圆（复用：身体管 + 脖子连接圆）；中心 SNAKE_BODY_HI 受亮·边缘主绿，与带光影 PNG 头读成同一料；低血红闪(shaded=false)走平涂红
+	function drawShadedCircle(x, y, r, col, shaded) {
+		if (shaded) {
+			var g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.15, x, y, r)
+			g.addColorStop(0, SNAKE_BODY_HI); g.addColorStop(1, col)
+			ctx.beginPath(); ctx.arc(x, y, r, 0, M.PI2); ctx.fillStyle = g; ctx.fill()
+		} else {
+			circle(x, y, r, col)   // 低血红闪平涂
+		}
+	}
+	// 身体：逐节离散步圆（回退到 commit 版本·用户认可：圆形身体、非棍子）；各节 prev→cur 插值→165Hz 平滑；头图随后盖前段(pts[0])→与头无缝衔接。
+	// 25s 修色差：平涂圆身→径向渐变(中心 SNAKE_BODY_HI 受光·边缘 SNAKE_BODY 主绿)，与带明暗渐变的 PNG 头读成同一料→消"头身色差"观感；低血闪(非主绿)走平涂红、不渐变。
 	function drawBodyTube(pts, headR, bodyR, bodyCol) {
 		var c = bodyCol || SNAKE_BODY
-		for (var i = 0; i < pts.length; i++) { circle(pts[i].x, pts[i].y, bodyR, c) }   // 从蛇头中心(0)起逐节圆：头下身体连续、消头颈缝断节（头图随后盖中心）；body 读 STYLE.player=蛇头同绿
+		var shaded = (c === SNAKE_BODY)   // 仅正常绿身体加受光渐变(与 PNG 头同源质感)；低血红闪保持平涂
+		for (var i = 0; i < pts.length; i++) { drawShadedCircle(pts[i].x, pts[i].y, bodyR, c, shaded) }
 	}
-	function drawSnake() {
+	// 蛇头代码眼：精准贴 PNG 自带眼位(图片坐标·中心512)，随头【真实朝向】转(无滞后→转弯不歪/不各偏左右)，瞳孔固定朝前(-y=图前)、只偶尔眨。
+	// 与 drawSprite 同变换(rotate(hAngQ+90°))→眼睛锁定在头PNG眼窝、盖住PNG小眼→干净一对大眼、不重影、不吓人。纯视觉零 gameplay。
+	var _eyeBlinkUntil = 0, _eyeNextBlink = 2.5   // 仅眨眼调度(无滞后/无侧偏→转弯不歪、不各偏左右)
+	var _snakeEyeX = 0, _snakeEyeY = 0, _snakeEyeAng = 0, _snakeEyeR = 0   // 眼睛延后绘制用的头位姿（drawSnake 写入，drawSnakeEyesLate 读取）
+	function drawSnakeEyes(ctx, headR, hAngQ) {
+		var now = GS.timeSec
+		if (now >= _eyeNextBlink) { _eyeBlinkUntil = now + 0.12; _eyeNextBlink = now + 3 + Math.random() * 2 }   // 眨眼：每 3~5s 一次、闭 ~0.12s（保留·用户认可）
+		var blinking = now < _eyeBlinkUntil
+		var sc = headR / 512                          // 图片px → 世界px（整图1024 映射到 2r）
+		var eyes = [[-146, -238], [146, -238]]        // 左/右眼图片坐标(相对中心512；-y=头前)；25s-b 改：间距 ×0.85(±172→±146) 略收窄 + y 从 -252→-238 再往身体后方挪一点点(仍盖 PNG 眼窝,眼白半径≈102图px≫挪动量不重影)；转弯不歪/不各偏左右(见 rotate)
+		ctx.save()
+		ctx.rotate(hAngQ + ART_FORWARD_OFFSET_RAD)    // 与 drawSprite 同变换→眼睛随头真实朝向转(无滞后/无侧偏→转弯不歪、不各偏左右)
+		for (var e = 0; e < eyes.length; e++) {
+			var ex = eyes[e][0] * sc, ey = eyes[e][1] * sc
+			ctx.save(); ctx.translate(ex, ey)
+			if (blinking) { ctx.scale(1, 0.08) }        // 眨眼：眼睑压扁（唯一动态，眼睛不追转向）
+			var ewR = 0.2 * headR                       // 眼白(覆盖PNG小眼→干净一对大眼；比例headR禁裸px)
+			ctx.beginPath(); ctx.arc(0, 0, ewR, 0, M.PI2)
+			ctx.fillStyle = '#ffffff'; ctx.fill()
+			ctx.lineWidth = Math.max(1, headR * 0.03); ctx.strokeStyle = 'rgba(18,26,38,0.45)'; ctx.stroke()
+			var pR = 0.5 * ewR                          // 瞳孔固定朝前(-y=图前)；眼睛不追转向→不吓人
+			ctx.beginPath(); ctx.arc(0, -pR * 0.35, pR, 0, M.PI2); ctx.fillStyle = '#10141f'; ctx.fill()
+			ctx.beginPath(); ctx.arc(-pR * 0.25, -pR * 0.7, pR * 0.4, 0, M.PI2); ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill()   // 高光
+			ctx.restore()
+		}
+		ctx.restore()
+	}
+function drawSnake() {
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var segs = s.segments || []
 		// 半径走 getSpriteRadius() 单一源（与精灵路径同经冻结 CONFIG）：渲染半径=headRadiusRender，与碰撞 headRadius 解耦（视觉≥判定，宁小勿大防冤死）
@@ -554,15 +690,17 @@ function drawChargeArrow(e) {
 		ctx.save(); ctx.globalAlpha = _ba
 		var lowHp = GS.coreHp <= 1   // 蛇本体=主血条：低血时整蛇闪红（读现有 coreHp，不新增数值）
 		var bodyCol = (lowHp && Math.floor(GS.timeSec * 2) % 3 === 0) ? STYLE.lowHp : SNAKE_BODY   // 低血闪：频率放慢(~0.67Hz)+降占空比(1/3 时间)+暗哑红(STYLE.lowHp)，不刺眼
-		drawBodyTube(pts, headR, bodyR, bodyCol)        // 先画身体管（头/脖子图随后盖前段）
-		if (!lowHp) { drawHalo('snakehead', hx, hy, headR * 2.15, STYLE.playerGlow, 0.32) }   // 蛇头光晕加强一档(P2-11)：*1.9→*2.15、0.22→0.32，仍在 glowMax 缓存内；低血时让位红闪
-		// 蛇头：整角烘焙进离屏(量化角)1:1 取用→零每帧旋转重采样；无眼（PNG 已定稿造型，不再叠代码眼/瞳孔）
+		drawBodyTube(pts, headR, bodyR, bodyCol)        // 先画身体管（头图随后盖前段）；26s 回退：蛇身/头几何回退 commit 版(圆形身体、头不前移、无脖子连接圆)，仅保留受光渐变绿(那个颜色)
+		if (!lowHp) { drawHalo('snakehead', hx, hy, headR * 2.15, STYLE.playerGlow, 0.32) }   // 蛇头光晕：跟随头心(hx,hy)，仍在 glowMax 缓存内；低血时让位红闪
+		// 蛇头：整角烘焙进离屏(量化角)1:1 取用→零每帧旋转重采样；PNG 之上叠代码眼(drawSnakeEyes：眼睛只随朝向转、瞳孔固定朝前、不追目标)
 		ctx.save()
 		ctx.translate(hx, hy)
 		// 忠实绘制 PNG（整角=量化头角+具名 +90° 偏移=artForwardOffsetRad；离屏已烘焙旋转→drawSprite 不再旋转上下文）；缺图 fallback 圆同 STYLE 绿
 		if (!drawSprite(ctx, 'snake_head', 0, 0, hAngQ + ART_FORWARD_OFFSET_RAD)) {
 			circle(0, 0, headR, lowHp ? STYLE.enemy : SNAKE_HEAD)
 		}
+		// 眼睛延后到火墙(drawSkillAura)之后绘制：火焰用 lighter 加色会盖住眼白→眼睛看不见；存位姿，drawSnakeEyesLate 在火墙之上重绘（纯视觉层序修正，零 gameplay）
+		_snakeEyeX = hx; _snakeEyeY = hy; _snakeEyeAng = hAngQ; _snakeEyeR = headR
 		// 蛇头受击红闪（复用 hurtVignetteUntil：与全屏红闪 + T3 轻震屏同步，头部叠一层红→受击更明确，非仅接色）
 		if (GS.timeSec < hurtVignetteUntil) {
 			var hf = (hurtVignetteUntil - GS.timeSec) / HURT_VIGNETTE_SEC
@@ -573,6 +711,12 @@ function drawChargeArrow(e) {
 			var ha = 0.3 + 0.3 * Math.sin(GS.timeSec * 16)
 			ctx.globalAlpha = ha; ctx.beginPath(); ctx.arc(hx, hy, headR + 6, 0, M.PI2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1
 		}
+	}
+	function drawSnakeEyesLate() {   // 眼睛画在火墙(drawSkillAura)之后：避免 lighter 火焰盖住眼白（纯视觉层序修正，零 gameplay）
+		if (!(_snakeEyeR > 0)) { return }
+		ctx.save(); ctx.translate(_snakeEyeX, _snakeEyeY)
+		drawSnakeEyes(ctx, _snakeEyeR, _snakeEyeAng)
+		ctx.restore()
 	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
@@ -701,7 +845,7 @@ function drawChargeArrow(e) {
 	ctx.translate(-rcxS, -rcyS)
 	drawBounds()
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
-	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura()
+	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
 	drawDebugHitboxes()
 	ctx.restore()
@@ -828,7 +972,7 @@ function drawDebugHud() {
 		if (!d) { return }
 		_steamThisFrame++
 	})
-	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零
+	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零（眼睛仅眨眼调度、随头朝向、无独立状态，无需重置）
 
 	var Render = { init: init, resize: resize, draw: draw, camera: cam, getFlickerSample: function () { return { head: _flkHead, body: _flkBody } }, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
 	Registry.register('render', Render)

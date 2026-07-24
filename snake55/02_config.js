@@ -51,7 +51,7 @@
 			maxSegments: 25,
 			coreHp: 3,
 			headRadius: 14,            // 碰撞判定半径（真理源 §1：宁小勿大防冤死，回真源 14；渲染半径见下方 headRadiusRender）
-			headRadiusRender: 26,      // 渲染半径(px)：纯表现，配合 snake_head.png 视觉大小；与碰撞 headRadius 解耦（视觉≥判定，故意，防冤死）
+			headRadiusRender: 28,      // 渲染半径(px)：纯表现，配合 snake_head.png；与碰撞 headRadius 解耦（视觉≥判定，防冤死）；getSpriteOff 整图缩到 2r → 视觉头宽≈1.2×此值(≈34px，比身体24px略大、协调)；用户最新：蛇头从30再小一点点→28（"蛇头有点大"），缩放回退「之前版本」(dispCss=r*2)
 			bodyRadius: 12,
 			headKnockback: 0,
 			buildPauseCdMs: 800,
@@ -117,9 +117,16 @@
 			}
 		},
 		// —— 纯视觉渲染（非 §9 平衡值；视图缩放仅改世界显示尺寸，不影响碰撞/坐标/平衡）——
-		RENDER: {
-			worldScale: 0.8          // 视图缩放默认 0.8（还原「更小更精致」蛇/怪画面）；GM「视图缩放(纯视觉)」滑条 0.6–1.0 实时可调；×1.0=原始 1:1（注：此值仅作文档真理源，render 实际由 RT('RENDER.worldScale',0.8) 取、editor 覆盖优先）
-		},
+	RENDER: {
+		worldScale: 0.8,         // 视图缩放默认 0.8（还原「更小更精致」蛇/怪画面）；GM「视图缩放(纯视觉)」滑条 0.6–1.0 实时可调；×1.0=原始 1:1（注：此值仅作文档真理源，render 实际由 RT('RENDER.worldScale',0.8) 取、editor 覆盖优先）
+		// 敌人贴图视觉微调系数（只缩放显示，不动碰撞/血量/速度/伤害；纯视觉，允许视觉≥判定）。
+		// 2026-07-24p · 修"大小看起来都一样"：之前逐只设 2.4/2.4/2.0/1.4/1.2 把大怪压小、破坏原代码画按 radius 的比例。
+		//   原代码画(代码圆)显示直径 ∝ 碰撞半径，阶梯 = wanderer10 / chaser11 / charger14 / elite24 / boss60（10:11:14:24:60）。
+		//   贴图方式必须保持同一比例（用户明示"按能力定位大小不同"）→ 统一倍率 k，显示直径 = radius×2×k，比例即 radius 比例，零偏差。
+		//   取 k=2.4：wanderer48 / chaser53 / charger67 / elite115 / boss288(px)，小怪清晰(修 24n 小方格)且严格保 10:11:14:24:60 阶梯(boss≈小怪6倍、elite≈小怪2.4倍)。
+		//   boss 288 直径(视觉≥判定允许)为大但符合"boss 最大"定位；若实测过大可单独降 boss 而不破坏其余比例。GM 经 editor.rtSet('RENDER.spriteVisualScale.*') 仍实时覆调；零 gameplay。
+		spriteVisualScale: { wanderer: 2.4, chaser: 2.4, charger: 2.4, elite: 2.4, boss: 2.4 }
+	},
 
 		// —— §2.3 JUICE 手感基因（新增） ——
 		JUICE: {
@@ -177,8 +184,8 @@
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——
 		STAGE: {
 			segments: [
-				{ id: 1, name: '保护期', startSec: 0, endSec: 60, cap: 4, spawnRate: 0.5, pool: ['chaser'] },
-				{ id: 2, name: '成长期', startSec: 60, endSec: 180, cap: 12, spawnRate: 2.8, pool: ['chaser', 'wanderer'] },
+			{ id: 1, name: '保护期', startSec: 0, endSec: 60, cap: 4, spawnRate: 0.5, pool: ['wanderer'] },   // 2026-07-24o · 蜗牛最小最先出现(保护期温和不追)，老鼠移至成长期
+			{ id: 2, name: '成长期', startSec: 60, endSec: 180, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },
 				{ id: 3, name: '割草期', startSec: 180, endSec: 360, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
 				{ id: 4, name: '高潮期', startSec: 360, endSec: 480, cap: 50, spawnRate: 16, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
 				{ id: 5, name: 'Boss期', startSec: 480, endSec: 600, cap: 8, spawnRate: 1.5, pool: ['chaser', 'elite'] }
@@ -303,8 +310,8 @@
 		COLORS: {
 			background: '#11162a',
 			worldBorder: '#2a3358',
-		snakeHead: '#20c088',   // 与头 PNG 主色统一（2026-07-23 量得 head PNG 主填充 #20c088/#18c088；旧 #3effa8 偏亮，仅 PNG 缺失 fallback 用）
-		snakeBody: '#20c088',   // 与头 PNG 主色统一（2026-07-23 量得 head PNG 主填充 #20c088；旧 #27c98a 偏亮一档 → 细微色差，现已统一）
+	snakeHead: '#21c78f',   // 与头 PNG 主色 EXACT 统一（2026-07-24 Python 离线重量：蛇头 PNG 主填充 (33,199,143)=#21c78f；仅 PNG 缺失 fallback 用）
+	snakeBody: '#21c78f',   // 与头 PNG 主色 EXACT 统一（同上 #21c78f，蛇头贴图与代码身体零色差·肉眼无缝）
 			food: '#ffd84d',
 			heal: '#7cff6b',
 			skillDrop: '#ffb000',
@@ -323,9 +330,10 @@
 		// 颜色语义见 GDD §5；比例类常量（cornerRatio/glowBlur/strokeRatio）供「按半径×比例」换算，禁写死像素。
 		STYLE: {
 			bg: '#11162a',            // 世界底
-			player: '#27c98a',        // 蛇身/蛇尾主绿（真源）；PNG 实测主填充 #21c78f≈#27c98a（ΔE 极小·肉眼无缝）→ 头身零可见色差
-			playerGlow: '#4dffc3',    // 蛇头光晕（较主绿更亮）
-			lowHp: '#b8465c',         // 低血(1血)蛇身闪色：暗哑红（比 STYLE.enemy 不显眼，仅低血提示，零 gameplay）
+			player: '#20c088',        // 蛇身/蛇尾主绿（真源）= snake_head.png 主填充 EXACT 一致(#20c088·Python 量得 dominant (32,192,136))→ 头身零色差·肉眼无缝
+		playerGlow: '#4dffc3',    // 蛇头光晕（较主绿更亮）
+		playerHi: '#3ad6a0',      // 身体高光衍生色（主绿向亮提一档）= snake_head.png 高光带(128,240,192)同系→身体径向渐变中心，使平涂圆身与带光影PNG头读成同一料（消"头身色差"观感·纯渲染）
+		lowHp: '#b8465c',         // 低血(1血)蛇身闪色：暗哑红（比 STYLE.enemy 不显眼，仅低血提示，零 gameplay）
 			food: '#ffd54a',          // 食物金
 			heal: '#ff6b8a',          // 回血红心（玫红·区别于敌红 enemy，靠心形+粉红一眼识别为增益）
 			enemyCalm: '#ff9f5a',     // 威胁色阶·暖橙（散步 wanderer）
