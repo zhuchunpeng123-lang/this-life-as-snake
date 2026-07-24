@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-24d · feat(ui): GATE B UI 主题化——四组胶囊 HUD + 波次条/5格技能栏 + 选卡/结算/抉择全接 STYLE 真源（build 20260724c）
+- **目标**：把 12_ui.js 硬编码配色（#2de1a8/#ffb000/#ff5b7a/#11203a/#1a1530 等）全部替换为 GATE A 的 STYLE 配色宇宙，HUD 胶囊化对齐圣经 §8.4；零玩法改动。
+- **硬约束遵守**：①不新增任何新 hex、不建第二套色板——仅替换 + alias；②需要语义名用 alias（STYLE.win=player 绿 / STYLE.lose=enemy 红，值锁定现有）；③STYLE.heal 不依赖（HUD 心血用 STYLE.enemy 红）；④chipBg=STYLE.panel+panelAlpha 派生、chipBorder=STYLE.ui、textDim 直接复用。
+- **四组胶囊 HUD（§8.4，本阶段新增波次条/5格技能栏——原先 UI 无此二者）**：左上生命框(×coreHp + 濒死≤1血整框红脉冲) / 左上数据框(长度｜击杀｜得分｜连杀 + 配方提示) / 顶部波次条(当前阶段+进度，Boss 预警前切红闪「BOSS INCOMING」) / 右上 5 格技能栏(空槽也画，满槽用 STYLE.skillFx[id] 描边呼应拾取物)。波次条/技能栏读现有 GS/STAGE/SKILL 数据，塞入 ~10Hz 节流，未新增 Bus 事件。
+- **改动文件**：①`02_config.js`：STYLE 加 win/lose alias（值=player/enemy）；②`12_ui.js`：init 重写(四胶囊+濒死 keyframes)、refreshHUD 重写 + renderWave/renderSkills、选卡描边 STYLE.skillFx[id]、抉择按钮橙边→STYLE.ui 青、Combo 横幅接 STYLE(playerGlow/ui/enemyCalm，与 skillFx 五色不撞)、结算/竖屏/配方提示全换 STYLE、hexA() 派生 rgba 助手(无新 hex)。
+- **是否动 §9 / core / collision / 玩法数值 / 阶段1-3 渲染**：**否**（纯 UI 换色 + 布局胶囊化）。
+- **验收**：①HUD 为胶囊、配色与 STYLE 一致；②RT('STYLE.ui') 等运行时覆盖能实时换色(读真源)；③死亡序列定格→走马灯→蛇生→九项正常、配色一致；④grep 12_ui.js 硬编码 hex 仅剩注释一处(无字面量)；⑤HUD 节流仍在(~10Hz)、无每帧重排。
+
 ## 2026-07-24c · fix(perf·主循环): 移除 maxFps 封顶旋钮——封顶跳帧丢真实时间致世界整体变慢 bug（build 20260724b）
 - **根因（用户实测"封 60 后蛇变慢"坐实）**：封顶分支在 `_acc += elapsed` **之前** `return`，但 `last = now` 每帧都已推进 → 被跳过帧的真实时间**永久丢失**（注释"下一允许帧 elapsed 自然含跳过时间"是错的）。165Hz 封 60 ≈ 每 3 帧放行 1 帧 → 累加器只收到 ~1/3 真实时间 → step 率跌到 ~20/s → 蛇/敌全世界慢到 ~1/3 速。
 - **决策**：不修而是**删**——主修复（固定 STEP 累加器锁 60Hz 仿真）已让不封顶稳跑满 165（用户日志：FPS 全程 165、CPU<2ms），封顶旋钮无存在必要，留着只会误导。
