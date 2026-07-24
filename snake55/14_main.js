@@ -278,11 +278,7 @@
 			}
 			return { x: 0, y: 0, active: false, src: 'joy' }   // 死区内：不转向、直行（鼠标/触摸统一走摇杆，不与旧绝对瞄准混用）
 		}
-		// 鼠标/笔悬停转向（桌面）：恢复「改摇杆前」灵敏手感——移动鼠标即转向、无需按住（键盘>摇杆>鼠标悬停>直行）
-		if (cursor.on && !cursor.touch && !inputBlocked()) {
-			return { x: Math.cos(cursor.angle), y: Math.sin(cursor.angle), active: true, src: 'mouse' }
-		}
-		// 无键盘/摇杆/鼠标悬停输入 → 蛇按当前方向直行（虚拟摇杆模型）
+		// 无键盘/摇杆输入 → 蛇按当前方向直行（虚拟摇杆模型；桌面鼠标 hover 转向已移除，仅摇杆+键盘操控）
 		return { x: 0, y: 0, active: false, src: 'none' }
 	}
 
@@ -415,25 +411,7 @@ function buildStart(wrap) {
 		}
 		buildJoy()
 
-		// 鼠标瞄准：只存「相对屏幕中心的角度」。相机仅平移不旋转 → 屏幕角 = 世界角。
-		// 鼠标不动 = 角度恒定 → 蛇朝该角度对齐后直行；动鼠标 = 角度更新 → 360°自由转向。
-		// （旧实现把世界点烘焙死 → 蛇前进时方向漂移、持续绕点转 = 自动转向 bug）
-		function aimFromEvent(e) {
-			var rect = canvas.getBoundingClientRect()
-			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height
-			var mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy
-			var dx = mx - CONFIG.GAME.logicalWidth / 2, dy = my - CONFIG.GAME.logicalHeight / 2
-			// 相对死区：仅当指针相对上次记录位置移动超过 mouseMoveDeadPx 才更新瞄准角（滤掉 OS/浏览器悬停微抖 → 头不再每帧微转 → 舌头不再一顿一顿）；
-			// 抖动帧仅保持 on（不丢输入），不更新角度、不刷新 lastMoveT（空闲门限据此判定"鼠标已停"→ 蛇直行）
-			var DEAD = (CONFIG.INPUT && CONFIG.INPUT.mouseMoveDeadPx) || 3
-			if (cursor.lx != null && (mx - cursor.lx) * (mx - cursor.lx) + (my - cursor.ly) * (my - cursor.ly) < DEAD * DEAD) {
-				cursor.on = true; cursor.touch = (e.pointerType === 'touch'); return
-			}
-			if (dx * dx + dy * dy > 9) { cursor.angle = Math.atan2(dy, dx) }   // 中心极小死区：避免 atan2(0,0) 抖动
-			cursor.lx = mx; cursor.ly = my; cursor.lastMoveT = GS.timeSec
-			cursor.on = true; cursor.touch = (e.pointerType === 'touch')
-		}
-		// 固定锚点摇杆：方向 = 指针相对「固定锚点(左下角安全区)」向量；touch/鼠标/pen 均走摇杆；旧绝对瞄准已移除
+		// 固定锚点摇杆：方向 = 指针相对「固定锚点(左下角安全区)」向量；touch/鼠标/pen 均走摇杆；桌面鼠标 hover 转向已移除（仅摇杆+键盘）
 		function toLogical(e) {
 			var rect = canvas.getBoundingClientRect()
 			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height
@@ -465,7 +443,6 @@ function buildStart(wrap) {
 		// 摇杆监听挂 window（非 canvas）：开始遮罩/结算遮罩等 UI 层不再吞 pointerdown，首手势即可激活摇杆并转向（修「进游戏摇杆不出现/蛇不转向」）；HUD 按钮点击仍走各自 handler 不受影响
 		global.addEventListener('pointerdown', function (e) {
 			if (e.target === canvas && e.cancelable) { e.preventDefault() }   // 仅画布区阻 iOS 双击缩放/滚动；HUD 按钮不 preventDefault 保证 click 正常
-			aimFromEvent(e)                             // 菜单首帧对齐点击方向（保留旧行为；正常态由摇杆接管）
 			joyDown(e)                                  // 任意指针(鼠标/触摸/pen)按下即出浮动摇杆（6⑥ 全屏激活；落点=锚点）；joyDown 内先 startIfMenu 翻态
 		})
 		global.addEventListener('pointermove', function (e) {
@@ -474,8 +451,7 @@ function buildStart(wrap) {
 				if (inputBlocked()) { joyRelease() } else { joyMove(e) }   // 按住态更新摇杆位移；模态中途弹出即挂起
 				return
 			}
-			// 桌面鼠标/笔：悬停即转向，恢复「改摇杆前」灵敏手感（无需按住）；触摸走摇杆(joy 分支)，不抢
-			if (e.pointerType && e.pointerType !== 'touch') { aimFromEvent(e) }
+			// 桌面鼠标不再悬停转向：仅摇杆(按下拖动)+键盘 接管（需求 A 唯一输入范式）
 		})
 		global.addEventListener('pointerup', function (e) { cursor.on = false; joyUp(e) })       // 松手保持最后方向（蛇按末向续行，不丢输入）
 		global.addEventListener('pointercancel', function (e) { cursor.on = false; joyUp(e) })
