@@ -9,15 +9,18 @@
 	var COMBO_LABEL = { steamExplosion: '蒸汽爆炸', electroTurret: '电磁炮台', burningBarrage: '灼烧弹幕' }
 	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
 	var COMBO_COLOR = { steamExplosion: STYLE.playerGlow, electroTurret: STYLE.ui, burningBarrage: STYLE.enemyCalm }   // GATE B：接 STYLE 真源（禁新 hex）；校验与 skillFx 五色(#d8ff7a/#ff7a3c/#7fc4ff/#bff0d8/#7a9bff)不撞
+var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
+var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
-	var root = null, froot = null, hud = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, choose = null, result = null, choiceBox = null, stageName = '—'
-	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null
+var root = null, froot = null, hud = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
+var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0
 	var timers = []
 	var usedChoiceIds = {}
+	var chooseKeyHandler = null   // 三选一键盘 1/2/3 监听句柄（显示时挂载、hideChoose 时移除）
 	var bossTagged = false, firstUpgradeTagged = false, choicesUsed = 0, choiceActive = false
 	var ownedSkillIds = {}
 
@@ -29,9 +32,9 @@
 		var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16)
 		return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'
 	}
-	function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain
-		return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 11px;line-height:1.2;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
-	}
+function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain；统一柔发光(§四 P1-8)
+    return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 11px;line-height:1.2;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';box-shadow:0 0 10px ' + hexA(STYLE.ui, 0.22) + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
+}
 	function after(ms, fn) { var my = seqId; var t = global.setTimeout(function () { if (my === seqId) { fn() } }, ms); timers.push(t); return t }
 	function clearTimers() { for (var i = 0; i < timers.length; i++) { global.clearTimeout(timers[i]); global.clearInterval(timers[i]) } timers.length = 0 }
 
@@ -41,9 +44,10 @@
 		// —— HUD 容器(inset:0 覆盖, pointer-events:none) + 四组胶囊(§8.4：生命框/数据框/波次条/技能栏) ——
 		hud = mk('div', 'position:absolute;inset:0;pointer-events:none;z-index:10', root)
 		hudLife = capsuleEl('left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top))')          // 左上：生命框(×coreHp，濒死整框红脉冲)
-		hudData = capsuleEl('left:calc(12px + env(safe-area-inset-left));top:calc(52px + env(safe-area-inset-top));flex-wrap:wrap;max-width:min(72vw,520px)')   // 左上：数据框(长度｜击杀｜得分｜连杀)
+		hudData = capsuleEl('left:calc(12px + env(safe-area-inset-left));top:calc(52px + env(safe-area-inset-top));max-width:min(64vw,340px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')   // 左上：数据框(长度｜击杀｜得分｜连杀)　定宽+省略号，禁撑破框(P0-1)
 		hudWave = capsuleEl('left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%)')                  // 顶部居中：波次条(Boss 来切红闪 BOSS INCOMING)
-		hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top))')     // 右上：5 格技能栏(空槽也画)
+		hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(58px + env(safe-area-inset-top))')     // 右上：5 格技能栏(空槽也画)，在系统按钮(hudSys)下方
+		hudCombo = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(104px + env(safe-area-inset-top));flex-wrap:wrap;gap:6px;max-width:min(72vw,360px)')   // 右上：Combo 图标化徽标(P0-4)，技能栏下方
 		// 濒死整框红脉冲 keyframes（STYLE.enemy 真源，无新 hex）
 		var _nf = document.createElement('style')
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
@@ -52,17 +56,19 @@
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // pointer-events:auto：#ui-stage 为 none 让点击穿透到 canvas，此处重开 auto 使抉择按钮可点（非全屏，仅盒子区域捕获，保持非阻塞）
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
-		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(54px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
+		// 系统按钮归组右上顶部(hudSys)，与技能栏(hudSkills)/Combo(hudCombo)分离(P0-2)
+		hudSys = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px;pointer-events:auto;z-index:12', root)
+		pauseBtn = mk('div', 'padding:10px 16px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		pauseBtn.textContent = '⏸ 暂停'
 		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
 		// 全屏按钮：安卓/桌面一键全屏（经 Bus 由 main 调 API）；iPhone 不支持 JS 全屏→main 提示「添加到主屏幕」
-		fullscreenBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(100px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+		fullscreenBtn = mk('div', 'padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		fullscreenBtn.textContent = '⛶ 全屏'
 		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
 		// GM 测试面板按钮：仅触屏设备显示（移动端无 ~ 键，经 Bus 触发 editor.toggle；桌面用 ~ 键）
 		var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
 		if (isTouch) {
-			gmBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(146px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+			gmBtn = mk('div', 'padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 			gmBtn.textContent = '⚙ GM'
 			gmBtn.onclick = function () { Bus.emit('editor:toggle') }
 		}
@@ -114,15 +120,19 @@
 	function buildFlashbackLines() {
 		var fb = NARR.flashback, toks = GS.memoryTokens || [], total = toks.length, lines = []
 		if (total === 0) { return [fb.headClosingLine] }
-		var lastLine = '', seenEvent = {}
+		var lastLine = '', seenEvent = {}, seenStage = {}
 		for (var i = 0; i < total; i++) {
 			var p = (i + 1) / total, tok = toks[i], line = ''
 			if (tok && tok.tag && fb.eventLines[tok.tag] && !seenEvent[tok.tag]) {
 				line = fb.eventLines[tok.tag]; seenEvent[tok.tag] = true
 			} else {
 				var pool = p <= fb.stageThresholds.youngMax ? fb.stageLines.young : (p <= fb.stageThresholds.primeMax ? fb.stageLines.prime : fb.stageLines.old)
-				line = pool[(Math.random() * pool.length) | 0]
-				if (line === lastLine && pool.length > 1) { line = pool[(pool.indexOf(line) + 1) % pool.length] }
+				var avail = []
+				for (var k = 0; k < pool.length; k++) { if (!seenStage[pool[k]]) { avail.push(pool[k]) } }
+				if (avail.length === 0) { avail = pool.slice() }   // 全部用尽才允许重复
+				line = avail[(Math.random() * avail.length) | 0]
+				seenStage[line] = true
+				if (line === lastLine && avail.length > 1) { line = avail[(avail.indexOf(line) + 1) % avail.length] }   // 仍避免与上一句紧邻重复
 			}
 			lines.push(line); lastLine = line
 		}
@@ -159,7 +169,7 @@
 		var eulogyMs = NARR.aiTextSec * 1000, budget = NARR.staticHardcapSec * 1000
 		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
 		result.innerHTML = ''; result.style.display = 'flex'
-		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读
+		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + ',0 0 26px ' + hexA(STYLE.ui, 0.2) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读 + 霓虹外发光(P1-8)
 		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? STYLE.win : STYLE.lose) + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
 		still.textContent = win ? '通　关' : '死　亡'
 		after(30, function () { still.style.opacity = '1' })
@@ -182,12 +192,23 @@
 		})
 		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })   // Phase3 九项卡
 		after(stillMs + flashMs + eulogyMs, function () {
-			var btn = mk('button', 'margin-top:18px;padding:13px 28px;border:2px solid ' + (win ? STYLE.win : STYLE.lose) + ';border-radius:12px;background:' + hexA(STYLE.panel, 0.9) + ';color:' + (win ? STYLE.win : STYLE.lose) + ';font:800 17px system-ui;cursor:pointer', stage)
+			var btn = mk('button', 'margin-top:18px;padding:13px 30px;border:2px solid ' + STYLE.player + ';border-radius:12px;background:' + STYLE.player + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer;box-shadow:0 0 14px ' + hexA(STYLE.player, 0.5), stage)   // P1-6：主操作=STYLE.player 绿填充+深字+发光（不再红底黑字）
 			btn.textContent = win ? '再来一局' : '再来一条蛇生'
 			btn.onclick = function () { var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
 		})
 	}
 
+	function computeRating() {   // P1-7：评级仅展示、不入数值（金标色用 STYLE.food，无新 hex）
+		var pts = 0
+		pts += Math.min(GS.maxSegments || 0, 40) * 2          // 长度（封顶 80）
+		pts += Math.min(GS.kills || 0, 120)                   // 击杀（封顶 120）
+		pts += Math.min((GS.score + GS.comboScore) || 0, 4000) / 14   // 得分（封顶 ~286）
+		if (GS.bossDefeated) { pts += 220 }                  // 通关加成（封顶合计 ~706）
+		if (pts >= 560) { return 'S' }
+		if (pts >= 380) { return 'A' }
+		if (pts >= 200) { return 'B' }
+		return 'C'
+	}
 	function renderScoreboard(stage, cause, win) {
 		var comboCount = GS.comboHighlights ? GS.comboHighlights.length : 0
 		var verdict = NARR.scoreboard.verdictByDeathCause[cause] || '一条蛇的一生', runCount = 1
@@ -196,22 +217,27 @@
 			runCount = (parseInt(global.localStorage.getItem(key), 10) || 0) + 1
 			global.localStorage.setItem(key, String(runCount))
 		} catch (e) { runCount = 1 }
+		// 评级金标（gold=STYLE.food，仅展示、不入数值）
+		var rbadge = mk('div', 'margin:2px auto 14px;display:inline-flex;align-items:center;gap:8px;padding:6px 18px;border-radius:999px;background:' + hexA(STYLE.food, 0.16) + ';border:1px solid ' + STYLE.food + ';color:' + STYLE.food + ';font:800 15px system-ui;box-shadow:0 0 12px ' + hexA(STYLE.food, 0.4), stage)
+		rbadge.innerHTML = '评级<span style="font-size:22px;margin-left:6px">' + computeRating() + '</span>'
+		// 九项：图标 + 标签 + 数值 卡片行，chipBorder 分隔(P1-5/7/8)
 		var rows = [
-			['此生长度', '长到 ' + GS.maxSegments + ' 节'],
-			['走过的路', '抵达「' + (stageName !== '—' ? stageName : '前路') + '」'],
-			['斩获', '撞咬 ' + GS.kills + ' 次'],
-			['最高连杀', GS.killStreakMax + ' 连杀'],
-			['割草得分', String(GS.score + GS.comboScore)],
-			['发现的翁绞', '翁绞 ' + comboCount + ' / 5'],
-			['蛇生评语', verdict],
-			['高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
-			['第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
+			[SCORE_ICON.seg, '此生长度', '长到 ' + GS.maxSegments + ' 节'],
+			[SCORE_ICON.path, '走过的路', '抵达「' + (stageName !== '—' ? stageName : '前路') + '」'],
+			[SCORE_ICON.kills, '斩获', '撞咬 ' + GS.kills + ' 次'],
+			[SCORE_ICON.streak, '最高连杀', GS.killStreakMax + ' 连杀'],
+			[SCORE_ICON.score, '割草得分', String(GS.score + GS.comboScore)],
+			[SCORE_ICON.combo, '发现的连携', '连携 ' + comboCount + ' / 5'],
+			[SCORE_ICON.verdict, '蛇生评语', verdict],
+			[SCORE_ICON.highlight, '高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
+			[SCORE_ICON.lives, '第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
 		]
-		var box = mk('div', 'margin-top:16px;width:100%;border-top:1px solid ' + hexA(STYLE.ui, 0.15) + ';padding-top:12px', stage)
+		var box = mk('div', 'margin-top:8px;width:100%;display:flex;flex-direction:column;gap:6px', stage)
 		for (var i = 0; i < rows.length; i++) {
-			var r = mk('div', 'display:flex;justify-content:space-between;gap:20px;color:' + STYLE.textMain + ';font:500 14px system-ui;padding:3px 0', box)
-			mk('span', 'opacity:.82', r).textContent = rows[i][0]
-			mk('span', 'color:' + STYLE.textMain + ';font-weight:700', r).textContent = rows[i][1]
+			var card = mk('div', 'display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)
+			mk('span', 'font-size:18px;line-height:1', card).textContent = rows[i][0]
+			mk('span', 'flex:1;color:' + STYLE.textMain + ';font:500 14px system-ui', card).textContent = rows[i][1]
+			mk('span', 'color:' + STYLE.textMain + ';font-weight:700;font:600 14px system-ui;text-align:right', card).textContent = rows[i][2]
 		}
 	}
 
@@ -248,19 +274,39 @@
 		var box = mk('div', 'display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:880px', choose)
 		mk('div', 'width:100%;text-align:center;color:' + STYLE.textMain + ';font:700 22px system-ui;margin-bottom:14px;white-space:nowrap', box).textContent = '三选一 · 升级'
 		for (var i = 0; i < choices.length; i++) {
-			(function (c) {
-				var card = mk('button', 'width:min(220px,78vw);padding:18px;border-radius:14px;border:2px solid ' + STYLE.skillFx[c.id] + ';background:' + STYLE.panel + ';color:' + STYLE.textMain + ';cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui', box)
-				card.innerHTML = '<div style="font-size:20px;margin-bottom:8px">' + (SKILL_LABEL[c.id] || c.id) + '</div><div style="color:' + STYLE.textDim + '">' + (c.isNew ? '新技能' : '升级 → Lv' + c.level) + '</div>'
+			(function (c, idx) {
+				var col = STYLE.skillFx[c.id] || STYLE.ui   // 读真源 skillFx[id]（守护力场=shield 薄荷绿、冰霜=ice 冰蓝，不撞色）
+				var name = SKILL_LABEL[c.id] || c.id
+				var desc = SKILL_DESC[c.id] || ''
+				var lvlTxt = c.isNew ? '新技能' : ('升级 → Lv' + c.level)
+				var card = mk('button', 'width:min(220px,78vw);padding:16px;border-radius:14px;border:2px solid ' + col + ';background:' + STYLE.panel + ';color:' + STYLE.textMain + ';cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui;text-align:left;box-shadow:0 0 14px ' + hexA(col, 0.28), box)   // P0-3：skillFx 色图标 + 名 + 描述 + Lv 标记 + 1/2/3 提示；P1-8 发光
+				card.innerHTML =
+					'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+					+ '<span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:' + hexA(col, 0.18) + ';border:1.5px solid ' + col + ';color:' + col + ';font:800 18px system-ui">' + (SKILL_GLYPH[c.id] || '?') + '</span>'
+					+ '<span style="font:700 18px system-ui;color:' + STYLE.textMain + '">' + name + '</span>'
+					+ '</div>'
+					+ '<div style="color:' + STYLE.textDim + ';font:500 13px/1.6 system-ui;min-height:42px">' + desc + '</div>'
+					+ '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">'
+					+ '<span style="padding:2px 10px;border-radius:999px;background:' + hexA(col, 0.16) + ';border:1px solid ' + col + ';color:' + col + ';font:700 12px system-ui">' + lvlTxt + '</span>'
+					+ '<span style="padding:2px 10px;border-radius:8px;background:' + hexA(STYLE.ui, 0.12) + ';border:1px solid ' + hexA(STYLE.ui, 0.3) + ';color:' + STYLE.textDim + ';font:700 12px system-ui">按 ' + (idx + 1) + '</span>'
+					+ '</div>'
 				card.onclick = function () { var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
-			})(choices[i])
+			})(choices[i], i)
 		}
+		// 键盘 1/2/3 选卡（与卡片底部提示一致）
+		if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null }
+		chooseKeyHandler = function (e) {
+			var n = parseInt(e.key, 10)
+			if (n >= 1 && n <= choices.length) { var cc = choices[n - 1]; var s = Registry.get('skill'); if (s && cc) { s.pick(cc.id) } hideChoose() }
+		}
+		global.addEventListener('keydown', chooseKeyHandler)
 		choose.style.display = 'flex'
 	}
 	function showChoose(choices) {
 		if (isPortrait()) { showRotateChoice(function () { renderChooseCards(choices) }); return }
 		renderChooseCards(choices)
 	}
-	function hideChoose() { if (choose) { choose.style.display = 'none' } hideRotateChoice() }
+	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } hideRotateChoice() }
 
 	function offerChoice(ev) {
 		if (choiceActive || GS.status !== 'playing' || choicesUsed >= NARR.choicePerRunMax) { return }
@@ -328,19 +374,27 @@
 		after(800, function () { if (comboBanner) { comboBanner.style.opacity = '0' } })
 		after(1100, function () { if (comboBanner) { comboBanner.style.display = 'none' } })
 	}
-	function buildRecipeHint() {                                     // §3 常驻配方提示：凑什么出什么不再靠猜
-		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, lines = [], keys = CO2 ? Object.keys(CO2) : []
+	function renderComboBadges() {                                   // P0-4：Combo 图标化——废除长句列表，改紧凑发光徽标，详情用 title 悬停，不铺长文(左上超框主因)
+		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, html = '', keys = CO2 ? Object.keys(CO2) : []
 		for (var i = 0; i < keys.length; i++) {
 			var key = keys[i], c = CO2[key]
 			if (!c || !c.parts || c.parts.length < 2) { continue }
 			var a = c.parts[0], b = c.parts[1], aOwn = lv[a] > 0, bOwn = lv[b] > 0
-			if (!aOwn && !bOwn) { continue }
-			var name = COMBO_LABEL[key] || key, la = SKILL_LABEL[a] || a, lb = SKILL_LABEL[b] || b
-			if (aOwn && bOwn) { lines.push('✦ ' + la + ' + ' + lb + ' → ' + name + '（已激活）') }
-			else { var have = aOwn ? la : lb, need = aOwn ? lb : la; lines.push('◦ 持有 ' + have + '，再得 ' + need + ' → ' + name) }
+			if (!aOwn && !bOwn) { continue }   // 一个都没持有：不显示
+			var active = aOwn && bOwn
+			var col = COMBO_COLOR[key] || STYLE.ui
+			var gA = SKILL_GLYPH[a] || '?', gB = SKILL_GLYPH[b] || '?', name = COMBO_LABEL[key] || key
+			var la = SKILL_LABEL[a] || a, lb = SKILL_LABEL[b] || b
+			var title = active ? ('已激活：' + la + ' + ' + lb + ' → ' + name) : ('持有 ' + (aOwn ? la : lb) + '，再得 ' + (aOwn ? lb : la) + ' → ' + name)
+			var glow = active ? ('box-shadow:0 0 8px ' + col) : ''
+			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.35) + ';background:' + hexA(col, active ? 0.2 : 0.06) + ';' + glow + '">'
+				+ '<span style="color:' + col + ';font:800 12px system-ui">' + gA + '</span>'
+				+ '<span style="color:' + hexA(col, 0.7) + ';font:700 10px system-ui">+</span>'
+				+ '<span style="color:' + col + ';font:800 12px system-ui">' + gB + '</span>'
+				+ '<span style="color:' + col + ';font:700 11px system-ui;margin-left:3px">' + name + '</span>'
+				+ '</span>'
 		}
-		if (!lines.length) { return '' }
-		return '<div style="margin-top:4px;color:' + STYLE.textMain + ';font:600 13px system-ui;opacity:.9;white-space:normal">' + lines.join('<br>') + '</div>'
+		return html
 	}
 	function renderWave() {   // 顶部波次条(§8.4)：当前阶段+进度；Boss 预警切红闪 BOSS INCOMING
 		var segs = STAGE.segments, t = GS.timeSec, cur = segs[0], next = null
@@ -351,7 +405,7 @@
 			return '<span style="color:' + STYLE.enemy + ';font-weight:800">⚠ BOSS INCOMING</span>'
 		}
 		if (cur.id >= bossId) {
-			return '<span style="color:' + STYLE.enemy + ';font-weight:800">☠ BOSS 期</span> <span style="opacity:.7">' + cur.name + '</span>'
+			return '<span style="color:' + STYLE.enemy + ';font-weight:800">☠ ' + cur.name + '</span>'   // 去重：阶段名已是 Boss 期，不再叠 "BOSS 期"(P0-4①)
 		}
 		var prog = next ? (t - cur.startSec) / (next.startSec - cur.startSec) : 1
 		prog = Math.max(0, Math.min(1, prog))
@@ -384,8 +438,8 @@
 		var near = GS.coreHp <= 1   // 濒死(≤1 血)整框红脉冲
 		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
 		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
-		var recipe = buildRecipeHint()
-		hudData.innerHTML = '长度 ' + GS.segments + '　击杀 ' + GS.kills + '　得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + (recipe ? '<div style="font-weight:500;opacity:.92;margin-top:2px;white-space:normal">' + recipe + '</div>' : '')
+		hudData.innerHTML = '🐍 长度 ' + GS.segments + '　💀 击杀 ' + GS.kills + '　⭐ 得分 ' + (GS.score + GS.comboScore) + '　🔥 连杀 x' + GS.killStreak
+		if (hudCombo) { hudCombo.innerHTML = renderComboBadges() }   // Combo 图标化徽标(右上，不再压进数据框)
 		hudWave.innerHTML = renderWave()
 		hudSkills.innerHTML = renderSkills()
 	}
@@ -431,6 +485,8 @@
 			if (hudData) { hudData.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudWave) { hudWave.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudCombo) { hudCombo.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudSys) { hudSys.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'flex' : 'none' }   // 系统按钮：游戏中/暂停可见（暂停时覆盖层在上方，暂停键仍可用）
 			if (GS.status === 'playing') {
 				if (GS.segments > GS.maxSegments) { GS.maxSegments = GS.segments }
 				if (GS.stageId > GS.maxStageId) { GS.maxStageId = GS.stageId }

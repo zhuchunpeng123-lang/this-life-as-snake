@@ -20,7 +20,7 @@
 	var BOLT_FLY_SEC = 0.14           // TODO: 飞镖视觉飞行时长（候选 0.12 / 0.18）；伤害仍即时判定，纯视觉飞行镖
 	var DART_TRAIL_PX = 10            // TODO: 飞镖拖尾占比（候选 8 / 14）
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
-	var DOT_TEXT_SIZE = 11            // TODO: DOT 飘字小字号（候选 10 / 12）；与瞬伤大白字 14/20 区分
+	var DOT_TEXT_SIZE = 10            // P2-10：DOT 飘字缩小字号（候选 10/12）；与瞬伤 12/16 区分，别糊屏
 	// —— B-4 增强：电磁 vs 基础闪电"一眼区分"靠 粗细 / 分叉结构 / 命中残留时长（非只色）· 纯表现 TODO 待 ~ 定稿 ——
 	var ELECTRO_W_PX = 5          // TODO: 电磁电链线宽 5px（基础闪电 2px；粗弧拉开）候选 4 / 6
 	var ELECTRO_LIFE = 0.34       // TODO: 电磁电链存活 0.34s（基础 0.22；停留更久留得住眼）候选 0.30 / 0.40
@@ -83,6 +83,7 @@
 	function maxTexts() { return RT('PERF.maxTexts', perfFB('maxTexts', CONFIG.PERF.maxTexts)) }
 	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', perfFB('spawnBudget', CONFIG.PERF.spawnBudgetPerFrame)) }
 	var frameSpawn = 0   // 每帧 VFX 生成计数（Particle.update 帧首清零；与 fixed-step 对齐）
+	var dotTextThisFrame = 0   // P2-10：DOT 飘字每帧抽稀计数（火墙 MULTI-敌齐爆时限制同时刻飘字数，防糊屏）
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
 	function emitParticle(x, y, vx, vy, life, size, color, drag, prio) {
@@ -103,8 +104,8 @@
 			else { return false }
 		}
 		var t = textPool.acquire()
-		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -40
-		t.life = t.maxLife = 0.8; t.text = str; t.color = color; t.size = size || 14; t.prio = prio
+		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -36
+		t.life = t.maxLife = 0.6; t.text = str; t.color = color; t.size = size || 14; t.prio = prio   // P2-10：淡出 0.8→0.6s（更快淡出，超量不糊屏）
 		texts.push(t); frameSpawn++; return true
 	}
 	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
@@ -192,6 +193,7 @@
 		update: function (dt) {
 			var i
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
+			dotTextThisFrame = 0   // P2-10：DOT 飘字抽稀计数归零
 			spawnFireEmbers()   // 火墙余烬：每 fixed-step 沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
 			for (i = particles.length - 1; i >= 0; i--) {
 				var p = particles[i]
@@ -315,7 +317,7 @@
 		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字（伤害必显）；停喷逐次火花粒子——火墙 MULTI-敌叠加会把粒子池顶爆→GPU overdraw 主因（5 敌 350/350 数据定因）；火墙光环+飘字已足够反馈，零 gameplay
 			if (d.src === 'fire') { DBG.fireDot++ }               // b9-diag：火墙 DOT 命中计数（仅 HUD，零 gameplay）
 			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
-			spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'high')   // 提权 high：火墙/灼烧飘字优先必显（用户要求「伤害一定要表现」），满池时不让位低优先
+			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'high') }   // P2-10：DOT 飘字每帧抽稀（火墙 MULTI-敌齐爆不糊屏）；提权 high 满池不让位
 		} else {
 			var col = d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText)   // 暴击金优先，其次来源色
 			var lbl = st ? st.label : ''
@@ -327,7 +329,7 @@
 	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, STYLE.food, 120, 3, 0.35) } })   // 吃拾取金色爆花
 	Bus.on('snake:hurt', function (d) {                                   // 受击：红色爆花+红飘字（危险语义，配合 render 全屏红闪+蛇头红闪+轻震屏）
 		spawnBurst(d.x, d.y, 10, STYLE.enemy, 200, 4, 0.5)
-		spawnText(d.x, d.y - 10, '-' + (d.damage || 1), STYLE.enemy, 18)
+		spawnText(d.x, d.y - 10, '-' + (d.damage || 1), STYLE.enemy, 14)   // P2-10：受击飘字字号 18→14（缩小，别糊屏）
 	})
 	// 需求B 技能视效接收（🟡 参数见顶部表现债常量块 TODO+候选，不动 §9）
 	Bus.on('fx:bolt', function (d) {

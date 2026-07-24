@@ -13,6 +13,22 @@
 - **是否动 §9 / core / collision / 玩法数值 / 阶段1-3 渲染**：**否**（纯 UI 布局/配色）。
 - **验收**：①按 B/V 不再有顶部横幅、波次条可见；②回血文字贴近心形；③HUD 胶囊贴内容不空、配方提示折行不溢出；④结算框外见游戏、框内实底清晰；⑤九项文字清晰；⑥失败按钮深底彩描边不丑。
 
+## 2026-07-25a · feat(ui): HUD 分区收敛 + 三选一补全 + 结算卡片化 + 世界层清理（build 20260725a）
+- **目标**：用户实测反馈的 UI 优化迭代（主界面 HUD + 三选一 + 结算，纯视觉/布局，零玩法）。沿用 STYLE 真源、零新 hex、不碰 03_core/04_collision/数值/Bus/阶段1-3 渲染。
+- **P0-1 左上超框**：数据框 `hudData` 改定宽 `max-width:min(64vw,340px)` + `white-space:nowrap;overflow:hidden;text-overflow:ellipsis`，禁文字撑破框。
+- **P0-2 HUD 分区收敛**：`hudSys` 容器把暂停/全屏/GM 三系统按钮归组右上**顶部**，与技能栏 `hudSkills`(top:58)、Combo 徽标 `hudCombo`(top:104) 分离；左列为角色状态簇(×coreHp + 长度｜击杀｜得分｜连杀)。
+- **P0-3 三选一补全**：每卡 = `STYLE.skillFx[id]` 色图标 + 技能名 + 一句效果描述(`SKILL_DESC` 纯文案) + Lv 标记(新技能/升级→Lv) + 底部 `按 1/2/3` 提示；并接键盘 1/2/3 选卡（与提示一致）。**映射核对**：skillFx 真源键名为 `fire/ice/bolt/shield/lightning`（与 `SKILL.list` 一致），"守护力场"=`shield`=`#bff0d8` 薄荷绿、"冰霜领域"=`ice`=`#7fc4ff` 冰蓝，**不撞色**，卡片正确读 `STYLE.skillFx[c.id]`。
+- **P0-4 Combo 图标化 + 文案 bug**：①废除数据框内「长句配方列表」(`buildRecipeHint`→`renderComboBadges`)，改右上紧凑发光徽标(持有哪两技+→连携名，激活发光，详情 `title` 悬停)；②`renderWave` 的"☠ BOSS 期 Boss期"重复 → 只留 `☠ Boss期`(阶段名即 Boss 期)；③结算走马灯 stage 行加 `seenStage` 去重（同句不再出现两次）；④"翁绞"错别字 → "连携"（仅 `12_ui.js` 纯文案，无 §9 牵连）。
+- **P1-5 图标系统**：HUD 数据(🐍💀⭐🔥)、三选一(几何字辉+色)、结算九项(`SCORE_ICON` emoji) 全部加图标，消除纯文字裸排。
+- **P1-6 按钮统一**：结算主按钮改 `STYLE.player` 绿填充+深字+绿发光；次按钮(抉择/竖屏继续)统一 `STYLE.ui` 青描边。
+- **P1-7 结算卡片化 + 评级**：九项改「图标+标签+数值」卡片行 + `chipBorder` 分隔；新增 S/A/B/C 评级金标(`STYLE.food` 金、仅展示不入数值)，阈值按长度/击杀/得分/通关加权。
+- **P1-8 霓虹外发光**：胶囊(`box-shadow:0 0 10px ui`)、卡片(skillFx 色)、结算面板(`0 0 26px ui`) 统一柔发光。
+- **P2-9 世界层**：`11_render.js` 删每个食物旁的「食物」文字标签（金圆果形状已够辨识）。
+- **P2-10 伤害飘字**：`05_particle.js` 字号缩小(DOT 11→10 / 瞬伤 20·14→16·12 / 受击 18→14)、淡出 0.8→0.6s、火墙 MULTI-敌齐爆时 DOT 飘字每帧抽稀(≤`RT('VFX.dotTextFrameCap',10)`)，超量不糊屏。**未改任何伤害数值**。
+- **P2-11 蛇辨识度**：`11_render.js` 蛇头发光 `drawHalo` 半径 `*1.9→*2.15`、alpha `0.22→0.32`（仍在 glowMax 缓存内），乱战一眼找到自己。
+- **是否动 §9 / core / collision / 玩法数值 / Bus 链路 / 阶段1-3 渲染**：**否**（纯视觉/布局/字号/淡出/抽稀，保留 HUD ~10Hz 节流）。
+- **验收**：①左上数据框不撑破、系统按钮归右上顶与技能栏分开；②Combo 不再铺长文、改发光徽标悬停看详情；③三选一每卡有图标/描述/Lv/1·2·3 提示且键盘可选；④结算走马灯无重复行、"Boss期"不叠字、"连携"正确；⑤结算九项有图标+卡片+评级金标、框内实底清晰；⑥按 B/V 无横幅(上版已修)；⑦世界层无"食物"标签、飘字更小更快、蛇头更亮。
+
 ## 2026-07-24d · feat(ui): GATE B UI 主题化——四组胶囊 HUD + 波次条/5格技能栏 + 选卡/结算/抉择全接 STYLE 真源（build 20260724c）
 - **目标**：把 12_ui.js 硬编码配色（#2de1a8/#ffb000/#ff5b7a/#11203a/#1a1530 等）全部替换为 GATE A 的 STYLE 配色宇宙，HUD 胶囊化对齐圣经 §8.4；零玩法改动。
 - **硬约束遵守**：①不新增任何新 hex、不建第二套色板——仅替换 + alias；②需要语义名用 alias（STYLE.win=player 绿 / STYLE.lose=enemy 红，值锁定现有）；③STYLE.heal 不依赖（HUD 心血用 STYLE.enemy 红）；④chipBg=STYLE.panel+panelAlpha 派生、chipBorder=STYLE.ui、textDim 直接复用。

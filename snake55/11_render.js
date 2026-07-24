@@ -315,7 +315,7 @@
 		ctx.globalAlpha = 0.5; circle(x - r * 0.32, y - r * 0.32, r * 0.32, '#ffffff'); ctx.globalAlpha = 1
 		ctx.strokeStyle = STYLE.player; ctx.lineWidth = Math.max(1, r * 0.18)
 		ctx.beginPath(); ctx.moveTo(x, y - r * 0.9); ctx.lineTo(x + r * 0.35, y - r * 1.5); ctx.stroke()
-		pickupLabel(x, y - r * 1.55 - 10, '食物')   // 果柄上方标签
+		// P2-9：删食物文字标签（金色圆果形状已够辨识，避免世界层文字 clutter）
 	}
 	function heartPath(cx, cy, s) {                                   // 以中心为原点的心形 path（s≈半宽）
 		ctx.beginPath()
@@ -555,7 +555,7 @@ function drawChargeArrow(e) {
 		var lowHp = GS.coreHp <= 1   // 蛇本体=主血条：低血时整蛇闪红（读现有 coreHp，不新增数值）
 		var bodyCol = (lowHp && Math.floor(GS.timeSec * 2) % 3 === 0) ? STYLE.lowHp : SNAKE_BODY   // 低血闪：频率放慢(~0.67Hz)+降占空比(1/3 时间)+暗哑红(STYLE.lowHp)，不刺眼
 		drawBodyTube(pts, headR, bodyR, bodyCol)        // 先画身体管（头/脖子图随后盖前段）
-		if (!lowHp) { drawHalo('snakehead', hx, hy, headR * 1.9, STYLE.playerGlow, 0.22) }   // 蛇头光晕（离屏缓存，唯一常驻发光体，护 FPS；低血时让位红闪）
+		if (!lowHp) { drawHalo('snakehead', hx, hy, headR * 2.15, STYLE.playerGlow, 0.32) }   // 蛇头光晕加强一档(P2-11)：*1.9→*2.15、0.22→0.32，仍在 glowMax 缓存内；低血时让位红闪
 		// 蛇头：整角烘焙进离屏(量化角)1:1 取用→零每帧旋转重采样；无眼（PNG 已定稿造型，不再叠代码眼/瞳孔）
 		ctx.save()
 		ctx.translate(hx, hy)
