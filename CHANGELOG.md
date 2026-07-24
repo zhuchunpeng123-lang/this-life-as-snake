@@ -2,6 +2,17 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-24e · fix(ui): GATE B 收尾·顶部横幅/结算框/九项提亮/回血间距/胶囊比例（build 20260724d）
+- **目标**：按用户实测反馈修 GATE B 遗留的 6 处 UI 问题，纯表现/布局，零玩法改动。
+- **①顶部监测横幅**：删除 `14_main.js` 的 `_statusBanner()` 及 B/V 键调用（B=像素吸附、V=重量特效诊断开关保留、仅不再弹 `top:8px` 居中 z-index 9999 横幅，因其压住顶部波次条）。
+- **②回血标签间距**：`11_render.js` 回血文字上移 `r*1.5-12` → `r*1.3-6`，拉近心形图标。
+- **③HUD 胶囊比例失调（根因）**：数据框配方提示 `div` 原写 `width:100%` 且继承胶囊 `white-space:nowrap`，把胶囊撑到最大宽显空、且文字不折行溢出。改为去 `width:100%`+`white-space:normal` 让框贴内容、文字正常折行；胶囊 padding `6px/12px`→`5px/11px`+`line-height:1.2`。
+- **④结算框透出背景**：外层 `result` 遮罩 `hexA(bg,0.92)`→`0.6`（框外可见游戏画面，更有氛围）；内层 `stage` 加 `hexA(bg,0.97)` 实底 + padding26/30 + radius18 + ui 描边 + 阴影（框内不透光、内容清晰可读、不破版）。
+- **⑤九项/蛇生文字太淡**：九项标签由 `textDim+opacity.7`（偏暗）提到 `textMain+opacity.82`，值加粗 `700` 保持层级；文本清晰。
+- **⑥失败红底黑字按钮丑**：通关/失败按钮由「彩色底+深色字」改为「深底 `hexA(panel,.9)` + 彩色描边 + 彩色字」(win=player绿 / lose=enemy红)，去掉红底黑字。
+- **是否动 §9 / core / collision / 玩法数值 / 阶段1-3 渲染**：**否**（纯 UI 布局/配色）。
+- **验收**：①按 B/V 不再有顶部横幅、波次条可见；②回血文字贴近心形；③HUD 胶囊贴内容不空、配方提示折行不溢出；④结算框外见游戏、框内实底清晰；⑤九项文字清晰；⑥失败按钮深底彩描边不丑。
+
 ## 2026-07-24d · feat(ui): GATE B UI 主题化——四组胶囊 HUD + 波次条/5格技能栏 + 选卡/结算/抉择全接 STYLE 真源（build 20260724c）
 - **目标**：把 12_ui.js 硬编码配色（#2de1a8/#ffb000/#ff5b7a/#11203a/#1a1530 等）全部替换为 GATE A 的 STYLE 配色宇宙，HUD 胶囊化对齐圣经 §8.4；零玩法改动。
 - **硬约束遵守**：①不新增任何新 hex、不建第二套色板——仅替换 + alias；②需要语义名用 alias（STYLE.win=player 绿 / STYLE.lose=enemy 红，值锁定现有）；③STYLE.heal 不依赖（HUD 心血用 STYLE.enemy 红）；④chipBg=STYLE.panel+panelAlpha 派生、chipBorder=STYLE.ui、textDim 直接复用。

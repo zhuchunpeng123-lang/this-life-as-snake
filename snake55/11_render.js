@@ -329,7 +329,7 @@
 		drawHalo('heal', x, y, r * 2.0, STYLE.heal, 0.2 + pulse * 0.24)
 		heartPath(x, y, r * 1.15); ctx.fillStyle = STYLE.heal; ctx.fill()
 		ctx.lineWidth = Math.max(1, r * 0.14); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1
-		pickupLabel(x, y - r * 1.5 - 12, '回血')   // 心形上方标签
+		pickupLabel(x, y - r * 1.3 - 6, '回血')   // 心形上方标签（拉近图标，避免文字离图标过远）
 	}
 	function drawGiftBox(x, y, r) {                                   // 礼物盒：青盒身+盒盖 + 白丝带十字 + 蝴蝶结（替代宝石，技能拾取物一眼识别）
 		var bh = r * 0.62, bw = r * 0.82, lidH = r * 0.26, lidOver = r * 0.12

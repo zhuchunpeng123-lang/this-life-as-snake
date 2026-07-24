@@ -30,7 +30,7 @@
 		return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'
 	}
 	function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain
-		return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
+		return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 11px;line-height:1.2;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
 	}
 	function after(ms, fn) { var my = seqId; var t = global.setTimeout(function () { if (my === seqId) { fn() } }, ms); timers.push(t); return t }
 	function clearTimers() { for (var i = 0; i < timers.length; i++) { global.clearTimeout(timers[i]); global.clearInterval(timers[i]) } timers.length = 0 }
@@ -50,7 +50,7 @@
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // pointer-events:auto：#ui-stage 为 none 让点击穿透到 canvas，此处重开 auto 使抉择按钮可点（非全屏，仅盒子区域捕获，保持非阻塞）
-		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.92) + ';z-index:30;pointer-events:auto', froot)
+		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
 		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(54px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
 		pauseBtn.textContent = '⏸ 暂停'
@@ -74,7 +74,7 @@
 		rotateChoiceEl.innerHTML = '<div style="font-size:46px">📱↔️</div><div>请横屏以查看升级 / 选择</div><div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏后将自动显示选项</div>'
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
-		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前“全显示”实现已超设计边界）') }
+		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
 	}
 
 	function tagLatest(tag) {
@@ -159,7 +159,7 @@
 		var eulogyMs = NARR.aiTextSec * 1000, budget = NARR.staticHardcapSec * 1000
 		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
 		result.innerHTML = ''; result.style.display = 'flex'
-		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center', result)
+		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读
 		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? STYLE.win : STYLE.lose) + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
 		still.textContent = win ? '通　关' : '死　亡'
 		after(30, function () { still.style.opacity = '1' })
@@ -182,7 +182,7 @@
 		})
 		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })   // Phase3 九项卡
 		after(stillMs + flashMs + eulogyMs, function () {
-			var btn = mk('button', 'margin-top:18px;padding:13px 28px;border:0;border-radius:12px;background:' + (win ? STYLE.win : STYLE.lose) + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer', stage)
+			var btn = mk('button', 'margin-top:18px;padding:13px 28px;border:2px solid ' + (win ? STYLE.win : STYLE.lose) + ';border-radius:12px;background:' + hexA(STYLE.panel, 0.9) + ';color:' + (win ? STYLE.win : STYLE.lose) + ';font:800 17px system-ui;cursor:pointer', stage)
 			btn.textContent = win ? '再来一局' : '再来一条蛇生'
 			btn.onclick = function () { var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
 		})
@@ -209,9 +209,9 @@
 		]
 		var box = mk('div', 'margin-top:16px;width:100%;border-top:1px solid ' + hexA(STYLE.ui, 0.15) + ';padding-top:12px', stage)
 		for (var i = 0; i < rows.length; i++) {
-			var r = mk('div', 'display:flex;justify-content:space-between;gap:20px;color:' + STYLE.textDim + ';font:500 14px system-ui;padding:3px 0', box)
-			mk('span', 'opacity:.7', r).textContent = rows[i][0]
-			mk('span', 'color:' + STYLE.textMain + ';font-weight:600', r).textContent = rows[i][1]
+			var r = mk('div', 'display:flex;justify-content:space-between;gap:20px;color:' + STYLE.textMain + ';font:500 14px system-ui;padding:3px 0', box)
+			mk('span', 'opacity:.82', r).textContent = rows[i][0]
+			mk('span', 'color:' + STYLE.textMain + ';font-weight:700', r).textContent = rows[i][1]
 		}
 	}
 
@@ -340,7 +340,7 @@
 			else { var have = aOwn ? la : lb, need = aOwn ? lb : la; lines.push('◦ 持有 ' + have + '，再得 ' + need + ' → ' + name) }
 		}
 		if (!lines.length) { return '' }
-		return '<div style="margin-top:4px;color:' + STYLE.textMain + ';font:600 13px system-ui;opacity:.9">' + lines.join('<br>') + '</div>'
+		return '<div style="margin-top:4px;color:' + STYLE.textMain + ';font:600 13px system-ui;opacity:.9;white-space:normal">' + lines.join('<br>') + '</div>'
 	}
 	function renderWave() {   // 顶部波次条(§8.4)：当前阶段+进度；Boss 预警切红闪 BOSS INCOMING
 		var segs = STAGE.segments, t = GS.timeSec, cur = segs[0], next = null
@@ -385,7 +385,7 @@
 		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
 		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
 		var recipe = buildRecipeHint()
-		hudData.innerHTML = '长度 ' + GS.segments + '　击杀 ' + GS.kills + '　得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + (recipe ? '<div style="width:100%;font-weight:500;opacity:.92;margin-top:2px">' + recipe + '</div>' : '')
+		hudData.innerHTML = '长度 ' + GS.segments + '　击杀 ' + GS.kills + '　得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + (recipe ? '<div style="font-weight:500;opacity:.92;margin-top:2px;white-space:normal">' + recipe + '</div>' : '')
 		hudWave.innerHTML = renderWave()
 		hudSkills.innerHTML = renderSkills()
 	}

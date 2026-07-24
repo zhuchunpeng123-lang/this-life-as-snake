@@ -359,9 +359,9 @@ function buildStart(wrap) {
 		global.addEventListener('keydown', function (e) {
 			keys[e.key] = true
 			// 调试：像素吸附开关（2026-07-24 FPS 回归 A/B；实测已证伪=对卡顿无影响，保留仅作对照）按 B
-			if (e.key === 'b' || e.key === 'B') { window.__NO_DIR1 = !(window.__NO_DIR1 !== false); _statusBanner() }
+			if (e.key === 'b' || e.key === 'B') { window.__NO_DIR1 = !(window.__NO_DIR1 !== false) }   // 像素吸附诊断开关（仅改渲染，不再弹顶部横幅，避免遮挡波次条）
 			// 调试：重量级特效开关（2026-07-24 实测定因：白爆(T1)+火墙(T3)是 GPU 填充率尖峰主因）按 V
-			if (e.key === 'v' || e.key === 'V') { _toggleVfx(); _statusBanner() }
+			if (e.key === 'v' || e.key === 'V') { _toggleVfx() }   // 重量级特效诊断开关（仅改渲染，不再弹顶部横幅）
 			if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return }
 			if (e.key !== '`' && e.key !== '~') { startIfMenu() }
 		})
@@ -384,15 +384,6 @@ function buildStart(wrap) {
 				pt.suppressFire = !!pt._savedFire
 			}
 		}
-		function _statusBanner() {   // 屏幕顶部横幅：同时显示像素吸附(B) 与 重量特效(V) 开关，非技术用户也能看懂
-			var el = document.getElementById('snapBanner')
-			if (!el) { el = document.createElement('div'); el.id = 'snapBanner'; el.style.cssText = 'position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9999;padding:4px 14px;border-radius:8px;font:700 13px system-ui;color:#fff;pointer-events:none;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.4)'; document.body.appendChild(el) }
-			var snap = window.__NO_DIR1 !== false
-			var vfx = !window.__NO_VFX
-			el.textContent = '像素' + (snap ? '吸附开' : '吸附关') + '(B) ｜ 重量特效' + (vfx ? '开' : '关·应流畅') + '(V)'
-			el.style.background = vfx ? 'rgba(40,180,90,.92)' : 'rgba(220,60,60,.92)'
-		}
-		_statusBanner()   // 启动即显示当前状态
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
 		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
 
