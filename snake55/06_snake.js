@@ -100,16 +100,35 @@
 			if (CONFIG.GAME.wallSlide && GS.timeSec < wallScrape.until) { speed *= CONFIG.GAME.wallScrapeSpeedMult }
 			head.x += Math.cos(head.angle) * speed * dt
 			head.y += Math.sin(head.angle) * speed * dt
-			// 3) 撞墙＝沿墙滑行（逐轴钳制→垂直分量归零、切向保速、不可穿越）+ 刮擦减速 grace（真理源 §2.1，非致死源）
-			var r = RT('PLAYER.headRadius', P.headRadius), hitWall = false   // L2：墙碰半径实时跟随 GM 滑条（RT 桥），与视觉/判定同源
-			if (head.x < r) { head.x = r; hitWall = true }
-			if (head.y < r) { head.y = r; hitWall = true }
-			if (head.x > CONFIG.GAME.worldWidth - r) { head.x = CONFIG.GAME.worldWidth - r; hitWall = true }
-			if (head.y > CONFIG.GAME.worldHeight - r) { head.y = CONFIG.GAME.worldHeight - r; hitWall = true }
-			if (hitWall) {
-				wallScrape.until = GS.timeSec + CONFIG.GAME.wallScrapeGrace   // 接触后维持刮擦减速 grace 秒
-				Bus.emit('snake:wall', { x: head.x, y: head.y })             // render→shakeLight、particle→刮擦火花（不致死）
+		// 3) 撞墙＝沿墙滑行（逐轴钳制→垂直分量归零、切向保速、不可穿越）+ 刮擦减速 grace（真理源 §2.1，非致死源）
+		var r = RT('PLAYER.headRadius', P.headRadius), hitWall = false   // L2：墙碰半径实时跟随 GM 滑条（RT 桥），与视觉/判定同源
+		var hitX = 0, hitY = 0   // 记录 X/Y 轴撞墙方向（±1=墙外法向），供墙角/收敛判定（需求 B）
+		if (head.x < r) { head.x = r; hitWall = true; hitX = -1 }
+		if (head.y < r) { head.y = r; hitWall = true; hitY = -1 }
+		if (head.x > CONFIG.GAME.worldWidth - r) { head.x = CONFIG.GAME.worldWidth - r; hitWall = true; hitX = 1 }
+		if (head.y > CONFIG.GAME.worldHeight - r) { head.y = CONFIG.GAME.worldHeight - r; hitWall = true; hitY = 1 }
+		if (hitWall) {
+			wallScrape.until = GS.timeSec + CONFIG.GAME.wallScrapeGrace   // 接触后维持刮擦减速 grace 秒（§2.1 grace 复用既有，不新增救回窗）
+			Bus.emit('snake:wall', { x: head.x, y: head.y })             // render→shakeLight、particle→刮擦火花（不致死）
+			// —— 需求 B · 撞墙后朝向收敛（仅防"头朝墙外原地绕/像失灵"，不取代正常转向）——
+			// 补充(a)：玩家朝墙外拨杆(_wantOut)时跳过收敛，让上方 step1 的摇杆转向独占→拨杆即滑离、不被对拉
+			var _wantOut = false
+			if (hitX !== 0 && Math.sign(inputDir.x) === hitX) { _wantOut = true }
+			if (hitY !== 0 && Math.sign(inputDir.y) === hitY) { _wantOut = true }
+			if (!_wantOut) {
+				// 法向归零、切向保向：把当前朝向投到墙面（被钳轴法向分量去掉），平滑收敛到该切向方向
+				var _vx = Math.cos(head.angle), _vy = Math.sin(head.angle)
+				if (hitX !== 0) { _vx = 0 }
+				if (hitY !== 0) { _vy = 0 }
+				if (_vx !== 0 || _vy !== 0) {
+					var _slide = Math.atan2(_vy, _vx)
+					var _max = M.deg2rad(effectiveTurnRateDeg()) * dt   // 复用 §1 turnRate（收敛速率=转向速率，零新数字；补充(c) 同帧最坏 ~2× 不突变）
+					head.angle = M.angleLerp(head.angle, _slide, _max)
+				}
+				// 墙角(两轴同撞) → _vx=_vy=0 无可收敛方向 → 保持 head.angle 不变（不横跳不抖，补充 b/②）
 			}
+			// 补充(b)：恒速/speed 已在 step2 乘 CONFIG.GAME.wallScrapeSpeedMult 降速，本块不动 → 刮擦减速真源仍生效（切向保速≠废 scrape）
+		}
 			// 4) 路径记录 + 跟随
 			recordPath()
 			updateFollow(dt)

@@ -26,6 +26,7 @@
 | [④-B-屏震打击感精修.md](./④-B-屏震打击感精修.md) | 🟡 待办 | 根目录 | docs/plans/ | ④ 已 commit 且实测绿，④-B 解除阻塞可推进（屏震四档已在 07-17 e5d3f7f 部分落地） |
 | [⑥-冰冻机制重做-计划.md](./⑥-冰冻机制重做-计划.md) | ✅ 已落地 | 根目录 | docs/plans/ | 5777395 已 commit、数值已回写 §9；用户确认重做已完成 |
 | [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 待办 | 根目录 | docs/plans/ | 移动端优化后置：PC 试玩是手感主战场，移动端是受众扩展项、非原型验收阻塞（用户裁定后置，待网页端手感+成长闭环打完再回头做）；含 viewport/contain 适配/安全区/窄屏 UI |
+| [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 待办(已落地待实测) | 根目录 | docs/plans/ | 需求 A 摇杆之后的 gameplay 核心 bug 修（对齐 §2.1 沿墙滑行+撞墙回正）；仅改 06_snake 撞墙块，复用 turnRate/grace/scrape 零新数字；含补充 abc + 验收加测；独立 commit 不与 A 并批 |
 
 ## 归档约定（防文件膨胀，详见 README.md）
 1. 新增计划 → 建 `<需求名>.md` 并**立即在 STATUS.md 登记一行**（🟡 active）。
