@@ -3,6 +3,7 @@
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	var M = Core.M, Formula = Core.Formula
 	var EN = CONFIG.ENEMIES, SPAWN = CONFIG.SPAWN, CB = CONFIG.COMBAT, COLORS = CONFIG.COLORS, GAME = CONFIG.GAME, ECON = CONFIG.ECON
+	var STYLE = CONFIG.STYLE   // §5.5 威胁色阶真源（纯视觉赋值 e.color，不改任何逻辑/数值/掉率）
 	var lastKillSec = -999            // §7 连杀计时：最近一次击杀时刻（GS.timeSec），用于「resetSec 内无击杀→连杀清零」
 
 	// 🟡 行为节奏：真理源未量化（仅给速度/半径/弹速），手感占位 + 候选，待回写真理源
@@ -14,9 +15,10 @@
 	var BOSS_BULLET_LIFE_SEC = 4.0       // TODO: 待确认（候选 3 / 4）
 	var DOT_TEXT_MIN = 4                 // ⑦ 表现层：DOT 累计到此值才飘伤害字（防每帧刷屏）；Commit A 由 10→4 让 DOT 飘字更频繁（视觉「持续小数字」），仅影响飘字聚合、不进伤害/命中判定；TODO 候选 3 / 6
 
+	// 威胁色阶（§5.5 STYLE 真源，纯视觉）：暖橙(散步)→红(追踪/冲锋)→紫(精英)→品红(Boss/弹)；e.color 仅供渲染/飘字/爆花取色，不参与任何逻辑/数值
 	var colorByType = {
-		chaser: COLORS.enemyChaser, wanderer: COLORS.enemyWanderer, charger: COLORS.enemyCharger,
-		elite: COLORS.enemyElite, boss: COLORS.boss, bossBullet: COLORS.boss
+		chaser: STYLE.enemy, wanderer: STYLE.enemyCalm, charger: STYLE.enemy,
+		elite: STYLE.elite, boss: STYLE.boss, bossBullet: STYLE.boss
 	}
 
 	var list = []

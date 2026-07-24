@@ -3,16 +3,17 @@
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, Core = global.Core, Log = global.Log
 	var M = Core.M
 	var COLORS = CONFIG.COLORS
+	var STYLE = CONFIG.STYLE, SKFX = CONFIG.STYLE.skillFx   // §5.5 视觉真源 + 五技能标志色（键=代码技能 id）
 
 	// —— 表现债：技能视效参数（🟡 纯表现层，待 ~ 调参器定稿，候选见 TODO；不动 §9）——
-	var BOLT_COLOR = '#fff1a8'      // TODO: 弹道光束色 白黄（候选 #ffffff / #ffe066）
+	var BOLT_COLOR = SKFX.bolt      // §5.5：飞镖/射击标志色（原白黄 #fff1a8 → STYLE.skillFx.bolt，避开 ui 青）
 	var BOLT_LIFE = 0.2             // TODO: 弹道光束存活 0.2s（候选 0.15 / 0.25）
 	var BEAM_W_PX = 3               // TODO: 光束线宽 3px（候选 2 / 4）
-	var LIGHTNING_COLOR = '#9fd0ff' // TODO: 电链色 蓝白（候选 #bfe3ff / #88ccff）
+	var LIGHTNING_COLOR = SKFX.lightning // §5.5：闪电标志色（原蓝白 #9fd0ff → STYLE.skillFx.lightning）
 	var LIGHTNING_W_PX = 2          // TODO: 电链线宽 2px（候选 3 / 1.5）
 	var LIGHTNING_LIFE = 0.22       // TODO: 电链存活 0.22s（候选 0.18 / 0.28）
 	var LIGHTNING_JAG = 14          // TODO: 电链折线抖动 14px（候选 10 / 20）
-	var BLAST_COLOR = '#ffb04d'     // TODO: 爆环色 暖橙（候选 #ff8a3d / #ffd27a）
+	var BLAST_COLOR = STYLE.enemyCalm  // §5.5：爆环暖橙（原 #ffb04d → STYLE.enemyCalm，统一暖橙语义）
 	var BLAST_LIFE = 0.4            // TODO: 爆环存活 0.4s（候选 0.3 / 0.5）
 	var BLAST_RING_W = 4            // TODO: 爆环线宽 4px（候选 3 / 6）
 	var HIT_BURST_N = 6             // TODO: 命中爆点 6颗（候选 4 / 8）
@@ -29,9 +30,9 @@
 	var ELECTRO_GLOW_R = 16       // TODO: 电磁命中残留辉光半径 16px（基础无）候选 12 / 20
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
 	var SRC_STYLE = {
-		bolt:      { label: '飞镖 ', color: '#2ad4ff' },        // 飞镖：青（候选 #29c7ff / #3fe0ff）
-		lightning: { label: '闪电 ', color: '#9fd0ff' },        // 闪电：蓝白（B-4 修正：由紫 #c9a8ff 改与 fx:lightning 电链色 LIGHTNING_COLOR 对齐；候选 #bfe3ff / #88ccff）
-		electro:   { label: '⚡电磁 ', color: '#c9a8ff' },      // 电磁炮台连锁：紫（B-4 验收①a 新增：与 fx:electroarc 紫电链对齐，独立于基础闪电；src='electro' 由 08_skill doLightningChain 透传）
+		bolt:      { label: '飞镖 ', color: SKFX.bolt },        // §5.5：飞镖标志色（原青 #2ad4ff → STYLE.skillFx.bolt，避开 ui 青）
+		lightning: { label: '闪电 ', color: SKFX.lightning },   // §5.5：闪电标志色（→ STYLE.skillFx.lightning，与 fx:lightning 电链一致）
+		electro:   { label: '⚡电磁 ', color: STYLE.elite },    // 电磁炮台连锁：紫（→ STYLE.elite，独立于基础闪电；src='electro' 由 08_skill doLightningChain 透传）
 		fire:      { label: '🔥火墙 ', color: '#ff9a3c' },      // 火焰墙 DOT：橙（B-4 衍生：与灼烧引燃分源独立飘字，标签区分）
 		burn:      { label: '🔥灼烧 ', color: '#ff5a2c' },      // 灼烧弹幕引燃：红橙（B-4 衍生：与火墙分源独立飘字，色比火墙红以辨识）
 		burning:   { label: '🔥灼烧 ', color: '#ff7a3c' },      // 灼烧弹幕 combo：橙（B-4 验收①c 补全：bolt 命中经此标识，与 fx:burndart 橙镖/火环一致；仅飘字前缀，零 gameplay）
@@ -73,6 +74,10 @@
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
 	}
+	// §5.5 人工特效降级（叠加在 PerfTier/预算之上；只在生成入口乘倍率，不动池 update/draw）：high=1 / med=0.6 / low=0.3
+	function fxScale() { var f = RT('STYLE.fxLevel', STYLE.fxLevel); return f === 'low' ? 0.3 : (f === 'med' ? 0.6 : 1) }
+	function fxLow() { return RT('STYLE.fxLevel', STYLE.fxLevel) === 'low' }   // low 档：跳白闪核（overdraw 大头）保可读，飘字/爆环仍在
+	function scN(n) { return Math.max(1, Math.round(n * fxScale())) }          // 生成颗数降级（≥1 保可见）；分叉类可另允 0
 	function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
 	function maxParticles() { return RT('PERF.maxParticles', perfFB('maxParticles', CONFIG.PERF.maxParticles)) }
 	function maxTexts() { return RT('PERF.maxTexts', perfFB('maxTexts', CONFIG.PERF.maxTexts)) }
@@ -104,6 +109,7 @@
 	}
 	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
 	function spawnFlashCore(x, y, radius, color, life) {
+		if (fxLow()) { return }   // §5.5 low 档：跳白闪核（overdraw 大头）保可读，爆环+飘字仍在
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆白闪核尖峰
 		if (flashCores.length >= flashCoreCap()) {    // 并发超上限 → 丢最旧(数组头最先老化)，保留最新视觉
 			var old = flashCores.shift(); if (old) { flashPool.release(old) }
@@ -147,6 +153,7 @@
 
 	function spawnBurst(x, y, count, color, speed, size, life, prio) {   // prio 默认 high；仅 enemy:hit 逐次命中火花传 'low'，满上限时优先丢弃
 		prio = (prio === 'low') ? 'low' : 'high'
+		count = scN(count)   // §5.5 特效降级：med/low 减颗数（生成入口，不动池逻辑）
 		for (var i = 0; i < count; i++) {
 			var a = Math.random() * M.PI2
 			var sp = speed * (0.5 + Math.random() * 0.5)
@@ -166,7 +173,7 @@
 		if (particles.length >= maxParticles() * 0.5) { return }   // 余量门控：池忙(≥半满)时停喷余烬，留 GPU 呼吸低谷，治"焊死 240/240 常载拖帧"
 		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length === 0) { return }
 		var segs = s.segments, fi = owned.fire - 1
-		var n = Math.min(4, 2 + fi)   // 余烬数：1阶≈2 / 2阶≈3 / 3阶≈4，封顶 4
+		var n = scN(Math.min(4, 2 + fi))   // 余烬数：1阶≈2 / 2阶≈3 / 3阶≈4 封顶 4；§5.5 med/low 再降
 		for (var ei = 0; ei < n; ei++) {
 			var sg = segs[(Math.random() * segs.length) | 0]   // 蛇身随机点（整条火墙燃烧，非单点）
 			var a = Math.random() * M.PI2, sp = 30 + Math.random() * 50
@@ -316,11 +323,11 @@
 			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14, 'high')   // 瞬伤/蒸汽飘字提权 high：满池时不让位 low 标签（冰减速等），确保伤害数字必现（修"假人无数字/蒸汽飘字不全"）
 		}
 	})
-	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || COLORS.enemyChaser, 220, 4, 0.5) })
-	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, COLORS.food, 120, 3, 0.35) } })
-	Bus.on('snake:hurt', function (d) {
-		spawnBurst(d.x, d.y, 10, COLORS.boss, 200, 4, 0.5)
-		spawnText(d.x, d.y - 10, '-' + (d.damage || 1), COLORS.boss, 18)
+	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || STYLE.enemy, 220, 4, 0.5) })   // 死亡爆花取威胁色（d.color 来自 07_enemy STYLE 色阶）
+	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, STYLE.food, 120, 3, 0.35) } })   // 吃拾取金色爆花
+	Bus.on('snake:hurt', function (d) {                                   // 受击：红色爆花+红飘字（危险语义，配合 render 全屏红闪+蛇头红闪+轻震屏）
+		spawnBurst(d.x, d.y, 10, STYLE.enemy, 200, 4, 0.5)
+		spawnText(d.x, d.y - 10, '-' + (d.damage || 1), STYLE.enemy, 18)
 	})
 	// 需求B 技能视效接收（🟡 参数见顶部表现债常量块 TODO+候选，不动 §9）
 	Bus.on('fx:bolt', function (d) {
@@ -331,8 +338,8 @@
 	// B-3：灼烧弹幕飞镖视觉（橙 #ff7a3c，与基础白黄 fx:bolt 区分；事件名全小写）
 	Bus.on('fx:burndart', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, '#ff7a3c', BOLT_FLY_SEC)   // 橙色飞行镖（燃烧弹）
-		spawnBurst(d.to.x, d.to.y, 10, '#ff7a3c', 170, 4, 0.3)                  // 更大更亮橙焰爆点（命中处）
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, SKFX.fire, BOLT_FLY_SEC)   // 橙色飞行镖（燃烧弹，STYLE.skillFx.fire）
+		spawnBurst(d.to.x, d.to.y, 10, SKFX.fire, 170, 4, 0.3)                  // 更大更亮橙焰爆点（命中处）
 		spawnBurst(d.to.x, d.to.y, 5, '#ffd27a', 120, 3, 0.22)                   // 内芯亮黄爆点（层次）
 	})
 	Bus.on('fx:lightning', function (d) {
@@ -352,12 +359,12 @@
 		spawnFlashCore(h0.x, h0.y, ELECTRO_GLOW_R + 4, 'rgba(201,168,255,0.55)', ELECTRO_BRANCH_LIFE + 0.05)  // 蛇头炮台紫辉光（实体之上，比基础闪电多一层残留）
 		for (var i = 1; i < d.chain.length; i++) {
 			var a = d.chain[i - 1], b = d.chain[i]
-			spawnBeam(a.x, a.y, b.x, b.y, '#c9a8ff', ELECTRO_W_PX, ELECTRO_LIFE, ELECTRO_JAG)   // 紫色粗弧电链（明显比基础闪电 2px 粗、存活更久，留得住眼）
-			spawnBurst(b.x, b.y, HIT_BURST_N, '#c9a8ff', 110, 3, 0.25)                          // 节点紫爆点
+			spawnBeam(a.x, a.y, b.x, b.y, STYLE.elite, ELECTRO_W_PX, ELECTRO_LIFE, ELECTRO_JAG)   // 紫色粗弧电链（STYLE.elite；比基础闪电粗、存活更久）
+			spawnBurst(b.x, b.y, HIT_BURST_N, STYLE.elite, 110, 3, 0.25)                          // 节点紫爆点
 			spawnFlashCore(b.x, b.y, ELECTRO_GLOW_R, 'rgba(201,168,255,0.5)', ELECTRO_BRANCH_LIFE)  // 命中残留紫辉光（~0.2s afterglow；基础闪电无，靠此拉开停留时长）
 			for (var r = 0; r < ELECTRO_BRANCH_N; r++) {                                        // 节点多分叉放射紫电芒（基础闪电无分叉）
 				var ra = (r / ELECTRO_BRANCH_N) * M.PI2 + Math.random() * 0.3, rl = 16 + Math.random() * 14
-				spawnBeam(b.x, b.y, b.x + Math.cos(ra) * rl, b.y + Math.sin(ra) * rl, '#c9a8ff', 2, ELECTRO_BRANCH_LIFE, 0)
+				spawnBeam(b.x, b.y, b.x + Math.cos(ra) * rl, b.y + Math.sin(ra) * rl, STYLE.elite, 2, ELECTRO_BRANCH_LIFE, 0)
 			}
 		}
 	})
@@ -375,28 +382,28 @@
 		}
 		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射 · high 优先
 			var ia = Math.random() * M.PI2, isp = 120 + Math.random() * 120
-			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, '#9fdcff', 0.9, 'high')
+			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, SKFX.ice, 0.9, 'high')
 		}
 	})
 	// b9-diag：灼烧弹幕点燃计数改为 direct DBG.ignite++（见 incIgnite），不在热路径发 Bus 事件（已确认无 gameplay listener，纯诊断噪声）
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
-		emitText(d.x, d.y - 6 - (d.r || 12), '减速', '#9fdcff', 12, 'low')   // 减速标签：low 优先（满上限时丢弃，不抢伤害飘字预算）
-		spawnBurst(d.x, d.y, 3, '#9fdcff', 90, 2, 0.25)
+		emitText(d.x, d.y - 6 - (d.r || 12), '减速', SKFX.ice, 12, 'low')   // 减速标签：low 优先（满上限时丢弃，不抢伤害飘字预算）
+		spawnBurst(d.x, d.y, 3, SKFX.ice, 90, 2, 0.25)
 	})
 	// ⑥ 首测 A：冰锥从尾部甩出 → 飞向落点（纯视觉，伤害即时判定于池内）+ 落点霜环预告（读"要在这冻"）
 	Bus.on('fx:ice_throw', function (d) {
 		if (!d || !d.from || !d.to) { return }
 		var travel = d.travel || 0.16   // 飞行时长与 08_skill ICE_THROW_SEC 同源
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, '#9fdcff', travel)   // 冰锥飞行（尾→落点）
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, SKFX.ice, travel)   // 冰锥飞行（尾→落点）
 		spawnBlast(d.to.x, d.to.y, d.r || 40, 'rgba(159,220,255,0.45)', 0.15)   // 落地预告霜环（极短，读"要在这冻"）
 	})
 	// ⑥ 首测 A：冰锥到达落点 → 霜环扩张淡出 + 冰晶爆点（冰池生长动画由 render 读 icePools.growT 承担）
 	Bus.on('fx:ice_pool', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
 		spawnBlast(d.x, d.y, d.r || 40, 'rgba(225,243,255,0.75)', 0.3)   // 落点霜环扩张淡出
-		spawnBurst(d.x, d.y, 6, '#9fdcff', 110, 3, 0.28)                  // 冰晶爆点
+		spawnBurst(d.x, d.y, 6, SKFX.ice, 110, 3, 0.28)                  // 冰晶爆点
 	})
 	Bus.on('core:run_reset', function () { Particle.clear() })
 

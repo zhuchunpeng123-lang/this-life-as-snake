@@ -161,6 +161,7 @@
 			skillPity: { killStreakGuarantee: 15, firstSkillGuaranteeSec: 9 },   // P0-1 裁定：≤10s（9s）内给首技能
 		upgradeMinGapSecBySeg: [20, 20, 30, 0, 0],   // 战线A：升级间隔地板按段取值（索引=stageId-1：1→20 / 2→20 / 3→30 / 4→0 / 5→0）；值0或null＝地板失效、恢复原掉率。段①②=设计下限20(终值待实测锁20/25)；段③=30锚(实测拍板25/30/35)；段④⑤=0不测
 			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 45, perRunMin: 2, perRunMax: 3, screenCap: 1 },
+			visualScale: { food: 1.3, heal: 1.8, skill: 1.8 },   // 拾取物【仅视觉】放大倍率(不动 o.radius 碰撞)；用户验收：heal/skill 定 1.8x，food(加节数) 1.3x；待实测量化回写 §9
 			dangerBias: { ringMin: 40, ringMax: 150 }   // 🟡 补给危险偏向：敌身周围偏移环带(px)，落点钳视野内且不贴脸；候选 ringMin 30/40 · ringMax 120/150/180，待实测量化回写 §9
 		},
 
@@ -306,6 +307,45 @@
 			damageText: '#ffffff',
 			critText: '#ffe14d',
 			neutral: '#8a93b2'
+		},
+
+		// —— §5.5 STYLE 视觉真源（纯表现，非 §9 强度值；世界/HUD/卡片/结算全渲染共读，禁散写魔法值）——
+		// 统一暗色霓虹语言：同一套色板 + 发光 + 圆角 + 降级常量。COLORS 保留兼容，新代码只读 STYLE。
+		// 颜色语义见 GDD §5；比例类常量（cornerRatio/glowBlur/strokeRatio）供「按半径×比例」换算，禁写死像素。
+		STYLE: {
+			bg: '#11162a',            // 世界底
+			player: '#27c98a',        // 蛇身/蛇尾主绿（真源）；PNG 实测主填充 #21c78f≈#27c98a（ΔE 极小·肉眼无缝）→ 头身零可见色差
+			playerGlow: '#4dffc3',    // 蛇头光晕（较主绿更亮）
+			lowHp: '#b8465c',         // 低血(1血)蛇身闪色：暗哑红（比 STYLE.enemy 不显眼，仅低血提示，零 gameplay）
+			food: '#ffd54a',          // 食物金
+			heal: '#ff6b8a',          // 回血红心（玫红·区别于敌红 enemy，靠心形+粉红一眼识别为增益）
+			enemyCalm: '#ff9f5a',     // 威胁色阶·暖橙（散步 wanderer）
+			enemy: '#ff4d6d',         // 威胁色阶·红（追踪 chaser / 冲锋 charger）
+			elite: '#b06bff',         // 威胁色阶·紫（精英 elite）
+			boss: '#ff2d95',          // 威胁色阶·品红（Boss）
+			ui: '#8becff',            // UI 青（描边 / 高亮 / 技能宝石）
+			textMain: '#eaf2ff',      // 主文字
+			textDim: '#7f8bad',       // 次文字
+			panel: '#1b2340',         // 面板底
+			cornerRatio: 0.5,         // 圆角 = 高 × 此比例（胶囊 = 半高）
+			glowBlur: 0.6,            // 发光模糊 = 半径 × 此比例
+			glowAlpha: 0.55,          // 发光透明度基准
+			strokeRatio: 0.08,        // 描边宽 = 半径 × 此比例
+			fxLevel: 'high',          // 人工特效降级：high/med/low（叠加在 PerfTier 之上；仅生成入口乘倍率，不动池 update/draw）；GM 经 RT('STYLE.fxLevel') 热调
+			particleCap: 300,         // 特效密度参考（实际硬上限仍由 PERF.maxParticles / PerfTier 管控）
+			glowMax: 12,              // 每帧 shadowBlur 发光体上限（超出退化平涂，护 FPS）
+			panelAlpha: 0.7,          // 面板底透明度
+			hudEdgePad: 16,           // HUD 安全边距 px
+			hudIconSize: 20,          // HUD 图标基准 px
+			// 五技能标志色（键 = 代码实际技能 id：fire/ice/bolt/shield/lightning）
+			// 沿用修正版色值 + 撞色规避；仅 shoot→bolt / frost→ice / magnet→lightning 重键到代码真实标识（代码第 5 技能是闪电非磁吸）
+			skillFx: {
+				bolt:      '#d8ff7a',   // 飞镖/射击（避开 ui 青）
+				fire:      '#ff7a3c',   // 火焰
+				ice:       '#7fc4ff',   // 冰霜（比 ui 更冷更蓝）
+				shield:    '#bff0d8',   // 护盾（避开 food 黄）
+				lightning: '#7a9bff'    // 闪电（避开 elite 紫）
+			}
 		},
 
 		// —— 音频（Web Audio 合成 · 资产豁免） ——
