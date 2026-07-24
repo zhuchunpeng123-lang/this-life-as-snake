@@ -63,7 +63,19 @@
 		var cfg = EN[type]
 		if (!cfg) { Log.warn('未知敌人类型：' + type); return null }
 		var e = pool.acquire()
-		pickSpawnPos(_pos, cfg.radius || 12)
+		// 出生即避开与现有敌重叠（boss/假人体型特殊豁免挤占），落点仍钳世界内；最多 8 次重试，失败则用最后一次（不阻塞出生）
+		var _r = cfg.radius || 12
+		for (var _s = 0; _s < 8; _s++) {
+			pickSpawnPos(_pos, _r)
+			var _clash = false
+			for (var _j = 0; _j < list.length; _j++) {
+				var _o = list[_j]
+				if (!_o.active || _o.type === 'boss' || _o.isDummy) { continue }
+				var _dx = _o.x - _pos.x, _dy = _o.y - _pos.y, _min = (_o.radius + _r)
+				if (_dx * _dx + _dy * _dy < _min * _min * 0.72) { _clash = true; break }
+			}
+			if (!_clash) { break }
+		}
 		e.active = true; e.id = ++_id; e.type = type
 		e.x = _pos.x; e.y = _pos.y; e.prevX = _pos.x; e.prevY = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
@@ -283,14 +295,30 @@
 			if (GS.status !== 'playing') { return }
 			// §7 连杀清零：距上次击杀 ≥ resetSec 秒无新击杀（防挂机刷分）
 			if (GS.killStreak > 0 && (GS.timeSec - lastKillSec) >= ECON.killStreak.resetSec) { GS.killStreak = 0 }
-			var sm = rookieSpeedMul(GS.timeSec)
+		var sm = rookieSpeedMul(GS.timeSec)
 		for (var i = list.length - 1; i >= 0; i--) {
 			var ei = list[i]
 			ei.prevX = ei.x; ei.prevY = ei.y   // 渲染插值快照：移动前记上一步位置（对象池复用/瞬移由 spawn 重置 prev，防横穿地图）
 			updateOne(ei, dt, sm)
 			if (!ei.active) { releaseAt(i) }
 		}
+		// 敌-敌分离：用户决策"不让怪物重叠"（治本，消除单体锁定技能对重叠群只中前排的问题）。纯 list 遍历，不依赖碰撞底层/不动 core·04；
+		// boss/假人体型特殊豁免(不参与分离，保 boss 弹幕与 charger 冲撞手感)；近邻对称各推一半，推完再 clampWorld 防推出世界边界。
+		for (var sa = 0; sa < list.length; sa++) {
+			var ea = list[sa]
+			if (!ea.active || ea.type === 'boss' || ea.isDummy) { continue }
+			for (var sb = sa + 1; sb < list.length; sb++) {
+				var eb = list[sb]
+				if (!eb.active || eb.type === 'boss' || eb.isDummy) { continue }
+				var ddx = eb.x - ea.x, ddy = eb.y - ea.y, rr = ea.radius + eb.radius, d2 = ddx * ddx + ddy * ddy
+				if (d2 > 1e-6 && d2 < rr * rr) {
+					var dd = Math.sqrt(d2), push = (rr - dd) * 0.5, nx = ddx / dd, ny = ddy / dd
+					ea.x -= nx * push; ea.y -= ny * push; eb.x += nx * push; eb.y += ny * push
+				} else if (d2 <= 1e-6) { ea.x -= 0.5; eb.x += 0.5 }   // 完全同点：微扰防 NaN
+			}
 		}
+		for (var sc = 0; sc < list.length; sc++) { if (list[sc].active) { clampWorld(list[sc]) } }
+	}
 	}
 
 	// 蛇身 × 敌人：MVP 阶段蛇身无任何交互（不伤害、不击退、不触发事件）——「铁壁蛇阵」为 P1 功能，留待后续启用（§2.1）

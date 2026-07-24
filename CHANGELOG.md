@@ -2,6 +2,108 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · revert(render): 蛇身/头几何回退 commit 版，仅留眼睛+受光渐变绿（build ?v=2026c）
+- **用户决策**：连续微调(25a 头前移 + 25b 脖子连接圆)仍引出衔接怪异→回退。本回合：蛇身几何与头位置**回退到 commit 版**(圆形身体、头不前移 headR*0.38、无脖子连接圆)；**保留**①当前版眼睛(`eyes=[-146,-238]/[146,-238]`、眨、随头朝向转、不歪)；②受光渐变绿(`drawShadedCircle` 中心 SNAKE_BODY_HI、边缘 STYLE.player，= 25a「那个颜色」消色差)。头大小 headRadiusRender=28 不动。
+- **撤掉的 25a/25b 渲染改动**：`hx2/hy2` 头前移整段、`_neckDist/_nbx/_nby` 脖子连接圆、`drawHalo`/`_snakeEyeX/Y` 锚点改回 `hx,hy`。无残留引用(lint 0 error)。`drawShadedCircle` 帮手保留(供 body 渐变复用)。
+- **未动底层**：`03_core`/`04_collision`/`07_enemy`/`14_main`/碰撞/§9 未动；`02_config` 仅保留 25a 的 `STYLE.playerHi`(颜色所需)，`headRadiusRender=28`/`bodyRadius=12` 不变。
+- **验收**：①强刷(2026c)蛇头/身体几何=commit 稳定态、无衔接断节/无舌头压身怪异；②眼睛为当前版(偏后、间距略窄、转弯随头转不歪)；③身体圆带受光渐变绿、与 PNG 头同料无色差；④低血整蛇闪红正常。
+
+## 2026-07-25b · fix(render): 脖子根衔接断节(圆身露一半) + 眼睛再后移/间距×0.85（build ?v=2026b）
+- **①脖子根衔接断节(用户:圆身露一半被舌头/脖子盖一半,怪异)**：根因=头 PNG 脖子根(绿最后像素 y=909,距图心397px=渲染 `headR*0.775`)仅 ~9.4px 宽,而身体圆直径 24px→身体从脖子两侧外露、断节。修复：`drawBodyTube` 抽出 `drawShadedCircle`(受光渐变圆)复用；在脖子根位置(头心沿 -heading 退 `headR*0.775`)画一个身体同色连接圆,前被头盖、后接身体管→过渡平滑(用户允"身与头图稍交错")；低血红闪同步平涂红。纯渲染零 gameplay。
+- **②眼睛再后移+间距收窄(用户:再往身体挪一点点 + 间距×0.85)**：`eyes` `[-172,-252]/[172,-252]` → `[-146,-238]/[146,-238]`；间距 ±172→±146(×0.85)、y `-252→-238` 再往身体后方挪 ~14图px(眼白半径≈102图px≫挪动量→不重影/不露 PNG 小眼)；转弯整体随头转、不歪。
+- **未动底层**：`03_core`/`04_collision`/`07_enemy`/`14_main`/碰撞/§9 未动；`headRadiusRender=28`、`bodyRadius=12`、`headR*0.38` 头前移量未动(25a 舌头不压身保留)。
+- **验收**：①强刷(2026b)蛇头与身体衔接处不再有"圆身露一半"的断节、脖子平滑过渡到身体；②转弯眼睛随头整体转、位置偏后、间距略窄、不像象牙/鼻；③低血整蛇闪红时脖子连接圆同闪红、无绿缝。
+
+## 2026-07-25a · fix(render): 蒸汽偶发纯白屏 + 眼睛后移 + 头PNG前移不压舌 + 身体加受光渐变消色差（build ?v=2026a）
+- **①蒸汽偶发纯白屏(用户实测·偶发)**：根因定位=白闪核 `flashCore`(`05_particle.js` drawOverlay 实心白圆)在连击/蒸汽链同一坐标**叠加**(source-over)→2~3 个叠到有效 alpha 逼近 1.0=纯白屏；单核原有效 alpha=0.85×0.92≈0.78 本就偏亮。修复：`fx:steamblast` 白闪核 alpha `rgba(255,255,255,0.92)→0.5`、白蒸汽云环 `0.8→0.5`；drawOverlay 白闪核封顶 `a*0.85→a*0.7`。结果：单核≈0.35(半透)、同点叠 2~3 个封顶≈0.6~0.73，不再爆纯白。已查 `globalCompositeOperation` 全仓仅 1 处 `lighter`(火墙段 726 行、736 已 restore)无泄漏→非合成模式漏。
+- **②眼睛后移(用户:太靠前像象牙/鼻)**：`drawSnakeEyes` 眼位 `[-165,-301]/[162,-300]` → `[-172,-252]/[172,-252]`(y 往身体后方挪 ~65 图px、x 对齐 PNG 眼 ±172)；眼白半径≈102 图px≫挪动量→仍盖住 PNG 小眼不重影；瞳孔仍朝前。转弯不歪/不各偏左右(24t 已锁)。
+- **③头PNG前移不压舌(用户:舌头盖住圆身)**：`drawSnake` 蛇头 PNG 沿前进方向前移 `headR*0.38`(≈10.6px@28)，眼锚同步前移；根因=脖子根在图 y=909=中心下397px、原绕图中心旋转→脖子根落在头心后≈22px压住1~2节身圆、且头大(56px)盖住身；前移后吻/舌伸到身前、脖子根退到首节身圆内仍衔接。光晕跟随前移头心。
+- **④头身色差(用户:仍有些色差·疑是图)**：确认是 PNG 自带明暗渐变(暗绿 (0,128,96)→高光 (128,240,192))，平涂身体无光影→观感不一；数值本身已一致(dominant (32,192,128) vs body #20c088 仅差 8 蓝值)。修复：`drawBodyTube` 平涂圆→径向渐变(中心 `STYLE.playerHi=#3ad6a0` 受亮·边缘 `STYLE.player` 主绿)，使圆身与带光影 PNG 头读成同一料；低血红闪保持平涂(不渐变)。`STYLE.playerHi` 新增于 `02_config`。
+- **未动底层**：`03_core`/`04_collision`/`07_enemy`/`14_main`/碰撞/§9 未动；`headRadiusRender=28`、`bodyRadius=12` 不变。
+- **验收**：①强刷(2026a)连放多个蒸汽爆炸→白闪始终半透、偶发不再纯白屏；②转弯眼睛随头整体转、位置偏后不像象牙；③前移后舌头伸在身前、头与首节身圆仍衔接无缝；④身体圆有受光高光、与 PNG 头同料、色差观感消失。
+
+## 2026-07-24t · fix(render): 身体回退圆形+眼睛锁定头朝向只眨+身体色精确对齐头PNG（build ?v=2026t）
+- **用户纠正(上轮 24s 翻车)**：①身体被我画成了「颈尖渐变细管」=用户看到的棍子(圆形身体丢了)→回退 commit 的逐节离散步圆；②眼睛用了平滑滞后角→转弯时滞后于头、两眼各偏左右(用户:"一个左一个右")→删滞后角、改为随头【真实朝向】转(无滞后/无侧偏)；③"身体/头颜色不一致"→身体本就读 STYLE.player，但把 STYLE.player 精确对齐头PNG主绿(#21c78f→#20c088，Python 量得 dominant (32,192,136))彻底零色差。
+- **①身体回退圆形**：`drawBodyTube` 改回 commit 版 `for(i) circle(pts[i], bodyR)`（逐节圆，非管）；头圆盖前段→与头PNG无缝(同色)；头PNG脖子比圆球细的"丑缝"由 commit 版既有的「头图盖前段」处理(用户认可过的版本)，不再用渐变近似。
+- **②眼睛锁定头朝向+只眨(根治 24s 翻车)**：`drawSnakeEyes` 删 `_eyeAng` 平滑滞后角(那是转弯两眼各偏左右的根因)；改用 `ctx.rotate(hAngQ + ART_FORWARD_OFFSET_RAD)` 与 `drawSprite` 同一变换→眼睛【随头真实朝向刚性转】(不滞后/不侧偏)、精准贴 PNG 自带眼位(图片坐标 左(-165,-301)/右(162,-300)·Python 量得与瞳孔中心一致)、盖住PNG小眼→干净一对大眼不重影；瞳孔固定朝图像前(-y)、不追转向→不吓人；唯一动态=眨眼(每3~5s闭0.12s，保留)。眼睛在火墙之后绘制(drawSnakeEyesLate)避免被 lighter 火焰盖住。
+- **③颜色零色差**：`02_config.STYLE.player` #21c78f→#20c088(=snake_head.png 主填充 EXACT)；SNAKE_BODY/SNAKE_HEAD 读它→身体=头同绿；注释同步。
+- **未动底层**：`03_core`/`04_collision`/`07_enemy`/`14_main`/碰撞/§9 未动；headRadiusRender=28、bodyRadius=12(直径24)保留。
+- **验收**：①强刷(2026t)身体是圆形逐节(非棍子)、与头PNG同绿无缝；②转弯时眼睛跟着头【整体】转、不再各偏左右/不再"跟到哪吓人"、静置随机眨眼；③边界：急转弯+低血红闪同屏眼睛仍不歪、火墙之上清晰可见；GM面板"蛇头渲染半径"=28 生效。
+
+
+## 2026-07-24s · fix(render): 蛇头→28 + 头PNG脖子与圆球无缝衔接 + 眼睛平滑不歪（build ?v=b838778fc7）
+- **用户纠正**：上轮把"蛇头"误当"舌头"；本次明确=蛇头(无独立舌头元素，头PNG自带嘴/脖子)。三项：①蛇头渲染半径→28；②修头PNG后方脖子与圆球重叠丑缝；③眼睛转弯不再歪/不再"跟到哪"，保留眨眼。
+- **①蛇头→28**：`02_config.headRadiusRender` 30→28（视觉头宽≈1.2×28≈34px，比身体24px略大、协调；用户："蛇头有点大"）。GM 面板"蛇头渲染半径px(视觉)"滑块即控它(范围8~40)，默认落28。
+- **②无缝衔接（量过再改，不瞎猜）**：Python 量 `snake_head.png`(1024²)：最宽半宽313px居中；**后方脖子又细又长**——颈尖在中心后397px、半宽仅88px(全宽176px)，远细于身体直径24px。根因=头PNG脖子比圆球细→头图盖在粗圆球上、圆球边缘从细脖子两侧戳出=丑缝。修法：`drawBodyTube` 圆球在「颈尖之后」从颈尖半宽(88px→世界=88×headR/512)平滑长到 bodyR，同色#21c78f→头脖子自然续上身体(零色差无缝)；短促过渡(trans=1.3×segmentSpacing)不像长棍；相邻节按较小半径插值补圆→零断缝(纯视觉)。注：当前头PNG脖子偏细，故衔接处为"大头→细脖→身体"的自然卡通比例；根治=重绘头PNG脖子与身体同宽(见下评估)。
+- **③眼睛平滑**：`drawSnakeEyes` 朝向改用平滑滞后角 `_eyeAng`(时间常数~0.35s，指数缓动)：急转弯时眼睛基本不跟(不歪/不吓人)，方向转稳后再缓跟过来；删原「瞳孔随转向侧偏(_eyeTurn/turnShift)」——那是"跟到哪/吓人"元凶；瞳孔固定朝前、眨眼保留(每3~5s闭0.12s)。`_eyeAng` 首帧对齐+`core:run_reset`重置(防新局猛甩)。
+- **未动底层**：`03_core`/`04_collision`/`07_enemy`/`14_main`循环/碰撞/§9 未动；眼睛置火墙之上(24r已做)保留；Boss不动。
+- **验收**：①强刷(fc7)蛇头比身体略大(≈34:24)、协调；②头后方身体与头PNG脖子同色无缝、无"圆球戳出细脖子"丑缝；③转弯时眼睛不歪/不跟着猛甩、转稳后缓跟、静置随机眨眼、大眼白可爱；④边界：急转弯+低血红闪同屏眼睛仍不歪、火墙之上清晰可见；GM面板拖"蛇头渲染半径"到28即生效。
+
+
+## 2026-07-24r · fix(render): 回退头过大+棍子身体、眼睛置火焰之上、GM开着也能操控摇杆（build ?v=b838778fc7 / SPRITE_VER=b838778fc7）
+- **用户反馈（对 24q 的三点纠正）**：①头被我放得太大(60px)、身体因我加的"收颈渐变"变成棍子——太丑；②火焰(lighter 加色)盖住眼白→眼睛看不见；③问"GM 呼出后摇杆就不能操作了吗"→要 GM 开着也能试玩操控。真实需求=「之前版本基础上把头改大一点点 + 画可爱灵动小眼睛」，不要大改。
+- **①头大小回退 + 只大一点点**：`getSpriteOff` 缩放回退到用户认可的「之前版本」`dispCss = r*2`（整张图缩到 2r），弃用我上一轮按 `solidDiameterPx` 的满缩放(把头撑到 2r=60px)。`drawSprite` 退化路径同步改 `scale=r*2/nw`。视觉头直径≈1.2×headRadiusRender：26→30 仅「大一点点」(≈36px，比身体24px略大、协调)，不再 60px 喧宾夺主。`02_config` headRadiusRender 注释 + manifest 注释同步修正（solidDiameterPx 已不再驱动头大小，仅留量测记录）。
+- **②棍子身体回退**：`drawBodyTube` 回退到「之前版本」的干净逐节离散步圆（删掉我加的颈部收颈渐变 + 防断缝插值——那正是靠头变细像棍子的元凶）；头图随后盖前段(pts[0])，与头无缝衔接；头身同绿 #21c78f 不变（用户认可）。
+- **③眼睛置火焰之上**：`draw(alpha)` 顺序由 `drawSnake → drawSkillAura(火墙)` 改为 `drawSnake → drawSkillAura → drawSnakeEyesLate()`。`drawSnake` 内不再直接画眼，改为存头位姿(_snakeEyeX/Y/Ang/R)，新 `drawSnakeEyesLate()` 在火墙之后重绘眼睛 → 火焰加色不再盖住眼白，火焰时眼睛清晰可见（纯视觉层序修正，零 gameplay）。
+- **④GM 开着也能操控摇杆**：`14_main.inputBlocked()` 去掉 `_gmOpen`（菜单/3选1/暂停/结算仍禁，GM 不禁）；`_showBase` GM 时也显示底座；`joyBaseScreen()` 当 `_gmOpen` 时锚点由 baseFracX 0.84→0.16 移到左侧，避开右侧 320px 的 GM 面板；摇杆逻辑锚点(joyBaseLogical)派生自屏幕锚点→自动同步。`13_editor.build()` 给 GM 面板加 `id="gm_editor_panel"`，`joyDown` 排除面板内拖拽误触。结果：GM 开时面板右侧、摇杆底座+操控在左侧，可边调参边试玩。
+- **未动底层**：Boss 渲染(`drawBossBody` owl+呼吸)用户已认可不动；`03_core`/`04_collision`/`07_enemy`/`14_main` 循环结构未动；碰撞 `headRadius=14`、伤害管线、§9 未动。
+- **验收**：①强刷(fc7)蛇头比身体略大(≈36:24? 协调)、身体是干净圆形圆管、无棍子/无大块色差；②火焰技能开启时眼睛清晰可见(不被白色盖住)；③眼睛仍跟转向瞟+随机眨眼+大眼白可爱；④`~` 开 GM 后，左侧出现摇杆底座、可在面板外拖拽操控蛇转向、面板上滑块不误触蛇；⑤lint 0 错误。
+
+## 2026-07-24q · feat(render): 蛇头PNG正确显示+头身无缝同色衔接 + Boss猫头鹰图+呼吸 + 蛇眼动效（build ?v=b838778fc7 / SPRITE_VER=b838778fc7）
+- **目标（用户确认计划后落地）**：①Boss 改绘 owl PNG（enemy_boss）而非代码尖壳；②Boss 放技能「呼吸」动作；③蛇头渲染半径 26→30（用户 GM 实调回写）；④蛇头贴图与代码身体无缝衔接、不重叠、头身颜色完全一致；⑤蛇眼跟转向 + 眨眼 + 更可爱。
+- **①Boss=owl PNG + 呼吸**：`drawBossBody` 重写——读 `enemy_boss` 缓存键画 owl（billboard·flipX，直径 `radius×2×spriteVisualScale.boss=288`，严格保 10:11:14:24:60 阶梯最大）；平时慢呼吸 `1+0.03·sin(t·2.1)`，开火前(`fireT<0.4` 且非无敌期)吸气鼓大到 ~1.12 再释放（纯 `ctx.scale`，不动 `radius`/弹幕逻辑）；相位环(阶段1品红/阶段2更烈)+受击浅闪/无敌白热闪套图上；缺图回退原尖壳。
+- **②头正确显示 + 缩放 bug 修**：`getSpriteOff` 旧 `dispCss=r*2` 把**整张图**缩到 2r → 头实际只显示≈0.6×headR（头比身体大不了多少）；改为 `dispCss=(r*2)·(nw/sd)`，按 `solidDiameterPx` 缩放→视觉头直径=2×headRadiusRender(=60px)，明显大于身体 24px。02_config `solidDiameterPx 628→612`（Python 重量不透明包围盒宽 612、颈底 y909→中心下 397px）、`headRadiusRender 26→30`。
+- **③头身完全同色 + 无缝衔接**：02_config `COLORS.snakeHead/snakeBody` 与 `STYLE.player` 统一为 `#21c78f`（头 PNG 主色实测 `(33,199,143)`；原 `#27c98a`/`#20c088` 与头图 mismatch→色差）。`drawBodyTube` 加颈部收颈渐变（单调：脖子宽→身宽、单色、无渐变/无中段鼓包规避旧版「连续管太丑」；相邻节按较小半径插值补圆防断缝）；头 PNG 随后盖住前段(pts[0..1])→与头图自带脖子零色差无缝衔接、无重叠。
+- **④蛇眼动效**：`drawSnakeEyes` 瞳孔跟转向侧偏（头角速度平滑→眼睛瞟向转向侧、直行回中）+ 每 3~5s 随机眨眼（眼睑压扁 ~0.12s）+ 眼白放大 0.19→0.24·headR 更 Q；纯视觉零 gameplay。
+- **是否动 §9 / core / collision / 07_enemy / 14_main：否**（纯渲染表现；碰撞 `headRadius=14`、Boss 开火逻辑只读不改）。
+- **验收**：①强刷(`fc7`)蛇头明显大于身体、头身同绿无缝、无重叠/无色差；②Boss 显示猫头鹰、平时呼吸、每次开弹幕前明显鼓气→释放；③蛇眼随转向瞟、偶尔眨眼、更可爱；④lint 0 错误。
+
+## 2026-07-24p · fix(render): 敌人大小恢复「按碰撞半径比例」阶梯 + Boss图澄清 + 摇杆排查（build ?v=b838778fc6 / SPRITE_VER=b838778fc6）
+- **目标（用户三点反馈）**：①敌人大小按能力定位有区分(恢复原代码画 radius 比例 10:11:14:24:60)；②Boss 形象澄清；③摇杆"不灵敏"排查。
+- **①大小比例(真 bug 已修)**：原代码画(代码圆)显示直径 ∝ 碰撞半径，阶梯 = wanderer10/chaser11/charger14/elite24/boss60(比例 10:11:14:24:60)；24n 为修小方格把 `spriteVisualScale` 设成 2.4/2.4/2.0/1.4/1.2，把大怪压小、破坏比例→用户感知"大小都一样"。`11_render.drawEnemySpriteWithFx:235` 直径公式 `d=e.radius*2*vs`，统一倍率即保比例。修复：`spriteVisualScale` 全统一 `2.4` → 显示直径 wanderer48/chaser53/charger67/elite115/boss288(px)，严格保 10:11:14:24:60 阶梯(boss≈小怪6倍、elite≈小怪2.4倍)、小怪清晰(修小方格)、纯视觉零 gameplay。若 boss 288 实测过大可单独降(其余比例不变)。
+- **②Boss 猫头鹰澄清(非代码 bug)**：`drawEnemySprite`(11_render:222) 对全部敌人(boss 含)统一走 `enemy_' + type` 缓存，`drawEnemySpriteWithFx:235` boss 同路径→**代码已正确加载 `assets/enemy_boss.png`**，无硬编码 fallback。全工作区(`f:/用AI做游戏` 递归)仅 5 张 `enemy_*.png`、**无单独猫头鹰/owl 命名图**。故"Boss 没换成猫头鹰"= ①当前 `enemy_boss.png` 内容非猫头鹰(请确认/覆盖)，或 ②未强刷到 `fc5`+。请确认 `snake55/assets/enemy_boss.png` 是否为猫头鹰；若不是，把猫头鹰图命名为 `enemy_boss.png` 覆盖即可(或告知真文件名我来改 `ENEMY_SPRITE_FILE` 映射)。
+- **③摇杆"不灵敏"排查结论(代码无 bug)**：`14_main` 摇杆 pointerdown/move 绑定正确、`readInput:272` 方向=`atan2(joy.dy,joy.dx)` 计算正确、`joyDown/Move` 受害区/输入锁定门控正确→**无"接不到输入"的逻辑 bug**。此前"不灵敏/失效"主因=24o 修的 `_gmOpen` 卡死(`joyMove:433`/`readInput:273` 的 `if(inputBlocked())` 会让摇杆在卡死时直接失效，你恰在靠边缘时操作才注意到)；已随 24o 修复。另一可能"迟钝感"= `06_snake:95` 转向限速 `turnRate=180°/s`(急转/反向最多每秒转 180°，约 1 秒渐变)，属手感设计参数(手感三参之一)。请强刷 `fc6` 复验 GM 修复后摇杆是否恢复；若仍觉迟钝，我可把 `turnRate` 调高(如 240-300°/s)或降死区，走 §十 调参(不动结构)。
+- **是否动 §9 / core / collision / 14_main GM 逻辑 / 07_enemy：否**（仅 `spriteVisualScale` 视觉系数 + 缓存戳 `fc5`→`fc6`）。
+- **验收**：①强刷(`fc6`)敌人大小呈明显阶梯(蜗牛最小→老鼠→刺猬→青蛙→Boss最大)；②(`enemy_boss.png` 为猫头鹰时)Boss 显示猫头鹰；③强刷后 `~`/`⚙`/`×` 开关 GM 不卡且摇杆灵敏；④lint 0 错误。
+
+## 2026-07-24o · fix(editor+enemy): 修 GM/摇杆错位卡死 + 蜗牛最早出现 + 怪物不重叠（build ?v=b838778fc5 / SPRITE_VER=b838778fc5）
+- **目标（用户确认计划后落地）**：①GM 面板开关与摇杆挂起状态恒同步，消除"面板关但摇杆永久失效"；②怪物顺序：蜗牛最小最先(保护期)、老鼠成长期登场；③用户决策"不让怪物重叠"——出生加间距 + 持续分离力，治本消除单体锁定技能对重叠群只中前排的问题。
+- **①GM/摇杆根因与修复**：`inputBlocked()=status!=='playing'||_gmOpen`(14_main:121)；翻 `_gmOpen` 唯一入口是 `Bus.emit('editor:toggle')`(14_main:158)。但 `13_editor.js` 三条开关路径中 `~`键(:641)与 `×`按钮(:308) 直接 `toggle()` 绕开 Bus 不通知 main → 用 ⚙打开后再用 ~ / × 关闭时面板 `open` 翻回 false 而 `_gmOpen` **卡 true** → 摇杆全位置永久失效(用户感知"GM 失效 + 地图边缘摇杆无效"同源)。**此为引入 ⚙按钮+Bus 同步时既有的联动缺陷(非本轮引入，但被本次 ⚙/× 操作触发)**。修复：`:641` ~键 与 `:308` ×按钮 统一改 `Bus.emit('editor:toggle')`，与 `:642`/14_main:158 两个 handler 同步翻转，任一入口开关后 `_gmOpen` 与面板恒一致。14_main 逻辑未动。
+- **②怪物顺序**：`02_config.js` `STAGE` 段1(保护期0-60s)`pool:['chaser']`→`['wanderer']`(蜗牛最小最先、温和不追)；段2(成长期)`pool:['chaser','wanderer']`→`['wanderer','chaser']`(蜗牛仍主、老鼠登场)；段3/4/5 不变。scorePerKill 等其余不动。
+- **③怪物不重叠**：`07_enemy.js` ①`spawn`：`pickSpawnPos` 后加敌-敌最小间距校验(中心距≥(rA+rB)×0.85，boss/假人豁免挤占)，不满足重试最多 8 次(落点仍钳世界内，失败则用末次不阻塞)；②`update` 主循环后加**分离 pass**：遍历 `list` 对近邻(中心距<rA+rB)对称各推一半(`push=(rr-d)*0.5`)、推完 `clampWorld` 防出界；boss/假人豁免(保 boss 弹幕与 charger 冲撞手感)。纯 `list` 遍历，不依赖碰撞底层、不动 core/04；伤害仍经 `hurt()`。
+- **是否动 §9 / core / collision / 14_main GM 逻辑：否**（GM 仅统一开关路径、14_main handler 未改；重叠分离纯 list 计算）。
+- **缓存戳**：`index.html ?v` 与 `11_render SPRITE_VER` 同步 `fc4`→`fc5`（确保强刷拉到修复后的 JS）。
+- **验收**：①`~`/`⚙`/`×` 反复开关 5 次后摇杆立即恢复、`_gmOpen` 与面板恒同步、GM 指令(清敌/无敌/滑块)即时生效；②靠世界四角时摇杆转向灵敏无卡死；③0-60s 只刷蜗牛、60s 后老鼠登场；④同屏多敌有可见间隙不嵌叠、charger 冲撞/boss 弹幕/敌-蛇接触不受影响；⑤lint 0 错误、我本轮改动(视觉缩放/用户图)仍正常。
+
+## 2026-07-24n · fix(render): 改用用户自制敌人图 + 放大 spriteVisualScale 修「小方格」+ GM 澄清（build ?v=b838778fc4 / SPRITE_VER=b838778fc4）
+- **目标**：①用户指出 5 种敌人 PNG 已自制于 `f:/用AI做游戏/Codebuddy专区/` 根(英文命名)，游戏应直接用而非 AI 生成图；②实测敌人显示「小方格」→ 根因是显示缩放过小、非图问题；③回应「GM 失效」疑虑。
+- **改动文件**：`snake55/assets/`(复制用户 5 张图覆盖 AI 生成图，均 500×500·RGBA 透明、已用 PNG IHDR 核验)、`02_config.js`(`spriteVisualScale` 由全 1.2 调为 wanderer2.4/chaser2.4/charger2.0/elite1.4/boss1.2，纯视觉放大修小方格)、`11_render.js`(`SPRITE_VER` fc3→fc4)、`index.html`(`?v` fc3→fc4)。
+- **GM 澄清(重要)**：本轮**未改动** `13_editor.js`(GM) 与 `14_main.js`。已核验 `13_editor.js` 不引用任何被删符号(`eyeTrackRangePx`/`nearestEyeTarget`/`drawSnakeEyes`/`spriteVisualScale` 全项目搜索=0)，GM 触发(`~` 键 + ⚙按钮 `Bus.on('editor:toggle')`)机制完好。若强刷后仍异常，请具体描述症状(面板打不开 / 滑块无效 / 某功能无反应)以便精确定位——大概率为浏览器缓存旧 `?v` 所致，强刷(`Ctrl+Shift+R`)即愈。
+- **是否动 §9 / core / collision / 07_enemy / 02_config 既有数值：否**（仅 `spriteVisualScale` 视觉系数，零 gameplay；AI 生成的 4 张图被用户图覆盖，用户图即意图来源）。
+- **小方格根因**：`d=半径×2×vs`；原 chaser(半径11)×1.2=26px，大屏上糊成方块(稳定版 chaser 是代码画箭头、形状清晰才不显问题)。放大 vs 后小怪显示直径≈50-66px 清晰可辨。
+- **验收**：①强刷(`?v=b838778fc4`)敌人显示用户自制图、尺寸清晰(非方格)；②`~` 键 / ⚙按钮 GM 面板正常开关、滑块实时生效；③删任一 `enemy_*.png`→该 type 自动回退代码画零破功。
+
+## 2026-07-24m · feature(render): 补齐 chaser/charger/elite/boss 4 张敌人贴图(自动接管,零改码)（build ?v=b838778fc3 / SPRITE_VER=b838778fc3）
+- **目标**：按用户确认「全补4种」，将新手期箭头(chaser)及全程兜底(其余3种)替换为卡通圆润萌怪 PNG，与蜗牛(wanderer)风格统一；守卫式加载器已注册映射→放置即接管、零改码。
+- **新增文件**：`snake55/assets/enemy_chaser.png`(红#ff5b5b·圆滚小怪)、`enemy_charger.png`(紫#d65bff·带冲刺纹)、`enemy_elite.png`(紫#b04bff·戴小金冠)、`enemy_boss.png`(品红#ff2d6b·大只戴冠带角)，均 1024×1024 透明 PNG、主体居中留白充足、主色呼应各自威胁色。
+- **改动文件**：`snake55/11_render.js`(`SPRITE_VER` b838778fc2→b838778fc3，强制拉取新图) + `snake55/index.html`(`?v=b838778fc2`→`b838778fc3`)。`ENEMY_SPRITE_FILE` 映射早已含5种→本次纯加图、零改码；`02_config.js` `spriteVisualScale` 维持默认1.2(逐只微调留待看图量化，非阻塞)。
+- **是否动 §9 / core / collision / 07_enemy / 02_config 既有数值：否**（纯视觉/美术资源）。
+- **验收**：①强刷(`?v=b838778fc3`)新手期 chaser 显示红萌怪(非箭头)；②成长期起 wanderer 蜗牛 + 割草期 charger/elite 各显对应 PNG + 光环；③Boss 出现显品红大萌怪；④删任一 PNG 该 type 自动回退代码画、零破功。
+
+## 2026-07-24l · fix(render): 蛇头眼改「只随朝向转/瞳孔朝前」(去目标追踪) + 敌人贴图 src 加缓存戳(破 404 缓存)（build ?v=b838778fc2 / SPRITE_VER=b838778fc2）
+- **目标**：修上版两处体验 bug——①蛇头眼瞳孔追最近食物/敌人→前进时后面有怪会朝后翻(错)；②蜗牛贴图(enemy_wanderer.png)偶发不加载(浏览器缓存了历史 404/旧响应，贴图 src 无缓存戳)。
+- **改动文件**：`snake55/11_render.js`（删 `nearestEyeTarget`；`drawSnakeEyes` 去掉追踪→眼睛只随 `headAng` 旋转、瞳孔固定朝前、眼白缩到 0.19R 更萌；`ASSETS_BASE` 旁加 `SPRITE_VER` 并对 snake_head/enemy 贴图 `img.src` 拼 `?v=SPRITE_VER` 破缓存）+ `snake55/index.html`（`?v=b838778fc1`→`b838778fc2`）。
+- **一句话**：眼睛只跟着蛇头朝向翻、瞳孔永远朝前（不瞟怪/食物）；敌人贴图与蛇头贴图 src 均带缓存戳，根治蜗牛贴图不出现；蛇头 `headRadiusRender` 未动(头大小不变，是上版大眼+乱瞟显怪)。
+- **是否动 §9 / core / collision / 07_enemy / 02_config 既有数值：否**（纯视觉；`RENDER.eyeTrackRangePx` 虽仍在 config 但已改为无效死字段，下一轮清理）。
+- **验收**：①强刷(`?v=b838778fc2`)蛇头双眼随头朝转向前看、永不朝后翻；②眼更小更萌，蛇头回到圆滚滚可爱观感；③新手阶段 wanderer 显示蜗牛 PNG(带光环+bob)，不再走箭头/代码画兜底；④删 `enemy_wanderer.png` 仍自动回退代码画无破功。
+
+## 2026-07-24k · feature(render): 敌人守卫式贴图(混合路线·试点 wanderer)+蛇头代码眼(drawSnakeEyes)（build 基线 20260724j，?v=b838778fc1 破缓存）
+- **目标**：把敌人改为「PNG 优先 + 代码画兜底」混合路线（推翻 stage0「零图片」决策），并给蛇头 PNG 之上叠一双会追最近目标的代码眼。
+- **改动文件**：`snake55/11_render.js`（敌人守卫式加载器 `drawEnemySprite`/`drawEnemySpriteWithFx`/`drawEnemyFlashOverlay`；`drawEnemies` 第一遍先试贴图、失败回退代码画；蛇头眼 `nearestEyeTarget`/`drawSnakeEyes`）+ `snake55/02_config.js`（新增 `RENDER.spriteVisualScale` 默认 1.2、`RENDER.eyeTrackRangePx:250`，纯视觉不动碰撞/血量/速度/伤害）+ `snake55/assets/enemy_wanderer.png`（试点蜗牛贴图，AI 生成 512×512 透明 PNG）+ `snake55/index.html`（`?v=b838778fc0`→`b838778fc1` 破缓存）。
+- **一句话**：敌人贴图守卫式加载（缺图/失败 → 永远回退代码画，零破功、不抛错不报 404）；蛇头在 PNG 之上叠代码眼，瞳孔平行同向追最近食物/敌人、超 250px 回正朝前；billboard 仅 flipX 不旋转；受击白闪套贴图之上；glowMax 超量只降光环不降贴图。
+- **是否动 §9 / core / collision / 07_enemy / 02_config 既有数值：否**（仅新增纯视觉配置字段，未改任何既有数值；碰撞半径/血量/速度/伤害/玩法逻辑全未动）。
+- **验收**：①强刷（`?v=b838778fc1`）见 wanderer 显示蜗牛 PNG（带威胁色光环 + idle bob），其余 4 种仍为代码画轮廓；②蛇头可见一双随头转向、瞳孔追最近食物/敌人的大眼 + 高光；③删 `assets/enemy_wanderer.png` → wanderer 自动回退代码画，控制台无 404/无抛错（边界1）；④瞳孔任何角度都待在眼白内、无目标/超距回正朝前（边界2&细节2）；⑤贴图任何情况都画出、glowMax 超量只降光环（边界3）。
+
 ## 2026-07-24j · fix: 修"一进游戏卡暂停/只在点击后跑"（updateJoyVisual 作用域错位）（build 20260724j）
 - **目标**：修复进入 playing 后蛇不前进、必须点击激活摇杆才运行的致命 bug（控制台稳定报 `Uncaught ReferenceError: updateJoyVisual is not defined`）。
 - **改动文件**：`snake55/14_main.js`（仅输入层；`02_config.js` 无变化）。

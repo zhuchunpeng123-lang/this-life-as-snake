@@ -281,7 +281,7 @@
 				for (var i = 0; i < flashCores.length; i++) {
 					var fc = flashCores[i]
 					var a = fc.life / fc.maxLife; if (a < 0) { a = 0 }
-					ctx.globalAlpha = a * 0.85
+					ctx.globalAlpha = a * 0.7   // 白闪核封顶 alpha（修 25s 偶发纯白屏：多个蒸汽/电闪核同点叠加 source-over 时不再逼近 1.0 纯白）
 					ctx.fillStyle = fc.color
 					ctx.beginPath(); ctx.arc(fc.x, fc.y, fc.radius * (1.25 - a * 0.25), 0, M.PI2); ctx.fill()
 				}
@@ -373,8 +373,8 @@
 	// 需求B：steamExplosion 等的周期爆闪（爆心由调用方传入真实坐标）
 	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
-		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.92)', 0.22)   // 实心白闪核（绘于实体之上，不被盖；round6 稳定版，纯表现，零 gameplay）
-		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.8)', 0.55)              // 白色蒸汽云扩张≈r90（亮度上调）
+		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.5)', 0.22)   // 实心白闪核（绘于实体之上，不被盖；round6 稳定版，纯表现，零 gameplay）。【修 25s 偶发纯白屏】alpha 0.92→0.5：单核有效≈0.7*0.5=0.35(半透)；多个同点蒸汽/电闪核叠加 2~3 个封顶≈0.6~0.73，不再逼近纯白
+		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.5)', 0.55)              // 白色蒸汽云扩张≈r90（亮度下调：修 25s 偶发纯白屏，多个环叠加不再爆白）
 		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
 		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
 		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· high 优先（蒸汽 VFX 尽量保留）
