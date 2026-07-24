@@ -325,8 +325,10 @@
 			boss: '#ff2d95',          // 威胁色阶·品红（Boss）
 			ui: '#8becff',            // UI 青（描边 / 高亮 / 技能宝石）
 			textMain: '#eaf2ff',      // 主文字
-			textDim: '#7f8bad',       // 次文字
-			panel: '#1b2340',         // 面板底
+		textDim: '#7f8bad',       // 次文字
+		win: '#27c98a',           // alias=player：胜/通关绿（禁新色，值必须等于 player）
+		lose: '#ff4d6d',          // alias=enemy：败/死亡红（禁新色，值必须等于 enemy）
+		panel: '#1b2340',         // 面板底
 			cornerRatio: 0.5,         // 圆角 = 高 × 此比例（胶囊 = 半高）
 			glowBlur: 0.6,            // 发光模糊 = 半径 × 此比例
 			glowAlpha: 0.55,          // 发光透明度基准

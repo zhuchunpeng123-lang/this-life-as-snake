@@ -1,14 +1,16 @@
 ;(function (global) {
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
+	var STYLE = CONFIG.STYLE   // GATE B：UI 只读 STYLE 真源（禁散写 hex）
 	var PLAYER = CONFIG.PLAYER, STAGE = CONFIG.STAGE, NARR = CONFIG.NARR
 
 	var SKILL_LABEL = { fire: '火焰光环', ice: '冰霜领域', bolt: '追踪飞镖', shield: '守护力场', lightning: '连锁闪电' } // TODO: 待确认
+	var SKILL_GLYPH = { fire: '火', ice: '冰', bolt: '镖', shield: '盾', lightning: '雷' }   // 技能栏单字徽标（文本，非 hex）
 	var COMBO_LABEL = { steamExplosion: '蒸汽爆炸', electroTurret: '电磁炮台', burningBarrage: '灼烧弹幕' }
 	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
-	var COMBO_COLOR = { steamExplosion: '#ff9a3c', electroTurret: '#9fd0ff', burningBarrage: '#ff5a4c' }   // TODO: 横幅配色待 UX 复核
+	var COMBO_COLOR = { steamExplosion: STYLE.playerGlow, electroTurret: STYLE.ui, burningBarrage: STYLE.enemyCalm }   // GATE B：接 STYLE 真源（禁新 hex）；校验与 skillFx 五色(#d8ff7a/#ff7a3c/#7fc4ff/#bff0d8/#7a9bff)不撞
 
-	var root = null, froot = null, hud = null, choose = null, result = null, choiceBox = null, stageName = '—'
+	var root = null, froot = null, hud = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, choose = null, result = null, choiceBox = null, stageName = '—'
 	var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
@@ -21,37 +23,55 @@
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
 	function fmtTime(s) { var m = Math.floor(s / 60), ss = Math.floor(s % 60); return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss }
+	function hexA(hex, a) {   // STYLE token → rgba（派生透明度，无新 hex 字面量）；用于面板底/描边/阴影
+		var h = String(hex).replace('#', '')
+		if (h.length === 3) { h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2] }
+		var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16)
+		return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'
+	}
+	function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain
+		return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
+	}
 	function after(ms, fn) { var my = seqId; var t = global.setTimeout(function () { if (my === seqId) { fn() } }, ms); timers.push(t); return t }
 	function clearTimers() { for (var i = 0; i < timers.length; i++) { global.clearTimeout(timers[i]); global.clearInterval(timers[i]) } timers.length = 0 }
 
 	function init(stageRoot, fullRoot) {
 		root = stageRoot || document.body   // 角落 HUD 层（贴 canvas 显示区）
 		froot = fullRoot || document.body   // 全屏遮罩层（升级/结算/暂停/请横屏）
-		hud = mk('div', 'position:absolute;left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top));font:600 clamp(12px,3.6vw,15px)/1.5 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:10;white-space:nowrap', root)
-		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,0.72);z-index:20;pointer-events:auto', froot)
+		// —— HUD 容器(inset:0 覆盖, pointer-events:none) + 四组胶囊(§8.4：生命框/数据框/波次条/技能栏) ——
+		hud = mk('div', 'position:absolute;inset:0;pointer-events:none;z-index:10', root)
+		hudLife = capsuleEl('left:calc(12px + env(safe-area-inset-left));top:calc(10px + env(safe-area-inset-top))')          // 左上：生命框(×coreHp，濒死整框红脉冲)
+		hudData = capsuleEl('left:calc(12px + env(safe-area-inset-left));top:calc(52px + env(safe-area-inset-top));flex-wrap:wrap;max-width:min(72vw,520px)')   // 左上：数据框(长度｜击杀｜得分｜连杀)
+		hudWave = capsuleEl('left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%)')                  // 顶部居中：波次条(Boss 来切红闪 BOSS INCOMING)
+		hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top))')     // 右上：5 格技能栏(空槽也画)
+		// 濒死整框红脉冲 keyframes（STYLE.enemy 真源，无新 hex）
+		var _nf = document.createElement('style')
+		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
+		if (document.head) { document.head.appendChild(_nf) }
+		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // pointer-events:auto：#ui-stage 为 none 让点击穿透到 canvas，此处重开 auto 使抉择按钮可点（非全屏，仅盒子区域捕获，保持非阻塞）
-		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,8,16,0.92);z-index:30;pointer-events:auto', froot)
-		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
-		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
+		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.92) + ';z-index:30;pointer-events:auto', froot)
+		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
+		pauseBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(54px + env(safe-area-inset-top));padding:10px 16px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:none', root)
 		pauseBtn.textContent = '⏸ 暂停'
 		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
 		// 全屏按钮：安卓/桌面一键全屏（经 Bus 由 main 调 API）；iPhone 不支持 JS 全屏→main 提示「添加到主屏幕」
-		fullscreenBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(56px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+		fullscreenBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(100px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
 		fullscreenBtn.textContent = '⛶ 全屏'
 		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
 		// GM 测试面板按钮：仅触屏设备显示（移动端无 ~ 键，经 Bus 触发 editor.toggle；桌面用 ~ 键）
 		var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
 		if (isTouch) {
-			gmBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(102px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:rgba(20,26,48,.85);color:#fff;font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
+			gmBtn = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(146px + env(safe-area-inset-top));padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer;pointer-events:auto;z-index:12;display:block', root)
 			gmBtn.textContent = '⚙ GM'
 			gmBtn.onclick = function () { Bus.emit('editor:toggle') }
 		}
-		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(8,10,20,.55);z-index:25;color:#fff;font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
+		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:' + hexA(STYLE.bg, 0.55) + ';z-index:25;color:' + STYLE.textMain + ';font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
 		pauseOverlay.innerHTML = '<div>⏸ 已暂停</div><div style="font:500 14px system-ui;opacity:.8">点此 / 按 P 或 Esc 继续</div>'
 		pauseOverlay.onclick = function () { Bus.emit('game:toggle_pause') }
 		// 竖屏选卡「请横屏」遮罩（全屏层）：竖屏触发升级/事件选择时盖住，横屏后自动露出选项
-		rotateChoiceEl = mk('div', 'position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(6,8,16,0.94);color:#fff;font:700 20px system-ui;text-align:center;z-index:35;pointer-events:auto;padding:24px', froot)
-		rotateChoiceEl.innerHTML = '<div style="font-size:46px">📱↔️</div><div>请横屏以查看升级 / 选择</div><div style="font:500 14px system-ui;color:#ffd76b">旋转手机至横屏后将自动显示选项</div>'
+		rotateChoiceEl = mk('div', 'position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:' + hexA(STYLE.bg, 0.94) + ';color:' + STYLE.textMain + ';font:700 20px system-ui;text-align:center;z-index:35;pointer-events:auto;padding:24px', froot)
+		rotateChoiceEl.innerHTML = '<div style="font-size:46px">📱↔️</div><div>请横屏以查看升级 / 选择</div><div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏后将自动显示选项</div>'
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前“全显示”实现已超设计边界）') }
@@ -139,12 +159,12 @@
 		var eulogyMs = NARR.aiTextSec * 1000, budget = NARR.staticHardcapSec * 1000
 		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
 		result.innerHTML = ''; result.style.display = 'flex'
-		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:#dfe;font:600 17px/1.7 system-ui;text-align:center', result)
-		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? '#7cff6b' : '#ff5b7a') + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
+		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center', result)
+		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? STYLE.win : STYLE.lose) + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
 		still.textContent = win ? '通　关' : '死　亡'
 		after(30, function () { still.style.opacity = '1' })
 		after(stillMs, function () {   // Phase1 走马灯逐节点亮
-			var fbWrap = mk('div', 'margin-top:18px;min-height:120px;display:flex;flex-direction:column;gap:6px;align-items:center;color:#bfe;font:500 16px/1.6 system-ui', stage)
+			var fbWrap = mk('div', 'margin-top:18px;min-height:120px;display:flex;flex-direction:column;gap:6px;align-items:center;color:' + STYLE.textMain + ';font:500 16px/1.6 system-ui', stage)
 			var step = Math.max(60, Math.min(NARR.flashback.perNodeMs, flashMs / lines.length)), i = 0
 			var iv = global.setInterval(function () {
 				if (mySeqId !== seqId) { global.clearInterval(iv); return }
@@ -157,12 +177,12 @@
 			timers.push(iv)
 		})
 		after(stillMs + flashMs, function () {   // Phase2 蛇生短文浮现
-			var euWrap = mk('div', 'margin-top:16px;padding:16px 18px;border-left:3px solid ' + (win ? '#2de1a8' : '#ff5b7a') + ';background:rgba(255,255,255,0.04);color:#eef;font:500 16px/1.9 system-ui;text-align:left;opacity:0;transition:opacity 1s', stage)
+			var euWrap = mk('div', 'margin-top:16px;padding:16px 18px;border-left:3px solid ' + (win ? STYLE.win : STYLE.lose) + ';background:' + hexA(STYLE.panel, 0.4) + ';color:' + STYLE.textMain + ';font:500 16px/1.9 system-ui;text-align:left;opacity:0;transition:opacity 1s', stage)
 			euWrap.textContent = eulogy; after(30, function () { euWrap.style.opacity = '1' })
 		})
 		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })   // Phase3 九项卡
 		after(stillMs + flashMs + eulogyMs, function () {
-			var btn = mk('button', 'margin-top:18px;padding:13px 28px;border:0;border-radius:12px;background:' + (win ? '#2de1a8' : '#ff5b7a') + ';color:#062;font:800 17px system-ui;cursor:pointer', stage)
+			var btn = mk('button', 'margin-top:18px;padding:13px 28px;border:0;border-radius:12px;background:' + (win ? STYLE.win : STYLE.lose) + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer', stage)
 			btn.textContent = win ? '再来一局' : '再来一条蛇生'
 			btn.onclick = function () { var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
 		})
@@ -187,11 +207,11 @@
 			['高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
 			['第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
 		]
-		var box = mk('div', 'margin-top:16px;width:100%;border-top:1px solid rgba(255,255,255,0.12);padding-top:12px', stage)
+		var box = mk('div', 'margin-top:16px;width:100%;border-top:1px solid ' + hexA(STYLE.ui, 0.15) + ';padding-top:12px', stage)
 		for (var i = 0; i < rows.length; i++) {
-			var r = mk('div', 'display:flex;justify-content:space-between;gap:20px;color:#cfe;font:500 14px system-ui;padding:3px 0', box)
+			var r = mk('div', 'display:flex;justify-content:space-between;gap:20px;color:' + STYLE.textDim + ';font:500 14px system-ui;padding:3px 0', box)
 			mk('span', 'opacity:.7', r).textContent = rows[i][0]
-			mk('span', 'color:#fff;font-weight:600', r).textContent = rows[i][1]
+			mk('span', 'color:' + STYLE.textMain + ';font-weight:600', r).textContent = rows[i][1]
 		}
 	}
 
@@ -204,8 +224,8 @@
 		rotateChoiceEl.innerHTML =
 			'<div style="font-size:46px">📱↔️</div>' +
 			'<div>请横屏以查看升级 / 选择</div>' +
-			'<div style="font:500 14px system-ui;color:#ffd76b">旋转手机至横屏后将自动显示选项</div>' +
-			'<button id="rc_continue" style="margin-top:6px;padding:10px 18px;border:1px solid #2de1a8;border-radius:10px;background:transparent;color:#2de1a8;font:600 14px system-ui;cursor:pointer">仍用竖屏继续</button>'
+			'<div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏后将自动显示选项</div>' +
+			'<button id="rc_continue" style="margin-top:6px;padding:10px 18px;border:1px solid ' + STYLE.ui + ';border-radius:10px;background:transparent;color:' + STYLE.ui + ';font:600 14px system-ui;cursor:pointer">仍用竖屏继续</button>'
 		rotateChoiceEl.style.display = 'flex'
 		function finish() {
 			if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); global.removeEventListener('resize', _rotateHandler) }
@@ -226,11 +246,11 @@
 	function renderChooseCards(choices) {
 		choose.innerHTML = ''
 		var box = mk('div', 'display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:880px', choose)
-		mk('div', 'width:100%;text-align:center;color:#fff;font:700 22px system-ui;margin-bottom:14px;white-space:nowrap', box).textContent = '三选一 · 升级'
+		mk('div', 'width:100%;text-align:center;color:' + STYLE.textMain + ';font:700 22px system-ui;margin-bottom:14px;white-space:nowrap', box).textContent = '三选一 · 升级'
 		for (var i = 0; i < choices.length; i++) {
 			(function (c) {
-				var card = mk('button', 'width:min(220px,78vw);padding:18px;border-radius:14px;border:2px solid #2de1a8;background:#11203a;color:#fff;cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui', box)
-				card.innerHTML = '<div style="font-size:20px;margin-bottom:8px">' + (SKILL_LABEL[c.id] || c.id) + '</div><div style="color:#9fe">' + (c.isNew ? '新技能' : '升级 → Lv' + c.level) + '</div>'
+				var card = mk('button', 'width:min(220px,78vw);padding:18px;border-radius:14px;border:2px solid ' + STYLE.skillFx[c.id] + ';background:' + STYLE.panel + ';color:' + STYLE.textMain + ';cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui', box)
+				card.innerHTML = '<div style="font-size:20px;margin-bottom:8px">' + (SKILL_LABEL[c.id] || c.id) + '</div><div style="color:' + STYLE.textDim + '">' + (c.isNew ? '新技能' : '升级 → Lv' + c.level) + '</div>'
 				card.onclick = function () { var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
 			})(choices[i])
 		}
@@ -249,7 +269,7 @@
 	}
 	function renderOfferChoice(ev) {
 		choiceActive = true; choicesUsed++; choiceBox.innerHTML = ''
-		mk('div', 'color:#ffe;font:600 15px system-ui;background:rgba(8,10,20,0.8);padding:8px 14px;border-radius:10px;max-width:520px;text-align:center', choiceBox).textContent = ev.desc
+		mk('div', 'color:' + STYLE.textMain + ';font:600 15px system-ui;background:' + hexA(STYLE.panel, 0.8) + ';padding:8px 14px;border-radius:10px;max-width:520px;text-align:center', choiceBox).textContent = ev.desc
 		var btns = mk('div', 'display:flex;gap:12px', choiceBox), resolved = false
 		function resolve(opt) {
 			if (resolved) { return }
@@ -260,7 +280,7 @@
 			if (opt.hp) { var hp = GS.coreHp + opt.hp; GS.coreHp = hp > PLAYER.coreHp ? PLAYER.coreHp : hp }
 		}
 		function makeBtn(opt) {
-			var b = mk('button', 'padding:10px 18px;border:2px solid #ffb000;border-radius:10px;background:#1a1530;color:#fff;font:600 14px system-ui;cursor:pointer', btns)
+			var b = mk('button', 'padding:10px 18px;border:2px solid ' + STYLE.ui + ';border-radius:10px;background:' + STYLE.panel + ';color:' + STYLE.textMain + ';font:600 14px system-ui;cursor:pointer', btns)
 			b.textContent = opt.text; b.onclick = function () { resolve(opt) }
 		}
 		makeBtn(ev.a); makeBtn(ev.b); choiceBox.style.display = 'flex'
@@ -300,7 +320,7 @@
 
 	function showComboBanner(id) {                                  // §3 Combo 触发横幅（~0.8s）
 		if (!comboBanner) { return }
-		var label = COMBO_LABEL[id] || id, col = COMBO_COLOR[id] || '#fff'
+		var label = COMBO_LABEL[id] || id, col = COMBO_COLOR[id] || STYLE.textMain
 		comboBanner.textContent = '⚡ ' + label + '！'
 		comboBanner.style.background = 'linear-gradient(90deg, rgba(0,0,0,0), ' + col + '55, rgba(0,0,0,0))'
 		comboBanner.style.color = col
@@ -320,7 +340,35 @@
 			else { var have = aOwn ? la : lb, need = aOwn ? lb : la; lines.push('◦ 持有 ' + have + '，再得 ' + need + ' → ' + name) }
 		}
 		if (!lines.length) { return '' }
-		return '<div style="margin-top:4px;color:#ffe;font:600 13px system-ui;opacity:.9">' + lines.join('<br>') + '</div>'
+		return '<div style="margin-top:4px;color:' + STYLE.textMain + ';font:600 13px system-ui;opacity:.9">' + lines.join('<br>') + '</div>'
+	}
+	function renderWave() {   // 顶部波次条(§8.4)：当前阶段+进度；Boss 预警切红闪 BOSS INCOMING
+		var segs = STAGE.segments, t = GS.timeSec, cur = segs[0], next = null
+		for (var k = 0; k < segs.length; k++) { if (t >= segs[k].startSec) { cur = segs[k]; next = segs[k + 1] || null } }
+		var bossId = NARR.classify.deathCause.bossStageId, bossStage = null
+		for (var b = 0; b < segs.length; b++) { if (segs[b].id === bossId) { bossStage = segs[b]; break } }
+		if (bossStage && t >= bossStage.startSec - CONFIG.STAGE.bossWarnLeadSec && t < bossStage.startSec) {
+			return '<span style="color:' + STYLE.enemy + ';font-weight:800">⚠ BOSS INCOMING</span>'
+		}
+		if (cur.id >= bossId) {
+			return '<span style="color:' + STYLE.enemy + ';font-weight:800">☠ BOSS 期</span> <span style="opacity:.7">' + cur.name + '</span>'
+		}
+		var prog = next ? (t - cur.startSec) / (next.startSec - cur.startSec) : 1
+		prog = Math.max(0, Math.min(1, prog))
+		var pct = Math.round(prog * 100)
+		return '<span style="opacity:.85">' + cur.name + '</span> <span style="opacity:.6">' + fmtTime(t) + '</span> <span style="display:inline-block;width:90px;height:6px;border-radius:999px;background:' + hexA(STYLE.ui, 0.18) + ';overflow:hidden;vertical-align:middle"><span style="display:block;height:100%;width:' + pct + '%;background:' + STYLE.ui + ';border-radius:999px"></span></span>'
+	}
+	function renderSkills() {   // 右上 5 格技能栏(§8.4)：空槽也画；满槽用 STYLE.skillFx[id] 描边呼应拾取物/skillFx
+		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = ''
+		for (var s = 0; s < list.length; s++) {
+			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
+			if (lvl > 0) {
+				html += '<span title="' + id + '" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(col, 0.18) + ';border:2px solid ' + col + ';color:' + col + ';font:800 15px system-ui">' + g + '<sub style="font-size:9px;margin-left:1px">' + lvl + '</sub></span>'
+			} else {
+				html += '<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(STYLE.panel, 0.5) + ';border:1px solid ' + hexA(STYLE.ui, 0.25) + ';color:' + hexA(STYLE.ui, 0.35) + ';font:800 15px system-ui">·</span>'
+			}
+		}
+		return html
 	}
 	function refreshHUD() {
 		if (!hud) { return }
@@ -332,7 +380,14 @@
 			else if (breaking && i === lostHeartIndex) { hearts += '💥' }   // 扣心瞬间：对应心碎裂闪烁
 			else { hearts += '🖤' }
 		}
-		hud.innerHTML = '<div>' + hearts + '</div><div>得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + '　升级 ' + (GS.upgradesThisRun || 0) + '</div><div>击杀 ' + GS.kills + '　蛇长 ' + GS.segments + '</div><div>时间 ' + fmtTime(GS.timeSec) + '　阶段 ' + stageName + '</div>' + buildRecipeHint()
+		hudLife.innerHTML = hearts
+		var near = GS.coreHp <= 1   // 濒死(≤1 血)整框红脉冲
+		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
+		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
+		var recipe = buildRecipeHint()
+		hudData.innerHTML = '长度 ' + GS.segments + '　击杀 ' + GS.kills + '　得分 ' + (GS.score + GS.comboScore) + '　连杀 x' + GS.killStreak + (recipe ? '<div style="width:100%;font-weight:500;opacity:.92;margin-top:2px">' + recipe + '</div>' : '')
+		hudWave.innerHTML = renderWave()
+		hudSkills.innerHTML = renderSkills()
 	}
 
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })
@@ -371,6 +426,11 @@
 			if (hn - _lastHudRefresh >= 100) { refreshHUD(); _lastHudRefresh = hn }   // ~10Hz 节流：分数/时间/蛇长慢变，10Hz 足够；消除每帧 innerHTML 重建的 DOM 重排回流（原每帧执行，未计入帧时间）
 			if (pauseBtn) { pauseBtn.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'block' : 'none' }
 			if (pauseOverlay) { pauseOverlay.style.display = (GS.status === 'paused') ? 'flex' : 'none' }
+			// 四组胶囊仅 playing 时显示（暂停/死亡由遮罩层覆盖）
+			if (hudLife) { hudLife.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudData) { hudData.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudWave) { hudWave.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (GS.status === 'playing') {
 				if (GS.segments > GS.maxSegments) { GS.maxSegments = GS.segments }
 				if (GS.stageId > GS.maxStageId) { GS.maxStageId = GS.stageId }
