@@ -240,13 +240,13 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			[SCORE_ICON.highlight, '高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
 			[SCORE_ICON.lives, '第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
 		]
-		var box = mk('div', 'margin-top:8px;width:100%;display:flex;flex-direction:column;gap:6px', stage)
+		var box = mk('div', 'margin-top:8px;width:fit-content;margin-left:auto;margin-right:auto;display:flex;flex-direction:column;gap:6px', stage)   // 整块 fit-content + 居中→九项在 UI 中居中展示
 		for (var i = 0; i < rows.length; i++) {
-			var card = mk('div', 'display:flex;align-items:center;gap:10px;padding:7px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)
-			mk('span', 'font-size:18px;line-height:1;flex:none', card).textContent = rows[i][0]   // 图标靠左
-			var lab = mk('span', 'flex:1;color:' + STYLE.textMain + ';font:600 14px system-ui;text-align:center', card)   // 标签居中
+			var card = mk('div', 'display:flex;align-items:center;gap:10px;width:100%;padding:7px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)
+			mk('span', 'flex:none;width:22px;text-align:center;font-size:18px;line-height:1', card).textContent = rows[i][0]   // 图标列固定宽→平行对齐
+			var lab = mk('span', 'flex:none;width:96px;text-align:center;color:' + STYLE.textMain + ';font:600 14px system-ui', card)   // 标签列固定宽+居中→整列等列居中(不再各按自身宽居中致偏左/偏右)
 			lab.textContent = rows[i][1]
-			var val = mk('span', 'flex:none;color:' + STYLE.textMain + ';font-weight:800;font:600 14px system-ui;text-align:right', card)   // 数值靠右、正常亮度(成就显著)
+			var val = mk('span', 'flex:none;width:150px;text-align:right;color:' + STYLE.textMain + ';font-weight:800;font:600 14px system-ui;white-space:normal', card)   // 数值列固定宽+靠右、正常亮度、超宽自动换行(禁截断)
 			val.textContent = rows[i][2]
 		}
 	}
@@ -397,12 +397,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var la = SKILL_LABEL[a] || a, lb = SKILL_LABEL[b] || b
 			var title = active ? ('已激活：' + la + ' + ' + lb + ' → ' + name) : ('持有 ' + (aOwn ? la : lb) + '，再得 ' + (aOwn ? lb : la) + ' → ' + name)
 			var glow = active ? ('box-shadow:0 0 8px ' + col) : ''
-			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.35) + ';background:' + hexA(col, active ? 0.2 : 0.06) + ';' + glow + '">'
-				+ '<span style="color:' + col + ';font:800 12px system-ui">' + gA + '</span>'
-				+ '<span style="color:' + hexA(col, 0.7) + ';font:700 10px system-ui">+</span>'
-				+ '<span style="color:' + col + ';font:800 12px system-ui">' + gB + '</span>'
-				+ '<span style="color:' + col + ';font:700 11px system-ui;margin-left:3px">' + name + '</span>'
-				+ '</span>'
+			var glyphCol = active ? col : hexA(STYLE.ui, 0.4)   // 未激活(仅持有其一,Combo 未成)：图标/文字置灰，明显区别于已激活高亮
+			var nameCol = active ? col : hexA(STYLE.ui, 0.5)
+			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + '">'
+				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gA + '</span>'
+				+ '<span style="color:' + hexA(STYLE.ui, 0.45) + ';font:700 10px system-ui">+</span>'
+				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gB + '</span>'
+				+ '<span style="color:' + nameCol + ';font:700 11px system-ui;margin-left:3px">' + (active ? name : ('未激活·' + name)) + '</span>'
+				+ '</span>'   // 仅当两部件皆持有(comboReady)才 active 高亮；单部件→灰色「未激活·X」
 		}
 		return html
 	}
@@ -449,10 +451,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
 		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
 		hudData.innerHTML =
-			'<span style="white-space:nowrap">长度 ' + GS.segments + '<span style="opacity:.4">　｜</span></span>'
-			+ '<span style="white-space:nowrap">　击杀 ' + GS.kills + '<span style="opacity:.4">　｜</span></span>'
-			+ '<span style="white-space:nowrap">　得分 ' + (GS.score + GS.comboScore) + '<span style="opacity:.4">　｜</span></span>'
-			+ '<span style="white-space:nowrap">　连杀 ×' + GS.killStreak + '</span>'   // 每指标 nowrap 成块、｜ 淡显；超宽时 flex-wrap 自动换行(绝不裁字)
+			'<span style="white-space:nowrap">🐍 长度 ' + GS.segments + '</span>'
+			+ '<span style="white-space:nowrap">　💀 击杀 ' + GS.kills + '</span>'
+			+ '<span style="white-space:nowrap">　⭐ 得分 ' + (GS.score + GS.comboScore) + '</span>'
+			+ '<span style="white-space:nowrap">　🔥 连杀 ×' + GS.killStreak + '</span>'   // 还原图标(美观)；每指标 nowrap 成块，超宽时 flex-wrap 自动换行(绝不裁字)
 		if (hudCombo) { hudCombo.innerHTML = renderComboBadges() }   // Combo 图标化徽标(右上，不再压进数据框)
 		hudWave.innerHTML = renderWave()
 		hudSkills.innerHTML = renderSkills()
