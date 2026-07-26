@@ -137,6 +137,8 @@
 		coreHp: 0, segments: 0, stageId: 0, waveIndex: 0,
 		invincibleUntil: 0, buildPauseUntil: 0, comboScore: 0,
 		ownedSkills: {}, shakeFrames: 0, shakeMag: 0, rngSeed: 0,
+		skillMaxedOverflow: 0, skillMaxedOverflowHeal: 0, skillMaxedOverflowFood: 0, skillGatedByFloor: 0,   // S4：技能经济仪表·供给侧流失计数（满级溢出/地板节流，供调参观测）
+		firstSkillPickSec: 0,   // S4：首球(本局首个技能)拾取耗时(s)，验证"保护期内尝到升级"是否真达成（拾取时刻 = 体验时机，非掉出时刻）
 		// —— 叙事结算态（真理源 §8.2 / GDD §13.3 必清）——
 		maxSegments: 0, maxStageId: 1, killStreakMax: 0,
 		memoryTokens: [], buildSequence: [], comboHighlights: [], irreversibleChoices: [],
@@ -148,6 +150,8 @@
 		GS.status = 'playing'
 		GS.timeSec = 0; GS.frame = 0; GS.score = 0; GS.kills = 0; GS.killStreak = 0; GS.upgradesThisRun = 0   // C：本局升级计数开局清零
 		GS.upgradesBySeg = [0,0,0,0,0]; GS.skillDropsTotal = 0; GS.skillDropsBySource = { first: 0, gap: 0, killStreak: 0 }; GS.skillDropsBySeg = [0,0,0,0,0]   // S4：技能经济仪表清零
+		GS.skillMaxedOverflow = 0; GS.skillMaxedOverflowHeal = 0; GS.skillMaxedOverflowFood = 0; GS.skillGatedByFloor = 0   // S4：技能经济仪表·供给侧流失清零
+		GS.firstSkillPickSec = 0   // S4：首球拾取耗时清零
 		GS.coreHp = CONFIG.PLAYER.coreHp
 		GS.segments = CONFIG.PLAYER.initSegments
 		GS.stageId = 1; GS.waveIndex = 0

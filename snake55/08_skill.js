@@ -354,6 +354,7 @@ function tickCombos(dt) {
 		for (var i = 0; i < c.length; i++) { if (c[i].id === id) { ok = c[i]; break } }
 		if (!ok) { Log.warn('技能选择非法：' + id); return }
 		GS.ownedSkills[id] = ok.level
+		if (!GS.firstSkillPickSec && (GS.upgradesThisRun || 0) === 0) { GS.firstSkillPickSec = GS.timeSec }   // S4：记录本局首个技能(=首球)拾取时刻，验证"保护期内尝到升级"（首球5s掉、其余受20s地板压制，首个必为首球）
 		GS.upgradesThisRun = (GS.upgradesThisRun || 0) + 1   // C：本局累计升级+1（每次选择=1次，口径与「点满5技能需25次」一致）
 		var _gi = (GS.stageId || 1) - 1; if (_gi >= 0 && _gi < 5 && GS.upgradesBySeg) { GS.upgradesBySeg[_gi] = (GS.upgradesBySeg[_gi] || 0) + 1 }   // S4：技能经济仪表·每段升级计数
 		Log.info('[GATE] pick ' + id + '→Lv' + ok.level + ' (upgradesThisRun=' + GS.upgradesThisRun + ')')   // A#1 诊断：确认选的是候选内合法技能

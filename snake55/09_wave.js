@@ -110,8 +110,10 @@
 		Log.info('[GATE] spawnMaxedReward coreHp=' + GS.coreHp + '/' + PK.heal.maxHp)
 		if (GS.coreHp < PK.heal.maxHp && activeKind('heal') < PK.heal.screenCap) {
 			spawnOrbAt('heal', x, y)   // ❶ 血<3（状态上限3心，唯一致死柱石）随时可转回血；同屏上限1；不绑局上限（避免满级后空 food 回归）
+			GS.skillMaxedOverflow = (GS.skillMaxedOverflow || 0) + 1; GS.skillMaxedOverflowHeal = (GS.skillMaxedOverflowHeal || 0) + 1   // S4：满级溢出→转回血计数
 		} else if (activeKind('food') < PK.food.screenCap) {
 			spawnOrbAt('food', x, y)   // ❷ 满血→食物（遵 §5 屏上限6；B：满节时该食物被吃→overflow→小分，复用同管线不新建类型）
+			GS.skillMaxedOverflow = (GS.skillMaxedOverflow || 0) + 1; GS.skillMaxedOverflowFood = (GS.skillMaxedOverflowFood || 0) + 1   // S4：满级溢出→转食物计数
 		}
 		// 同屏已满则本次不产：沿用掉率、不补窗、不凭空堆叠
 	}
@@ -134,7 +136,7 @@
 		if (gi === 2) { gap = RT('PICKUP.gapFarm', gap) }                    // 段③ 割草：RT 桥到「割草升级间隔s」
 		else if (gi === 0 || gi === 1) { gap = RT('PICKUP.gapEarly', gap) }  // 段①②：RT 桥到「前期升级间隔s」
 		if (gap > 0 && gotFirstSkill) {                                       // 值>0 才节流；首技能≤9s 一律不门控
-			if (GS.timeSec - lastSkillBallTime < gap) { return }             // 地板压制：不 spawn、不重置 killsSinceSkill（防计数漂移/反枯竭语义错）
+			if (GS.timeSec - lastSkillBallTime < gap) { GS.skillGatedByFloor = (GS.skillGatedByFloor || 0) + 1; return }   // 地板压制：不 spawn、不计掉球；记录被压次数（S4 仪表观测段④⑤节流强度）
 		}
 		var px = x, py = y
 		if (inFront) { var h = head(), ang = (typeof h.angle === 'number') ? h.angle : 0, d = PK.food.safeDistance; px = h.x + Math.cos(ang) * d; py = h.y + Math.sin(ang) * d }
