@@ -80,15 +80,16 @@
 
 	// 技能掉落 roll（baseDropRate 随已拥有数衰减，floorRate 兜底；连杀 15 未掉必给。首技能保底已移至 Pickup.update 开局直给）
 	function ownedSkillCount() { var c = 0, gs = GS.ownedSkills; for (var k in gs) { if (gs.hasOwnProperty(k) && gs[k] > 0) { c++ } } return c }
+	// 返回掉落来源：'killStreak'(连杀保底) / 'gap'(常规随机掉率) / null(本次不掉) —— S4 技能经济仪表
 	function rollSkillDrop() {
 		var sk = PK.skill, pity = PK.skillPity
+		if (GS.stageId !== 1 && killsSinceSkill >= pity.killStreakGuarantee) { return 'killStreak' }   // 连杀 15 保底（P1-2：段①暂停，防保护期技能过载）
 		var chance = sk.baseDropRate - sk.perOwnedPenalty * ownedSkillCount()
 		if (chance < sk.floorRate) { chance = sk.floorRate }
-		if (GS.stageId !== 1 && killsSinceSkill >= pity.killStreakGuarantee) { return true }   // 连杀 15 保底（P1-2：段①暂停，防保护期技能过载）
-		return Math.random() < chance
+		return (Math.random() < chance) ? 'gap' : null
 	}
 	// 首技能保底（§5）：开局即在蛇头正前方 safeDistance 处给出第一个技能球（屏内可直达，绝不落世界原点）
-	function spawnSkillInFront() { tryGiveSkill(0, 0, true) }   // 经统一入口：首技能路径，地板/满级闸门同处判定
+	function spawnSkillInFront() { tryGiveSkill(0, 0, true, 'first') }   // S4：首球来源标 'first'（仪表分类）；经统一入口，地板/满级闸门同处判定
 
 	// —— B-GM 实时标定桥（dev）：读 editor 运行时覆盖，无覆盖回退冻结 CONFIG 默认；仅替换 input 来源，不改判定/公式 ——
 	function RT(path, fb) {
@@ -115,14 +116,17 @@
 		// 同屏已满则本次不产：沿用掉率、不补窗、不凭空堆叠
 	}
 	// 实际给出技能球（集三处掉落入口于一点；命中即重置计数/计时；被地板压制的触发不重置）
-	function giveSkillBall(x, y) {
+	function giveSkillBall(x, y, source) {   // S4：source 用于技能经济仪表分类
 		spawnOrbAt('skill', x, y)
 		killsSinceSkill = 0
 		gotFirstSkill = true
 		lastSkillBallTime = GS.timeSec
+		GS.skillDropsTotal = (GS.skillDropsTotal || 0) + 1
+		if (source && GS.skillDropsBySource && GS.skillDropsBySource[source] != null) { GS.skillDropsBySource[source]++ }
+		var _gi = (GS.stageId || 1) - 1; if (_gi >= 0 && _gi < GS.skillDropsBySeg.length) { GS.skillDropsBySeg[_gi]++ }
 	}
 	// 统一技能球入口：满级→溢出转化；否则按段取值走升级间隔地板（含连杀保底那颗，维持上轮口径：压制不重置、超窗即给、不预支）
-	function tryGiveSkill(x, y, inFront) {
+	function tryGiveSkill(x, y, inFront, source) {   // S4：source 透传 giveSkillBall 做仪表分类
 		var am = allSkillsMaxed()
 		if (am) { Log.info('[GATE] all-maxed → spawnMaxedReward (no skill ball)'); spawnMaxedReward(x, y); return }
 		var arr = PK.upgradeMinGapSecBySeg, gi = GS.stageId - 1
@@ -135,7 +139,7 @@
 		var px = x, py = y
 		if (inFront) { var h = head(), ang = (typeof h.angle === 'number') ? h.angle : 0, d = PK.food.safeDistance; px = h.x + Math.cos(ang) * d; py = h.y + Math.sin(ang) * d }
 		Log.info('[GATE] giveSkillBall owned=' + JSON.stringify(GS.ownedSkills) + ' allMaxed=' + am)   // A#3 诊断：满级后仍见此行且 allMaxed=false＝闸门漏判
-		giveSkillBall(px, py)
+		giveSkillBall(px, py, source)   // S4：透传掉落来源
 	}
 
 	// ---------------- Pickup 系统 ----------------
@@ -206,7 +210,8 @@
 	})
 	Bus.on('enemy:die', function (d) {
 		killsSinceSkill++
-		if (!GS.tuningSandbox && rollSkillDrop()) { tryGiveSkill(d.x, d.y, false) }   // 统一入口：地板/满级闸门在此判定；B-GM 沙盒停击杀掉球
+		var _src = rollSkillDrop()   // S4：返回掉落来源 'killStreak'/'gap'/null
+		if (!GS.tuningSandbox && _src) { tryGiveSkill(d.x, d.y, false, _src) }   // 统一入口：地板/满级闸门在此判定；B-GM 沙盒停击杀掉球
 	})
 	Bus.on('core:run_reset', function () {
 		while (foods.length) { orbPool.release(foods.pop()) }

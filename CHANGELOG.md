@@ -2,6 +2,20 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · tune(progress): 技能经济仪表+升级间隔去零地板 · S4（commit 4/5）
+- **需求**：进度节奏系统调优 S4——先加仪表（观测），再定值。仪表=每段升级次数 + 技能球掉落次数 + 掉落来源 gap/killStreak；升级间隔去零地板 `[20,20,30,0,0]→[20,20,30,20,20]`；`killStreak` 保持 15 不动（等仪表数据再定第二步：可能割草/高潮 15→25）。
+- **改动（文件清单）**：
+  - `03_core.GS` 新增运行态仪表字段 `upgradesBySeg[5]` / `skillDropsTotal` / `skillDropsBySource{first,gap,killStreak}` / `skillDropsBySeg[5]`；`resetRun` 清零（仅加运行态计数字段，未动引擎逻辑）。
+  - `08_skill.pick()` 选技能时 `upgradesBySeg[stageId-1]++`。
+  - `09_wave`：`rollSkillDrop()` 由 bool 改为返回来源串（`'killStreak'`/`'gap'`/`null`）；`tryGiveSkill(x,y,inFront,source)` 透传；`giveSkillBall(x,y,source)` 累加 `skillDropsTotal`/`skillDropsBySource[source]`/`skillDropsBySeg[gi]`；首球来源标 `'first'`；`enemy:die` 透传来源。
+  - `15_profiler.sample()` 新增「【技能经济】」行（升级/段、总升级、掉球 N(首/常规/连杀)、掉球/段），`L` 开面板可观测。
+  - `02_config.PICKUP.upgradeMinGapSecBySeg` `[20,20,30,0,0]→[20,20,30,20,20]`（段④⑤去零地板）。
+  - `index.html` 缓存戳由 pre-commit hook 自动 bump。
+- **波及**：掉落来源分类在 `giveSkillBall` 实际产出时计数（被升级间隔地板压制的连杀保底球不计入，符合"没真掉球"语义）；profiler 仅 dev 观测、不改 gameplay；03_core 仅加字段。
+- **是否动 §9**：是，`upgradeMinGapSecBySeg` 段④⑤ 0→20 属 §7/§8.5.3 节奏值；**AI 不碰真源 MD，§9 回写由用户完成**。
+- **验收 ✅❌**：①开一局跑满看 profiler「技能经济」行：升级/段 与 掉球/段 随段变化；②掉球 N 三项之和=掉球总数（`首+常规+连杀=skillDropsTotal`）；③段④⑤升级间隔 20s（较旧 0 明显变少，预期非 bug）；④`killStreak` 保底仍 15（连杀到 15 必给，来源记 killStreak）。
+- **未动底层**：04_collision 零改；coreHp=3/伤害管线/initSegments=3·maxSegments=25/食物=记忆同资源 未动；首技能保底(S5)/段 cap(S2)/保护期(S1) 已先行处理。
+
 ## 2026-07-26 · tune(progress): 首技能保底 9→5s · S5（commit 3/5）
 - **需求**：进度节奏系统调优 S5——首技能保底（开局引导）9→5s；首个技能球固定在蛇头附近（保证吃得到、不被错过），仅首球，后续照常。
 - **改动（文件清单）**：

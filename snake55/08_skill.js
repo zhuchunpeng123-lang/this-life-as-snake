@@ -355,6 +355,7 @@ function tickCombos(dt) {
 		if (!ok) { Log.warn('技能选择非法：' + id); return }
 		GS.ownedSkills[id] = ok.level
 		GS.upgradesThisRun = (GS.upgradesThisRun || 0) + 1   // C：本局累计升级+1（每次选择=1次，口径与「点满5技能需25次」一致）
+		var _gi = (GS.stageId || 1) - 1; if (_gi >= 0 && _gi < 5 && GS.upgradesBySeg) { GS.upgradesBySeg[_gi] = (GS.upgradesBySeg[_gi] || 0) + 1 }   // S4：技能经济仪表·每段升级计数
 		Log.info('[GATE] pick ' + id + '→Lv' + ok.level + ' (upgradesThisRun=' + GS.upgradesThisRun + ')')   // A#1 诊断：确认选的是候选内合法技能
 		Bus.emit('skill:gained', { id: id, level: ok.level })
 		checkCombos()
