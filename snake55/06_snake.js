@@ -144,17 +144,30 @@
 	}
 
 	Bus.on('core:run_reset', function () { spawnAtCenter(); squash.sx = 1; squash.sy = 1; squash.dur = 0 })
+	// S2：当前段节数上限（按段封顶，且不超过 maxSegments 硬顶）。叙事加节豁免段 cap（见 12_ui→pickup:eat kind:'narrative'），此处仅 food 用段 cap。挂 window 供 09_wave 复用。
+	function segCapNow() {
+		var P = CONFIG.PLAYER
+		var idx = (GS.stageId || 1) - 1
+		var arr = P.segCapByStage
+		var stageCap = (arr && arr[idx] != null) ? arr[idx] : P.maxSegments
+		return Math.min(stageCap, P.maxSegments)
+	}
+	window.segCapNow = segCapNow
+
 	Bus.on('pickup:eat', function (d) {
-		if (d && d.kind && d.kind !== 'food') { return }   // 只有食物 +1 节
-		if (GS.segments < P.maxSegments) {                 // B：以 maxSegments 为唯一真源门控（segCap 仅文档别名；二者现相等=25，杜绝配置漂移→区间静默吞食）
+		var isNarrative = d && d.kind === 'narrative'
+		if (d && d.kind && d.kind !== 'food' && !isNarrative) { return }   // 仅 food / narrative 加节
+		// S2：普通食物受段 cap 卡（达段上限→溢出转小分）；叙事加节豁免段 cap，仅受 maxSegments 硬顶（用户裁定：低频主动奖励，吞掉手感差）。记忆 tag 由 12_ui.resolve 独立记录，不在此受 cap 影响。
+		var cap = isNarrative ? P.maxSegments : segCapNow()
+		if (GS.segments < cap) {
 			GS.segments += CONFIG.PICKUP.food.gainSegments
 			setSegments(GS.segments)
 			triggerSquash(CONFIG.JUICE.squashEat.scale, CONFIG.JUICE.squashEat.durationMs)   // JUICE 吞噬挤压回弹
 			Bus.emit('snake:grow', { segments: GS.segments })
 		} else {
-			GS.score += CONFIG.PICKUP.food.overflowScore    // B：满节溢出食物 → 小分占位（不+节、不回血；coreHp=3 是唯一命门，回血泛滥毁生存张力；score 用途未定仅占位）
-			var _ph = Registry.get('particle')              // B：满节溢出飘字反馈（gold，让占位分可被感知/验收；放蛇头避免抉择路径 x:0 飘屏外）
-			if (_ph && _ph.spawnText) { _ph.spawnText(head.x, head.y - 16, '+' + CONFIG.PICKUP.food.overflowScore + ' 满节溢出', '#ffd76b', 16, 'high') }
+			GS.score += CONFIG.PICKUP.food.overflowScore    // 溢出转小分（满段/满节复用 B 占位分管线；记忆 tag 仍记）
+			var _ph = Registry.get('particle')
+			if (_ph && _ph.spawnText) { _ph.spawnText(head.x, head.y - 16, '+' + CONFIG.PICKUP.food.overflowScore + ' 溢出', '#ffd76b', 16, 'high') }
 			Bus.emit('snake:overflow_food', { score: CONFIG.PICKUP.food.overflowScore })
 		}
 	})

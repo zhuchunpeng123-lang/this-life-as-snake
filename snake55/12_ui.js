@@ -331,7 +331,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			resolved = true; choiceActive = false; choiceBox.style.display = 'none'; hideRotateChoice()
 			if (GS.status === 'dead' || GS.status === 'clear') { return }   // #1 修复：死亡/通关后超时默认抉择不再生效（不再涨节/加血/记记忆）
 			GS.irreversibleChoices.push(opt.memory); tagLatest('choice')
-			if (opt.seg && GS.segments < PLAYER.maxSegments) { for (var n = 0; n < opt.seg; n++) { Bus.emit('pickup:eat', { kind: 'food', id: -1, x: 0, y: 0 }) } }   // B：记忆 token 满节同停（满节不再授节，记忆 tag 仍记录）
+			if (opt.seg && GS.segments < PLAYER.maxSegments) { for (var n = 0; n < opt.seg; n++) { Bus.emit('pickup:eat', { kind: 'narrative', id: -1, x: 0, y: 0 }) } }   // S2：叙事加节走独立 kind，豁免段 cap 仅受 maxSegments 硬顶（记忆 tag 上文已记，不受 cap 影响）
 			if (opt.hp) { var hp = GS.coreHp + opt.hp; GS.coreHp = hp > PLAYER.coreHp ? PLAYER.coreHp : hp }
 		}
 		function makeBtn(opt) {

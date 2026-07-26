@@ -148,7 +148,7 @@
 			if (!gotFirstSkill) { firstSkillTimer += dt; if (firstSkillTimer >= PK.skillPity.firstSkillGuaranteeSec) { spawnSkillInFront(); gotFirstSkill = true } }
 		foodTimer -= dt
 		if (foodTimer <= 0) {
-			var fullSeg = GS.segments >= CONFIG.PLAYER.maxSegments
+			var fullSeg = GS.segments >= segCapNow()   // S2：满段（非仅满节）即稀疏化；叙事加节到 maxSegments 也走此分支（共用 segCapNow 语义一致）
 			foodTimer = fullSeg ? PK.food.maxSegRefreshIntervalSec : PK.food.refreshIntervalSec   // B：满节后拉长期望刷新间隔（零星可吃、不遍地）
 			var foodCap = fullSeg ? PK.food.maxSegScreenCap : PK.food.screenCap
 			while (activeKind('food') < foodCap) { if (!spawnOrb('food')) { break } }

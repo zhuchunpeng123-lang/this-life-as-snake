@@ -47,9 +47,10 @@
 		turnRateFloor: 120,
 			segmentSpacing: 24,
 			followLerp: 0.4,
-			initSegments: 3,
-			maxSegments: 25,
-			coreHp: 3,
+		initSegments: 3,
+		maxSegments: 25,                 // 长度线硬顶（叙事加节仅受此限；普通食物额外受段 cap 卡）
+		segCapByStage: [5, 8, 15, 25, 25],   // S2：成长节数按段封顶（索引=stageId-1 对齐 §8.5.2）；段①④才可达25，防长度线提前封顶导致后期放风筝。普通食物门控用段 cap，叙事选择豁免段 cap 仅受 maxSegments
+		coreHp: 3,
 			headRadius: 14,            // 碰撞判定半径（真理源 §1：宁小勿大防冤死，回真源 14；渲染半径见下方 headRadiusRender）
 			headRadiusRender: 28,      // 渲染半径(px)：纯表现，配合 snake_head.png；与碰撞 headRadius 解耦（视觉≥判定，防冤死）；getSpriteOff 整图缩到 2r → 视觉头宽≈1.2×此值(≈34px，比身体24px略大、协调)；用户最新：蛇头从30再小一点点→28（"蛇头有点大"），缩放回退「之前版本」(dispCss=r*2)
 			bodyRadius: 12,

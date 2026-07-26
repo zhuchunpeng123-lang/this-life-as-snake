@@ -2,6 +2,19 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · tune(progress): 成长节数按段封顶 · S2（commit 1/5）
+- **需求**：进度节奏系统性调优 6 轴之 S2——长度线不许提前封顶（提前满=后期只剩躲怪放风筝、枯燥）。达本段上限后再吃食物→节不加、溢出转小分（复用 B 的 overflowScore 管线）、记忆 tag 仍记。
+- **改动（文件清单）**：
+  - `02_config.PLAYER` 新增 `segCapByStage=[5,8,15,25,25]`（索引=stageId-1，对齐 §8.5.2）。
+  - `06_snake.js` 新增全局助手 `segCapNow()`（取 `segCapByStage[GS.stageId-1]` 与 `maxSegments` 取小），挂 `window` 供 09_wave 复用；`pickup:eat` 普通食物门控由 `maxSegments` 改为 `segCapNow()`（达段上限→溢出小分）；叙事加节走独立 `kind:'narrative'`、豁免段 cap 仅受 `maxSegments` 硬顶。
+  - `09_wave.js` 食物刷新稀疏 `fullSeg` 判定由 `>=maxSegments` 改为 `>=segCapNow()`（满段即稀疏，与食物门控语义一致）。
+  - `12_ui.js` 叙事选择加节 `Bus.emit('pickup:eat',{kind:'food'})` → `kind:'narrative'`（CH-01+2 / CH-04+1 豁免段 cap；记忆 tag 在 `resolve` 独立记录，不受 cap 影响）；`seg` 硬顶仍为 `PLAYER.maxSegments`。
+  - `index.html` 上述 4 文件 `?v=20260726s2`。
+- **波及**：`segCapNow` 为只读助手、不改引擎逻辑；03_core/04_collision 零改；食物溢出飘字文案「满节溢出」→「溢出」（段 cap 也走此分支）；叙事加节在段①可能超段 cap（用户裁定：低频主动奖励，吞掉手感差，可接受）。
+- **是否动 §9**：是，`segCapByStage` 属真理源 §8.5.2 值新增；**按纪律 AI 不碰真源 MD，§9 回写由用户完成**。
+- **验收 ✅❌**：①段①结束 ≤5 节 / 段② ≤8 / 段③ ≤15 / 段④才可达 25；②到段上限再吃 food→不+节、转小分飘字「+10 溢出」、记忆 tag（若有）仍记；③CH-01(+2) 在段①可把节推到 7（豁免段 cap，仅受 max=25 限）；④满段后食物明显稀疏、不遍地。
+- **未动底层**：03_core/04_collision/伤害管线/coreHp=3/initSegments=3·maxSegments=25/食物=记忆同资源 均未动。
+
 ## 2026-07-26 · tune(input): 摇杆转向跟手·基础转向速率 180→300（轴1·单一数值）
 - **用户反馈**：实测摇杆不跟手、转向不灵活，开局即钝、长蛇更差。根因=`06_snake` step1 `angleLerp` 硬上限 `turnRate=180°/s`（U-turn 1.0s）；摇杆自身零延迟（每帧 `atan2` 瞬时取方向），限速全在转向上限，非摇杆链路。
 - **改动（轴1·单一值）**：`02_config.PLAYER.turnRate` `180→300`（U-turn 1.0s→0.6s，更跟手）；`turnRateDecayPerSeg`/`turnRateFloor` **暂不动**（轴2 长度惩罚沿用用户裁定「先只提速 base」，后续单独轴）。
