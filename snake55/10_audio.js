@@ -270,8 +270,15 @@
 	}
 
 	// —— BGM 事件订阅（追加，不动既有 12 事件音效行）——
+	// 开局/重开局：在用户手势同步链内解锁音频并起 explore BGM。
+	// 关键：AudioContext 必须在「用户手势」内创建+resume，否则浏览器 autoplay 策略会在主循环 rAF 内挡住→开局静音，
+	// 要等后续手势(移动键/拾取音效里的 resume)才解锁。core:run_reset 由 startIfMenu→core.resetRun 同步触发，属手势内→合规解锁（修复 2026-07-26）
+	Bus.on('core:run_reset', function () {
+		pauseMul = 1; eventDuckMul = 1; densityDuckMul = 1   // 新一局清空暂停/duck 系数（死亡→重开若残留 0.5 等，避免开局被压）
+		ensure(); resume(); startBgm()                       // 手势内解锁+起 explore BGM；startBgm 自带 bgmRunning 守卫（重开时死亡已 stopBgm→会重启）
+	})
 	Bus.on('wave:stage', function (d) {            // 探索=1 / 战斗=2-4 / Boss=5（核对点1 映射 A）
-		if (!bgmRunning) { startBgm() }
+		if (!bgmRunning) { startBgm() }           // 兜底：若 run_reset 未起（极少数路径），首波仍兜底起 BGM
 		var sid = d && d.stageId
 		var layer = 'explore'
 		if (sid === 1) { layer = 'explore' }

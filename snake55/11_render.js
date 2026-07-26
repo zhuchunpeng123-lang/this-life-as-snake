@@ -972,7 +972,7 @@ function drawDebugHud() {
 		if (!d) { return }
 		_steamThisFrame++
 	})
-	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0 })   // 任务2：屏震节流状态归零（眼睛仅眨眼调度、随头朝向、无独立状态，无需重置）
+	Bus.on('core:run_reset', function () { shakeMag = 0; shakeFrames = 0; trauma = 0; bossWarnUntil = 0; hurtVignetteUntil = 0; cam.x = GAME.worldWidth / 2; cam.y = GAME.worldHeight / 2; _traumaGateUntil = 0; _traumaLastRank = 0; _steamThisFrame = 0; _lastSteamCount = 0; _eyeBlinkUntil = 0; _eyeNextBlink = 2.5 })   // 任务2：屏震节流状态归零；眼睛眨眼调度态随 run_reset 归零（GS.timeSec 重开局归零，否则 _eyeBlinkUntil 残留大值→blinking 永久 true→眼睛卡压扁细眼白；修复 2026-07-26）
 
 	var Render = { init: init, resize: resize, draw: draw, camera: cam, getFlickerSample: function () { return { head: _flkHead, body: _flkBody } }, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
 	Registry.register('render', Render)
