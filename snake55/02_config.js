@@ -42,7 +42,7 @@
 		// —— §1 PLAYER ——
 		PLAYER: {
 			snakeSpeed: 200,
-		turnRate: 180,
+		turnRate: 300,                // 🟡 手感调参(2026-07-26)：180→300，U-turn 1.0s→0.6s 更跟手；轴2 长度衰减(decay/floor)暂不动，后续单独轴。真源 §1 回写待用户完成
 		turnRateDecayPerSeg: 0.010,
 		turnRateFloor: 120,
 			segmentSpacing: 24,

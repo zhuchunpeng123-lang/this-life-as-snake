@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · tune(input): 摇杆转向跟手·基础转向速率 180→300（轴1·单一数值）
+- **用户反馈**：实测摇杆不跟手、转向不灵活，开局即钝、长蛇更差。根因=`06_snake` step1 `angleLerp` 硬上限 `turnRate=180°/s`（U-turn 1.0s）；摇杆自身零延迟（每帧 `atan2` 瞬时取方向），限速全在转向上限，非摇杆链路。
+- **改动（轴1·单一值）**：`02_config.PLAYER.turnRate` `180→300`（U-turn 1.0s→0.6s，更跟手）；`turnRateDecayPerSeg`/`turnRateFloor` **暂不动**（轴2 长度惩罚沿用用户裁定「先只提速 base」，后续单独轴）。
+- **波及**：同时提速 需求B 撞墙收敛（line 125）→ 贴墙拨离更跟手（正向）；键盘同走此上限→一并受益；不涉及 §6 伤害一致性、不碰 `03_core`/`04_collision`；`~` GM 滑条 `PLAYER.turnRate` 可运行时再热调。
+- **是否动 §9**：是，`turnRate` 属真理源 §1 值变更；**按纪律 AI 不碰真源 MD，§9 回写由用户完成**。
+- **验收**：①短蛇拨杆 U-turn≈0.6s 明显跟手；②25 节长蛇 U-turn 仍≈0.75s（衰减保留，轴2 待做）；③贴墙拨离跟手无发沉；④与需求B 墙角冻结拨出无回归。
+- **未动底层**：仅 `02_config` 单值；`06_snake`/`14_main`/core/collision/§9 结构零改动。
+
 ## 2026-07-26 · revert(render): 蛇身/头几何回退 commit 版，仅留眼睛+受光渐变绿（build ?v=2026c）
 - **用户决策**：连续微调(25a 头前移 + 25b 脖子连接圆)仍引出衔接怪异→回退。本回合：蛇身几何与头位置**回退到 commit 版**(圆形身体、头不前移 headR*0.38、无脖子连接圆)；**保留**①当前版眼睛(`eyes=[-146,-238]/[146,-238]`、眨、随头朝向转、不歪)；②受光渐变绿(`drawShadedCircle` 中心 SNAKE_BODY_HI、边缘 STYLE.player，= 25a「那个颜色」消色差)。头大小 headRadiusRender=28 不动。
 - **撤掉的 25a/25b 渲染改动**：`hx2/hy2` 头前移整段、`_neckDist/_nbx/_nby` 脖子连接圆、`drawHalo`/`_snakeEyeX/Y` 锚点改回 `hx,hy`。无残留引用(lint 0 error)。`drawShadedCircle` 帮手保留(供 body 渐变复用)。
