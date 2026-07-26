@@ -13,7 +13,7 @@ var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻
 var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
 var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
-var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null
+var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
@@ -56,7 +56,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
-		choiceBox = mk('div', 'position:absolute;left:50%;bottom:90px;transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // pointer-events:auto：#ui-stage 为 none 让点击穿透到 canvas，此处重开 auto 使抉择按钮可点（非全屏，仅盒子区域捕获，保持非阻塞）
+		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
 		// 系统按钮归组右上顶部(hudSys)，与技能栏(hudSkills)/Combo(hudCombo)分离(P0-2)
@@ -81,6 +81,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		// 竖屏选卡「请横屏」遮罩（全屏层）：竖屏触发升级/事件选择时盖住，横屏后自动露出选项
 		rotateChoiceEl = mk('div', 'position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:' + hexA(STYLE.bg, 0.94) + ';color:' + STYLE.textMain + ';font:700 20px system-ui;text-align:center;z-index:35;pointer-events:auto;padding:24px', froot)
 		rotateChoiceEl.innerHTML = '<div style="font-size:46px">📱↔️</div><div>请横屏以查看升级 / 选择</div><div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏后将自动显示选项</div>'
+		// 强制横屏全屏遮罩（仅触屏设备由 main 触发；z-index:60 压所有层）：竖屏盖住、横屏隐藏
+		gateEl = mk('div', 'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:' + hexA(STYLE.bg, 0.96) + ';color:' + STYLE.textMain + ';font:700 22px system-ui;text-align:center;padding:calc(env(safe-area-inset-top) + 24px) calc(env(safe-area-inset-right) + 24px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 24px);z-index:60;pointer-events:auto', froot)
+		gateEl.innerHTML = '<div style="font-size:54px">📱↔️</div><div>请横屏以获得最佳体验</div><div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏即可继续</div>'
+		Bus.on('ui:orientation_gate', function (d) { if (gateEl) { gateEl.style.display = (d && d.show) ? 'flex' : 'none' } })
 		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
 		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
@@ -491,9 +495,39 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' }
 	})
 
+	// —— 移动端 HUD 等比缩放（必改1：每簇从各自屏角缩放，杜绝整体 top-left 内漂）——
+	var _lastRootH = -1, _lastUiScale = -1
+	function computeUiScale() {
+		var h = root.getBoundingClientRect().height
+		if (h === _lastRootH && _lastUiScale >= 0) { return _lastUiScale }   // 仅在画布显示高变化时重算，避免每帧样式抖动
+		_lastRootH = h
+		var designH = (CONFIG.GAME && CONFIG.GAME.logicalHeight) || 540   // 真实设计高度(画布逻辑分辨率)；HUD 与画布同缩放基准，非硬编码 900
+		var clamp = (CONFIG.UI && CONFIG.UI.mobileScaleClamp) || { min: 0.55, max: 1.15 }
+		var s = (h > 0) ? h / designH : 1
+		if (s < clamp.min) { s = clamp.min }   // 矮屏(高375→~0.69)压到 0.55 防溢出
+		if (s > clamp.max) { s = clamp.max }
+		_lastUiScale = s
+		return s
+	}
+	function applyUiScale() {
+		var s = computeUiScale()
+		// 左上簇：top-left 缩放（右下延展，永不漂进画面）
+		if (hudStatus) { hudStatus.style.transformOrigin = 'top left'; hudStatus.style.transform = 'scale(' + s + ')' }
+		// 右上簇（系统按钮/技能栏/Combo）：top-right 缩放，保持贴右
+		if (hudSys) { hudSys.style.transformOrigin = 'top right'; hudSys.style.transform = 'scale(' + s + ')' }
+		if (hudSkills) { hudSkills.style.transformOrigin = 'top right'; hudSkills.style.transform = 'scale(' + s + ')' }
+		if (hudCombo) { hudCombo.style.transformOrigin = 'top right'; hudCombo.style.transform = 'scale(' + s + ')' }
+		// 顶部居中簇：中心缩放 + 保留 translateX(-50%) 居中
+		if (hudWave) { hudWave.style.transformOrigin = 'top center'; hudWave.style.transform = 'translateX(-50%) scale(' + s + ')' }
+		if (comboBanner) { comboBanner.style.transformOrigin = 'top center'; comboBanner.style.transform = 'translateX(-50%) scale(' + s + ')' }
+		// 底部居中抉择盒：bottom-center 缩放，保留居中并上移避让右下摇杆区
+		if (choiceBox) { choiceBox.style.transformOrigin = 'bottom center'; choiceBox.style.transform = 'translateX(-50%) scale(' + s + ')' }
+	}
+
 	var UI = {
 		init: init,
 		update: function () {
+			applyUiScale()   // 画布显示高变化(旋转/地址栏收起)→各簇按各自屏角等比缩放，互不漂移、不溢出
 			var hn = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 			if (hn - _lastHudRefresh >= 100) { refreshHUD(); _lastHudRefresh = hn }   // ~10Hz 节流：分数/时间/蛇长慢变，10Hz 足够；消除每帧 innerHTML 重建的 DOM 重排回流（原每帧执行，未计入帧时间）
 			if (pauseBtn) { pauseBtn.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'block' : 'none' }

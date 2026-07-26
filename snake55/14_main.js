@@ -119,6 +119,28 @@
 	var joyBase = null, joyKnob = null   // 摇杆视觉 DOM（固定锚点、常驻淡显；pointer-events:none 不吞 UI 点击）
 	// 6① 挂起：菜单 / 3选1 / 暂停 / 结算 时摇杆不接管——GM 不再禁摇杆（用户要 GM 开着也能试玩操控；面板内拖拽由 joyDown 排除 #gm_editor_panel 防误触）
 	function inputBlocked() { return GS.status !== 'playing' }
+	// —— 移动端「强制横屏」拦截（仅触屏设备；桌面 PC 竖窗不触发）——
+	var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
+	function isPortrait() { return (global.innerHeight || 0) > (global.innerWidth || 0) }
+	var pausedByGate = false   // 仅当「因横屏遮罩暂停」时为真；旋回横屏才恢复 playing（手动暂停/三选一/结算绝不自动恢复、不顶掉这些界面）
+	var preGateWasPlaying = false   // 进入竖屏前是否本就在 playing：决定旋回横屏是否恢复
+	var _gateShown = false
+	function setGate(show) {   // 仅在状态翻转时发 Bus，避免每帧重复触发 UI
+		if (show === _gateShown) { return }
+		_gateShown = show
+		Bus.emit('ui:orientation_gate', { show: show })
+	}
+	// safe-area 像素探测（复用 HTML env()）：返回各边内缩量，使摇杆/HUD 避开刘海/底部手势条
+	var _safeProbe = null
+	function getSafeArea() {
+		if (!_safeProbe) {
+			_safeProbe = document.createElement('div')
+			_safeProbe.style.cssText = 'position:fixed;left:env(safe-area-inset-left);top:env(safe-area-inset-top);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);width:0;height:0;visibility:hidden;pointer-events:none;z-index:-1'
+			document.body.appendChild(_safeProbe)
+		}
+		var r = _safeProbe.getBoundingClientRect()
+		return { left: r.left, top: r.top, right: (global.innerWidth || 0) - r.right, bottom: (global.innerHeight || 0) - r.bottom }
+	}
 	function joyRelease() {
 		joy.active = false; joy.pid = null; joy.dx = 0; joy.dy = 0
 		if (joyKnob) { joyKnob.style.opacity = '0' }   // 底座常驻淡显由 frame() 驱动；仅推钮归零
@@ -127,9 +149,18 @@
 	function joyBaseScreen() {
 		var r = canvas.getBoundingClientRect()
 		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
+		var scale = r.width / (CONFIG.GAME.logicalWidth || 960)
+		var baseR = (jc.baseRadius || 72) * scale
+		var minR = (jc.minScreenRadius != null ? jc.minScreenRadius : 64)   // 屏幕半径下限：小屏 contain 缩放后底座过小捏不住
+		var useR = Math.max(baseR, minR)
 		var bx = (jc.baseFracX != null ? jc.baseFracX : 0.84)
 		if (_gmOpen) { bx = 0.16 }   // GM 面板占右侧320px→摇杆锚点移到左侧，避免被面板盖住、方便试玩操控
-		return { x: r.left + r.width * bx, y: r.top + r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80) }
+		var sa = getSafeArea()   // 锚点内缩到 safe-area 内的可用区，避开刘海/底部手势条
+		var fx = r.width * bx
+		fx = Math.max(sa.left + useR, Math.min(fx, r.width - sa.right - useR))
+		var fy = r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80)
+		fy = Math.max(sa.top + useR, Math.min(fy, r.height - sa.bottom - useR))
+		return { x: r.left + fx, y: r.top + fy }
 	}
 	// 固定锚点逻辑坐标（输入死区判定用，与屏幕锚点同源）
 	function joyBaseLogical() {
@@ -143,7 +174,7 @@
 		var rect = canvas.getBoundingClientRect()
 		var scale = rect.width / CONFIG.GAME.logicalWidth
 		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		var baseR = (jc.baseRadius || 72) * scale
+		var baseR = Math.max((jc.baseRadius || 72) * scale, (jc.minScreenRadius != null ? jc.minScreenRadius : 64))   // 屏幕半径下限：底座可视/可捏面积保底，避免小屏缩成几像素
 		var knobR = (jc.knobRadius || 30) * scale
 		var travel = (jc.travelFrac != null ? jc.travelFrac : 0.6) * baseR   // 推钮最大行程(占 baseRadius 比例，纯视觉)
 		var bs = joyBaseScreen()
@@ -317,6 +348,22 @@
 		var frameDt = elapsed
 		if (global.document && global.document.hidden) { return }   // 标签页隐藏：跳过 step+draw，last 已新鲜，恢复不追帧
 		if (GS.status !== 'playing' && joy.active) { joyRelease() }   // 6① 任何非 playing 模态(3选1/暂停/结算/菜单)弹出即挂起摇杆（不误转向/不吞点击）
+		// —— 强制横屏拦截（仅触屏；桌面竖窗不触发）：竖屏→暂停+显示遮罩；横屏→仅当「因遮罩暂停」才恢复 playing（手动暂停/三选一/结算保留，绝不自动恢复）——
+		if (isTouch && isPortrait()) {
+			if (!pausedByGate) {
+				pausedByGate = true
+				preGateWasPlaying = (GS.status === 'playing')
+				if (GS.status === 'playing') { GS.status = 'paused' }   // 仅在原在玩时挂起；其他界面(菜单/结算)不动
+			}
+			setGate(true)
+		} else {
+			setGate(false)
+			if (pausedByGate) {
+				pausedByGate = false
+				if (preGateWasPlaying && GS.status === 'paused') { GS.status = 'playing' }   // 仅因遮罩暂停才恢复；手动暂停/三选一/结算不被顶掉
+				preGateWasPlaying = false
+			}
+		}
 		// 固定锚点摇杆常驻：playing 且未开 GM → 底座淡显(常驻提示操作区)，激活时转亮；非 playing/GM → 整体隐藏（含推钮）
 		var _jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
 		var _showBase = (GS.status === 'playing')   // GM 开着也显示摇杆底座（用户要 GM 时也能操控；锚点由 joyBaseScreen 移到左侧避开面板）
@@ -423,6 +470,7 @@ function buildStart(wrap) {
 			startIfMenu()                                // 点「开始/再来一局」先翻 playing，使本次按压的余下拖动即可转向（修开始遮罩吞 pointerdown→首手势摇杆不激活/蛇不转向）
 			if (inputBlocked()) { return }             // 6① 模态打开不接管（翻态后仍被挡则不激活）
 			if (joy.active) { return }                  // 6② 已锁定首指，多指忽略（不重置锚点）
+			if (isTouch && isPortrait()) { return }    // 竖屏遮罩激活时不接管摇杆（避免误触藏在遮罩下的操作区）
 			// HUD 按钮(暂停/全屏/GM，均在 #ui-stage 内且 pointer-events:auto)点击不误触摇杆；游戏画布/开始/结算遮罩不在 #ui-stage → 正常激活
 			if (GS.status === 'playing' && e.target && e.target.closest && e.target.closest('#ui-stage')) { return }
 			if (e.target && e.target.closest && e.target.closest('#gm_editor_panel')) { return }   // GM 面板(右侧320px)内拖拽不误触摇杆（GM 开着也能操控摇杆→只在面板外激活）

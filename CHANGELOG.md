@@ -2,6 +2,17 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · mobile(ux): 强制横屏拦截 + HUD/摇杆定向优化（未提交）
+- **需求**：PC 稳定后移动端专项——竖屏全屏「请横屏」遮罩拦截、横屏下 HUD 与虚拟摇杆按画布等比缩放且互不遮挡、可舒适操作。
+- **改动（文件清单）**：
+  - `14_main.js`：新增 `isTouch`/`isPortrait`/`pausedByGate`/`preGateWasPlaying`/`setGate`/`getSafeArea`；`frame()` 主循环横屏门控（仅触屏；桌面竖窗不触发）；`joyDown` 竖屏直接 return；`joyBaseScreen`/`updateJoyVisual` 摇杆锚点套 `minScreenRadius` 下限 + `getSafeArea()` 内缩避开刘海/底部手势条。
+  - `12_ui.js`：`init` 动态创建全屏 `#orientation-gate`(z-index:60) 并注册 `Bus('ui:orientation_gate')`；新增 `computeUiScale`/`applyUiScale`——**每簇从各自屏角缩放**（左上 top-left / 右上 top-right / 顶部居中 top-center / 抉择盒 bottom-center，杜绝整体 top-left 内漂）；`choiceBox` 上移 `bottom:22%`+限宽避让右下摇杆区。
+  - `02_config.INPUT.touch.minScreenRadius: 64`（摇杆屏幕半径下限，纯表现）；`02_config.UI.mobileScaleClamp {min:0.55,max:1.0}`（HUD 等比缩放钳制；上限 1.0=原始尺寸，桌面零回归）。
+  - `index.html`：移除矛盾 `#rotate-hint`（CSS+DOM），改由 JS 动态创建遮罩；`viewport-fit=cover` 已保留（刘海 safe-area 生效）。
+- **是否动 §9**：否，全部为 UI/CSS/输入表现值（放 config 表现段 INPUT.touch / UI），未触碰任何玩法/平衡强度数值与 core/collision。
+- **验收 ✅❌（需手机实测）**：①横屏→画布铺满、HUD 比例协调、右下摇杆可顺滑转向、HUD 不压摇杆、暂停/全屏/GM 可点；②竖屏→全屏遮罩+游戏暂停，旋回横屏遮罩消失并恢复（仅当原在玩）；③手动暂停/三选一/结算下旋转绝不自动恢复、不顶掉这些界面；④叙事抉择弹出不压摇杆区；⑤小屏(高375)HUD 不溢出且按钮可点（uiScale 钳到 0.55）；⑥地址栏收起不跳版；⑦iPhone 刘海不遮 HUD；⑧PC 竖窗不触发拦截。
+- **未动底层**：03_core/04_collision/伤害管线/§9 真源数值 零改；仅 UI/CSS/输入层。
+
 ## 2026-07-26 · tune(progress): 加血道具=贪婪悖论 · S3（commit 5/5）
 - **需求**：进度节奏系统调优 S3——加血道具(heal)做成「贪婪悖论」：满血不出、偏敌簇勾引冒险、每段预算上限（段②/③各≤2、段④薄1次、段⑤ Boss 纯决战 0）。
 - **改动（文件清单）**：
