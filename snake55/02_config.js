@@ -184,13 +184,13 @@
 
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——
 		STAGE: {
-			segments: [
-			{ id: 1, name: '保护期', startSec: 0, endSec: 60, cap: 4, spawnRate: 0.5, pool: ['wanderer'] },   // 2026-07-24o · 蜗牛最小最先出现(保护期温和不追)，老鼠移至成长期
-			{ id: 2, name: '成长期', startSec: 60, endSec: 180, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },
-				{ id: 3, name: '割草期', startSec: 180, endSec: 360, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
-				{ id: 4, name: '高潮期', startSec: 360, endSec: 480, cap: 50, spawnRate: 16, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
-				{ id: 5, name: 'Boss期', startSec: 480, endSec: 600, cap: 8, spawnRate: 1.5, pool: ['chaser', 'elite'] }
-			],
+		segments: [
+			{ id: 1, name: '保护期', startSec: 0, endSec: 30, cap: 4, spawnRate: 0.5, pool: ['wanderer'] },   // S1·2026-07-24o：保护期 60→30s（整局前移30s；成长/割草时长不变）
+			{ id: 2, name: '成长期', startSec: 30, endSec: 150, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },   // S1：起60→30、止180→150
+			{ id: 3, name: '割草期', startSec: 150, endSec: 330, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger', 'elite'] },   // S1：起180→150、止360→330
+			{ id: 4, name: '高潮期', startSec: 330, endSec: 450, cap: 50, spawnRate: 16, pool: ['chaser', 'wanderer', 'charger', 'elite'] },   // S1：起360→330、止480→450
+			{ id: 5, name: 'Boss期', startSec: 450, endSec: 570, cap: 8, spawnRate: 1.5, pool: ['chaser', 'elite'] }   // S1：起480→450、止600→570；整局 600→570s
+		],
 			rookieProtect: [
 				{ startSec: 0, endSec: 10, speedMul: 0.6, cap: 2 },
 				{ startSec: 10, endSec: 30, speedMul: 0.8, cap: 4 }
