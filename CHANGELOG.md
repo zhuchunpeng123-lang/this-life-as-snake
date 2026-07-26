@@ -2,6 +2,17 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · tune(progress): 首技能保底 9→5s · S5（commit 3/5）
+- **需求**：进度节奏系统调优 S5——首技能保底（开局引导）9→5s；首个技能球固定在蛇头附近（保证吃得到、不被错过），仅首球，后续照常。
+- **改动（文件清单）**：
+  - `02_config.PICKUP.skillPity.firstSkillGuaranteeSec: 9 → 5`。
+  - 首球「蛇头正前方 safeDistance 生成」已落地（09_wave `spawnSkillInFront`→`tryGiveSkill(0,0,true)`，inFront 分支 `px=h.x+cos(ang)*d`），本 commit 不动；仅改保底时长。
+  - `index.html` 缓存戳由 pre-commit hook 按 `snake55/*.js` 内容哈希自动 bump。
+- **波及**：首技能触发 `if (!gotFirstSkill) { firstSkillTimer+=dt; if (firstSkillTimer >= firstSkillGuaranteeSec) spawnSkillInFront() }`（09_wave:147-148）行为不变、仅阈值 9→5；连杀保底 `killStreakGuarantee=15` 不动（S4 亦不动）。
+- **是否动 §9**：是，首技能保底秒数属 §5/§8.5.3；**AI 不碰真源 MD，§9 回写由用户完成**。
+- **验收 ✅❌**：①开局 5s 内蛇头附近出现首个技能球；②吃到弹首次 3 选 1；③仅首球在前方，后续技能球按原掉率/升级间隔逻辑（不受 inFront）。
+- **未动底层**：03_core/04_collision/伤害管线/coreHp=3/initSegments=3·maxSegments=25/食物=记忆同资源 均未动；段 cap(S2)/保护期(S1) 已先行处理。
+
 ## 2026-07-26 · tune(progress): 保护期缩短 60→30s · S1（commit 2/5）
 - **需求**：进度节奏系统调优 S1——保护期 60→30s；成长/割草时长不变、后段整体前移 30s（整局 600→570s）；教学感不丢，且任何前期保底不得仍按老 60s 跑。
 - **改动（文件清单）**：
