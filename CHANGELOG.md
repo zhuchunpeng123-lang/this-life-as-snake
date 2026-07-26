@@ -2,6 +2,19 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-26 · tune(progress): 加血道具=贪婪悖论 · S3（commit 5/5）
+- **需求**：进度节奏系统调优 S3——加血道具(heal)做成「贪婪悖论」：满血不出、偏敌簇勾引冒险、每段预算上限（段②/③各≤2、段④薄1次、段⑤ Boss 纯决战 0）。
+- **改动（文件清单）**：
+  - `02_config.PICKUP.heal`：`naturalRefreshSec 45→20`（heal 间冷却≥20s）；新增 `healStageCapByStage=[0,2,2,1,0]`（索引=stageId-1：段①0 保护期 / 段②2 / 段③2 / 段④1 薄救命 / 段⑤0 Boss 纯决战）；`perRunMax=3` 整局上限保留；`screenCap=1` 同屏≤1 保留。
+  - `09_wave.Pickup.update` 自然 heal 刷新新增 `GS.coreHp < PK.heal.maxHp` 门控（满血不出、掉血才出）+ 每段预算 `healsBySeg[gi] < _segHealCap`；`sampleDangerPos` 偏敌簇已有（冒险张力保留）。
+  - `09_wave` 新增 `healsBySeg[5]` 运行态计数（声明 + `core:run_reset` 清零）。
+  - 不动 `spawnMaxedReward` 满级溢出 heal（用户裁定：段④⑤自然 heal=0 时，全技能满溢出转化仍可掉血给 heal）。
+  - `index.html` 缓存戳由 pre-commit hook 自动 bump。
+- **波及**：heal 仅掉血后于敌簇附近出现、需冒险进怪堆捡；超每段预算后该段不再无脑续命；满血自然不刷 heal；`spawnMaxedReward`(满级溢出) 仍可在掉血时给 heal（与用户裁定一致）。
+- **是否动 §9**：是，`healStageCapByStage`/`naturalRefreshSec` 属 §7/§8.5.3；**AI 不碰真源 MD，§9 回写由用户完成**。
+- **验收 ✅❌**：①满血(coreHp=3)绝不出 heal；②掉血后敌簇附近出 1 个(同屏≤1)、捡取需冒险；③段②/③各最多 2 次、段④最多 1 次、段⑤不出；④超预算窗口后该段不再刷 heal。
+- **未动底层**：03_core/04_collision/伤害管线/coreHp=3/initSegments=3·maxSegments=25/食物=记忆同资源 均未动；段 cap(S2)/保护期(S1)/首技能(S5)/技能经济仪表(S4) 已先行处理。
+
 ## 2026-07-26 · tune(progress): 技能经济仪表+升级间隔去零地板 · S4（commit 4/5）
 - **需求**：进度节奏系统调优 S4——先加仪表（观测），再定值。仪表=每段升级次数 + 技能球掉落次数 + 掉落来源 gap/killStreak；升级间隔去零地板 `[20,20,30,0,0]→[20,20,30,20,20]`；`killStreak` 保持 15 不动（等仪表数据再定第二步：可能割草/高潮 15→25）。
 - **改动（文件清单）**：

@@ -9,7 +9,7 @@
 	var _pid = 0
 	var foodTimer = 0, healTimer = PK.heal.naturalRefreshSec
 	var spawnAcc = 0, bossWarned = false, bossSpawned = false, prevStageId = 0
-	var killsSinceSkill = 0, gotFirstSkill = false, healsThisRun = 0, firstSkillTimer = 0, lastSkillBallTime = 0
+	var killsSinceSkill = 0, gotFirstSkill = false, healsThisRun = 0, healsBySeg = [0,0,0,0,0], firstSkillTimer = 0, lastSkillBallTime = 0   // S3：healsBySeg 每段治疗掉落计数（贪心悖论预算）
 
 	function newOrb() { return { active: false, id: 0, kind: 'food', x: 0, y: 0, prevX: 0, prevY: 0, radius: PK.food.radius } }
 	var orbPool = Core.createPool(newOrb, function (o) { o.active = false }, 32)
@@ -157,13 +157,18 @@
 			var foodCap = fullSeg ? PK.food.maxSegScreenCap : PK.food.screenCap
 			while (activeKind('food') < foodCap) { if (!spawnOrb('food')) { break } }
 		}
-			healTimer -= dt
-			if (healTimer <= 0) {                         // 治疗：自然刷新，单屏 cap，整局上限 perRunMax
-				healTimer = PK.heal.naturalRefreshSec
-				if (activeKind('heal') < PK.heal.screenCap && healsThisRun < PK.heal.perRunMax) {
-					if (sampleDangerPos(_p)) { spawnOrbAt('heal', _p.x, _p.y); healsThisRun++ }   // C-lite 张力：回血球偏向敌群/弹幕密集区（贪心抉择）；无敌人回退安全位
-				}
+		healTimer -= dt
+		if (healTimer <= 0) {                         // 治疗：自然刷新；S3 贪婪悖论·多层节制
+			healTimer = PK.heal.naturalRefreshSec
+			var _gi = GS.stageId - 1
+			var _segHealCap = (PK.heal.healStageCapByStage && PK.heal.healStageCapByStage[_gi] != null) ? PK.heal.healStageCapByStage[_gi] : 0
+			if (GS.coreHp < PK.heal.maxHp   // S3：满血不出（掉血才出），保留 coreHp=3 唯一命门张力
+				&& activeKind('heal') < PK.heal.screenCap   // 同屏≤1
+				&& healsThisRun < PK.heal.perRunMax   // 整局上限
+				&& healsBySeg[_gi] < _segHealCap) {   // S3：每段预算上限（段②④③2/段④1/段⑤0）
+				if (sampleDangerPos(_p)) { spawnOrbAt('heal', _p.x, _p.y); healsThisRun++; healsBySeg[_gi]++ }   // C-lite 张力：回血球偏向敌群/弹幕密集区（贪心抉择）；无敌人回退安全位
 			}
+		}
 		}
 	}
 
@@ -217,7 +222,7 @@
 		while (foods.length) { orbPool.release(foods.pop()) }
 		_pid = 0; foodTimer = 0; healTimer = PK.heal.naturalRefreshSec
 		spawnAcc = 0; bossWarned = false; bossSpawned = false; prevStageId = 0
-		killsSinceSkill = 0; gotFirstSkill = false; healsThisRun = 0; firstSkillTimer = 0; lastSkillBallTime = 0
+		killsSinceSkill = 0; gotFirstSkill = false; healsThisRun = 0; healsBySeg = [0,0,0,0,0]; firstSkillTimer = 0; lastSkillBallTime = 0   // S3：每段治疗计数清零
 	})
 
 	Registry.register('pickup', Pickup)

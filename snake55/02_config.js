@@ -177,7 +177,7 @@
 			skill: { baseDropRate: 0.12, perOwnedPenalty: 0.02, floorRate: 0.03 },
 			skillPity: { killStreakGuarantee: 15, firstSkillGuaranteeSec: 5 },   // S5·首技能保底 9→5s（开局5s必出首个技能球；蛇头正前方 safeDistance 已落地，仅改值）；连杀15保底不变
 		upgradeMinGapSecBySeg: [20, 20, 30, 20, 20],   // 战线A：升级间隔地板按段取值（索引=stageId-1：1→20 / 2→20 / 3→30 / 4→0 / 5→0）；值0或null＝地板失效、恢复原掉率。段①②=设计下限20(终值待实测锁20/25)；段③=30锚(实测拍板25/30/35)；段④⑤=20(S4去零地板，killStreak保持15不动)
-			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 45, perRunMin: 2, perRunMax: 3, screenCap: 1 },
+			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 20, healStageCapByStage: [0, 2, 2, 1, 0], perRunMin: 2, perRunMax: 3, screenCap: 1 },   // S3·贪婪悖论：naturalRefreshSec 45→20(heal间冷却≥20s)；healStageCapByStage 索引=stageId-1（段①0/段②2/段③2/段④1/段⑤0 Boss纯决战）；满血(coreHp<maxHp)才出、偏敌簇勾引冒险
 			visualScale: { food: 1.3, heal: 1.8, skill: 1.8 },   // 拾取物【仅视觉】放大倍率(不动 o.radius 碰撞)；用户验收：heal/skill 定 1.8x，food(加节数) 1.3x；待实测量化回写 §9
 			dangerBias: { ringMin: 40, ringMax: 150 }   // 🟡 补给危险偏向：敌身周围偏移环带(px)，落点钳视野内且不贴脸；候选 ringMin 30/40 · ringMax 120/150/180，待实测量化回写 §9
 		},
