@@ -181,7 +181,9 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var eulogyMs = NARR.aiTextSec * 1000, budget = NARR.staticHardcapSec * 1000
 		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
 		result.innerHTML = ''; result.style.display = 'flex'
-		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + ',0 0 26px ' + hexA(STYLE.ui, 0.2) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读 + 霓虹外发光(P1-8)
+		// 复用 HUD 同款 uiScale(画布显示高/540,钳0.55~1.0)：手机横屏(高~375)缩到~0.69 不显过大,PC 恒1.0 零回归
+		var _s = computeUiScale()
+		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;transform:scale(' + _s + ');transform-origin:center center;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + ',0 0 26px ' + hexA(STYLE.ui, 0.2) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读 + 霓虹外发光(P1-8)；transform:scale(_s) 让手机端结算整体等比缩小不显过大
 		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? STYLE.win : STYLE.lose) + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
 		still.textContent = win ? '通　关' : '死　亡'
 		after(30, function () { still.style.opacity = '1' })

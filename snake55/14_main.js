@@ -134,8 +134,11 @@
 	var _safeProbe = null
 	function getSafeArea() {
 		if (!_safeProbe) {
+			// ⚠ 关键：probe 不能设 width:0/height:0——否则无刘海设备上 getBoundingClientRect 返回 {0,0,0,0}，
+			// 使 sa.right=innerWidth/sa.bottom=innerHeight（整屏），把摇杆锚点钳到左上角(useR)。
+			// 正确做法：让 probe 在 inset=0 时铺满全屏(rect.right=innerWidth→sa.right=0)、有刘海时缩进到安全区。
 			_safeProbe = document.createElement('div')
-			_safeProbe.style.cssText = 'position:fixed;left:env(safe-area-inset-left);top:env(safe-area-inset-top);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);width:0;height:0;visibility:hidden;pointer-events:none;z-index:-1'
+			_safeProbe.style.cssText = 'position:fixed;left:env(safe-area-inset-left);top:env(safe-area-inset-top);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none;z-index:-1'
 			document.body.appendChild(_safeProbe)
 		}
 		var r = _safeProbe.getBoundingClientRect()

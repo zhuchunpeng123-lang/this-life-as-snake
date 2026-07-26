@@ -2,7 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
-## 2026-07-27 · mobile(ux): 强制横屏拦截 + HUD/摇杆定向优化（未提交）
+## 2026-07-27 · mobile(fix): 摇杆锚点错位(左上)+向上不灵 + 结算界面过大
+- **根因**：`14_main.js` 的 `getSafeArea()` 探针误设 `width:0;height:0`，在无刘海手机上 `getBoundingClientRect()` 返回 `{0,0,0,0}` → `sa.right=innerWidth/sa.bottom=innerHeight`(整屏)，把摇杆锚点 x/y 钳到 `useR`(≈64px) → **摇杆被逼到左上角**。
+- **连带症状（同一根因）**：锚点在左上，手指按在右下区域永远到不了锚点上方 → `joy.dy` 恒 ≥0 → **向上不灵、只能左右/向下**；方向错乱感即「不跟手」。
+- **修复**：①去掉探针 `width:0;height:0`，使无刘海时 probe 铺满全屏(`rect.right=innerWidth→sa.right=0`)、有刘海时正确缩进安全区；锚点恢复右下(0.84,0.80) → 向上/跟手恢复。②`12_ui.js` 结算卡片套用 HUD 同款 `uiScale`(画布高/540,钳0.55~1.0)：手机横屏缩到~0.69 不显过大，PC 恒1.0 零回归。
+- **是否动 §9**：否，纯 UI/输入表现修复，未动玩法/平衡与 core/collision。
+- **验收 ✅❌（手机实测）**：①横屏摇杆在右下角、可全向(含上)灵敏转向、跟手；②结算界面尺寸协调不突兀；③PC 外观零回归。
+
+## 2026-07-27 · mobile(ux): 强制横屏拦截 + HUD/摇杆定向优化
 - **需求**：PC 稳定后移动端专项——竖屏全屏「请横屏」遮罩拦截、横屏下 HUD 与虚拟摇杆按画布等比缩放且互不遮挡、可舒适操作。
 - **改动（文件清单）**：
   - `14_main.js`：新增 `isTouch`/`isPortrait`/`pausedByGate`/`preGateWasPlaying`/`setGate`/`getSafeArea`；`frame()` 主循环横屏门控（仅触屏；桌面竖窗不触发）；`joyDown` 竖屏直接 return；`joyBaseScreen`/`updateJoyVisual` 摇杆锚点套 `minScreenRadius` 下限 + `getSafeArea()` 内缩避开刘海/底部手势条。
