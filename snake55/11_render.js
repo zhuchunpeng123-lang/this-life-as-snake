@@ -542,7 +542,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		for (var k = 0; k < l.length; k++) {
 			var e2 = l[k]; if (!e2.active) { continue }
 			if (!inView(e2.x, e2.y, e2.radius)) { continue }
-			if (e2.burnT > 0 && !T3) { drawBurnMark(e2) }       // ⑦ 燃烧标记
+			if (e2.burnT > 0) { drawBurnMark(e2) }       // ⑦ 燃烧标记（cheap，始终显示；关火仅压余烬粒子，不关视觉）
 			if (e2.slowT > 0 && !T3) { drawSlowMark(e2) }       // 减速标记
 			if (e2.type !== 'bossBullet' && e2.type !== 'boss') { drawHpBar(e2, _ix(e2), _iy(e2)) }
 		}
@@ -732,7 +732,7 @@ function drawSnake() {
 		// —— 火墙：用户验收反馈 v2——保留"范围火墙"软光带(可见火墙范围) + 去掉沿身亮热边/flick 跳变(原被用户判为"蛇身细线/一闪一闪")；火焰反馈同时由 05_particle spawnFireEmbers 沿身余烬承担（零 gameplay，伤害判定在 08_skill 不动）——
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉（含蛇身火墙）；GM 经 editor.rtSet 仍优先
 		var segs = s.segments || []
-		if (owned.fire > 0 && !T3) {   // 范围火墙：软光带(连续火场)+无亮热边/无 flick(用户验收：不要蛇身细线、不要蛇闪)
+		if (owned.fire > 0) {   // 范围火墙：软光带(连续火场)+无亮热边/无 flick(用户验收：不要蛇身细线、不要蛇闪)；火墙=廉价 2-stroke path，始终显示(关火仅压余烬粒子，不关火墙)
 			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
 			ctx.save()
 			ctx.globalCompositeOperation = 'lighter'   // 加色辉光：火墙=连续软光带(非蛇身细线)

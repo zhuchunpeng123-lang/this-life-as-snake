@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · mobile(fix): 移动端无音频 + 火焰美术不出现
+- **音频根因**：`12_ui.js` 的 Web Audio 解锁仅注册 `pointerdown`。iOS Safari 不把 `pointerdown` 视为可解锁 AudioContext 的合法手势(需 `touchstart`/`click`)，导致移动端 ctx 永远 suspended → 音乐+音效全静音。
+- **音频修复**：`unlock` 改多事件注册(`pointerdown/touchstart/mousedown/click/keydown`)，首次任意交互即 `resume()`；one-shot 触发后移除全部监听。
+- **火焰根因**：火墙(`11_render.js` L735)与燃烧标记(L545)受 `T3=suppressFire` 门控。手机端 dpr 高 → overdraw 易越 `fillDownThreshold(320k)` → 看门狗 `setFireSuppressed(true)` → 火墙/燃烧标记跟着余烬粒子一起被关（火墙本质只是廉价 2-stroke path，注释明说"不贡献 fill"，本不该被关）。
+- **火焰修复**：火墙+燃烧标记去除 `T3` 门控**始终显示**；真正昂贵的余烬粒子仍由 `05_particle` L170 受 `suppressFire` 压制(性能保护保留)。关火不再误杀火焰视觉。
+- **是否动 §9**：否，纯 UI/音频/渲染表现修复，未动玩法/平衡与 core/collision。
+- **验收 ✅❌（手机实测）**：①横屏开局即可听到 BGM + 音效(点击/触摸后)；②获得 fire 技能后蛇身火墙+敌人燃烧标记持续可见(即便弱机自动关余烬，火墙仍在)；③PC 端火焰/BGM 行为零回归。
+
 ## 2026-07-27 · mobile(fix): 摇杆锚点错位(左上)+向上不灵 + 结算界面过大
 - **根因**：`14_main.js` 的 `getSafeArea()` 探针误设 `width:0;height:0`，在无刘海手机上 `getBoundingClientRect()` 返回 `{0,0,0,0}` → `sa.right=innerWidth/sa.bottom=innerHeight`(整屏)，把摇杆锚点 x/y 钳到 `useR`(≈64px) → **摇杆被逼到左上角**。
 - **连带症状（同一根因）**：锚点在左上，手指按在右下区域永远到不了锚点上方 → `joy.dy` 恒 ≥0 → **向上不灵、只能左右/向下**；方向错乱感即「不跟手」。

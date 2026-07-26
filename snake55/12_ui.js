@@ -85,8 +85,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		gateEl = mk('div', 'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:' + hexA(STYLE.bg, 0.96) + ';color:' + STYLE.textMain + ';font:700 22px system-ui;text-align:center;padding:calc(env(safe-area-inset-top) + 24px) calc(env(safe-area-inset-right) + 24px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 24px);z-index:60;pointer-events:auto', froot)
 		gateEl.innerHTML = '<div style="font-size:54px">📱↔️</div><div>请横屏以获得最佳体验</div><div style="font:500 14px system-ui;color:' + STYLE.ui + '">旋转手机至横屏即可继续</div>'
 		Bus.on('ui:orientation_gate', function (d) { if (gateEl) { gateEl.style.display = (d && d.show) ? 'flex' : 'none' } })
-		var unlock = function () { var a = Registry.get('audio'); if (a) { a.unlock() } document.removeEventListener('pointerdown', unlock) }
-		document.addEventListener('pointerdown', unlock)   // 首次交互解锁 Web Audio
+		// 移动端(iOS Safari)音频解锁：pointerdown 不被 iOS 接受为解锁 AudioContext 的合法手势(需 touchstart/click 等)，
+		// 故多事件兜底，首次任意交互即 resume；触发后移除全部监听（one-shot）
+		var _unlockEvents = ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown']
+		var unlock = function () {
+			var a = Registry.get('audio'); if (a) { a.unlock() }
+			for (var i = 0; i < _unlockEvents.length; i++) { document.removeEventListener(_unlockEvents[i], unlock) }
+		}
+		for (var i = 0; i < _unlockEvents.length; i++) { document.addEventListener(_unlockEvents[i], unlock, { passive: true }) }
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
 	}
 
