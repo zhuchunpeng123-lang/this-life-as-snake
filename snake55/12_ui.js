@@ -14,6 +14,7 @@ var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', 
 
 var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
+var audioDiagPanel = null, audioDiagText = null, audioDiagTimer = null
 var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
@@ -27,6 +28,29 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var ownedSkillIds = {}
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
+	function audioDiagRequested() { return !!(global.location && /(?:^|[?&])audioDiag=1(?:&|$)/.test(global.location.search || '')) }
+	function renderAudioDiag() {
+		if (!audioDiagText) { return }
+		var audio = Registry.get('audio'), d = audio && audio.diag ? audio.diag() : null
+		if (!d) { audioDiagText.textContent = 'AUDIO DIAG\n等待 audio 注册'; return }
+		var events = d.events && d.events.length ? d.events.join(' | ') : '—'
+		audioDiagText.textContent = 'AUDIO DIAG ONLY\n' +
+			'ctx=' + d.state + ' time=' + d.currentTime + ' enabled=' + d.enabled + ' muted=' + d.muted + '\n' +
+			'master=' + d.masterGain + ' bgm=' + d.bgmGain + ' running=' + d.bgmRunning + '\n' +
+			'resume=' + d.resumeAttempts + ' kick=' + d.kickAttempts + '/' + d.kickScheduled + ' test=' + d.testToneScheduled + '\n' +
+			'error=' + (d.lastError || '—') + '\n' + events
+	}
+	function buildAudioDiag() {
+		if (!audioDiagRequested()) { return }
+		audioDiagPanel = mk('div', 'position:fixed;left:8px;right:8px;bottom:8px;max-height:38vh;overflow:auto;margin:0;padding:8px;border:1px solid #ffb347;border-radius:6px;background:rgba(20,12,4,.92);z-index:100;pointer-events:auto', document.body)
+		audioDiagText = mk('pre', 'margin:0;color:#ffd18a;font:11px/1.35 ui-monospace,monospace;white-space:pre-wrap', audioDiagPanel)
+		var btn = mk('button', 'margin-top:6px;padding:4px 8px;background:#ffb347;color:#211405;border:0;border-radius:4px;font:600 12px system-ui;cursor:pointer', audioDiagPanel)
+		btn.textContent = '诊断直连音'
+		btn.onclick = function () { var audio = Registry.get('audio'); if (audio) { audio.unlock(); if (audio.testTone) { audio.testTone() } }; renderAudioDiag() }
+		audioDiagPanel.appendChild(document.createElement('br'))
+		audioDiagTimer = global.setInterval(renderAudioDiag, 250)
+		renderAudioDiag()
+	}
 	function fmtTime(s) { var m = Math.floor(s / 60), ss = Math.floor(s % 60); return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss }
 	function hexA(hex, a) {   // STYLE token → rgba（派生透明度，无新 hex 字面量）；用于面板底/描边/阴影
 		var h = String(hex).replace('#', '')
@@ -109,6 +133,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			}
 		}
 		for (var i = 0; i < _unlockEvents.length; i++) { document.addEventListener(_unlockEvents[i], unlock, { passive: true }) }
+		buildAudioDiag()
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
 	}
 

@@ -14,34 +14,72 @@
 	var absStep = 0, nextNoteTime = 0
 	var stepDur = 60 / 88 / 4, targetStepDur = stepDur   // 16 分音符秒；explore 88BPM
 	var curLayer = 'explore', battleHeat = 1.0, pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1, chooseDuckMul = 1   // ⚠️ 暂停(硬暂停·归零)/事件duck/密度duck/三选一duck 四系数独立相乘（互不污染）；暂停可归零，其余仅压小
+	var diagState = { events: [], lastError: '', resumeAttempts: 0, kickAttempts: 0, kickScheduled: false, testToneScheduled: false }
+	function diagPush(event, detail) {
+		var line = event + (detail ? ' ' + detail : '')
+		diagState.events.push(line)
+		if (diagState.events.length > 8) { diagState.events.shift() }
+	}
+	function diagFail(where, error) {
+		var message = error && error.message ? error.message : String(error || 'unknown')
+		diagState.lastError = where + ': ' + message
+		diagPush('ERROR', diagState.lastError)
+	}
+	function diagSnapshot() {
+		return {
+			state: ctx ? ctx.state : 'uncreated', hasContext: !!ctx, currentTime: ctx ? Number(ctx.currentTime.toFixed(3)) : 0,
+			enabled: !!AUDIO.enabled, muted: muted, masterGain: master ? master.gain.value : null,
+			bgmGain: bgmGain ? bgmGain.gain.value : null, bgmRunning: bgmRunning, kicked: _kicked,
+			resumeAttempts: diagState.resumeAttempts, kickAttempts: diagState.kickAttempts,
+			kickScheduled: diagState.kickScheduled, testToneScheduled: diagState.testToneScheduled,
+			lastError: diagState.lastError, events: diagState.events.slice()
+		}
+	}
 
 	function ensure() {
-		if (ctx) { return true }
+		if (ctx) { diagPush('ensure:reuse', 'state=' + ctx.state); return true }
 		var AC = global.AudioContext || global.webkitAudioContext
-		if (!AC) { return false }
-		ctx = new AC(); master = ctx.createGain(); master.gain.value = MASTER_GAIN; master.connect(ctx.destination)
-		// BGM 子链：layerGain → bgmGain → master（与 SFX 共用 master 但分轨，BGM 垫在 SFX 之下）
-		bgmGain = ctx.createGain(); bgmGain.gain.value = AUDIO.bgmVolume; bgmGain.connect(master)
-		layerGain.explore = ctx.createGain(); layerGain.explore.gain.value = 1; layerGain.explore.connect(bgmGain)
-		layerGain.battle = ctx.createGain(); layerGain.battle.gain.value = 0; layerGain.battle.connect(bgmGain)
-		layerGain.boss = ctx.createGain(); layerGain.boss.gain.value = 0; layerGain.boss.connect(bgmGain)
+		if (!AC) { diagPush('ensure:no-audio-context'); return false }
+		diagPush('ensure:create')
+		try {
+			ctx = new AC()
+			ctx.onstatechange = function () { diagPush('statechange', 'state=' + ctx.state) }
+			master = ctx.createGain(); master.gain.value = MASTER_GAIN; master.connect(ctx.destination)
+			// BGM 子链：layerGain → bgmGain → master（与 SFX 共用 master 但分轨，BGM 垫在 SFX 之下）
+			bgmGain = ctx.createGain(); bgmGain.gain.value = AUDIO.bgmVolume; bgmGain.connect(master)
+			layerGain.explore = ctx.createGain(); layerGain.explore.gain.value = 1; layerGain.explore.connect(bgmGain)
+			layerGain.battle = ctx.createGain(); layerGain.battle.gain.value = 0; layerGain.battle.connect(bgmGain)
+			layerGain.boss = ctx.createGain(); layerGain.boss.gain.value = 0; layerGain.boss.connect(bgmGain)
+			diagPush('ensure:ready', 'state=' + ctx.state + ' master=' + MASTER_GAIN + ' bgm=' + AUDIO.bgmVolume)
+		} catch (e) {
+			diagFail('ensure', e)
+			throw e
+		}
 		return true
 	}
 	function resume(cb) {
-		if (!ctx) { if (cb) { cb() } return }
-		if (ctx.state === 'running') { if (cb) { cb() } return }
-		if (ctx.state === 'suspended') {
-			var p = ctx.resume()
-			if (p && p.then) {
-				p.then(function () { if (ctx && ctx.state === 'running') { if (cb) { cb() } } }).catch(function () {})
-			} else if (cb) { cb() }
-		}
+		if (!ctx) { diagPush('resume:no-context'); if (cb) { cb() } return }
+		diagState.resumeAttempts++
+		if (ctx.state === 'running') { diagPush('resume:already-running'); if (cb) { cb() } return }
+		if (ctx.state !== 'suspended') { diagPush('resume:skip', 'state=' + ctx.state); return }
+		diagPush('resume:request', 'state=suspended')
+		var p
+		try { p = ctx.resume() } catch (e) { diagFail('resume:throw', e); throw e }
+		if (p && p.then) {
+			p.then(function () {
+				diagPush('resume:resolved', 'state=' + ctx.state)
+				if (ctx && ctx.state === 'running') { if (cb) { cb() } } else { diagPush('resume:no-callback', 'state=' + ctx.state) }
+			}).catch(function (e) { diagFail('resume:reject', e) })
+		} else { diagPush('resume:no-promise', 'state=' + ctx.state); if (cb) { cb() } }
 	}
 	var _kicked = false   // iOS 解锁只需真实出声一次；跑过后不再 kick，避免重复 run_reset 出咔哒声
 	// iOS Safari 经典解锁：须在用户手势内「实际输出非零音频」才解锁管线。关键：手势调用栈内同步 start 振荡器(即便 ctx 尚 suspended，
 	// start(0) 进队列、紧接 resume() 翻 running 后即真实出声)；仅 resume() 或静音 buffer 在多数 iOS 版本无效(含添加到主屏幕的 standalone 模式)
 	function _kickIos() {
-		if (!ctx || _kicked) { return }
+		if (!ctx) { diagPush('kick:skip', 'no-context'); return }
+		diagState.kickAttempts++
+		if (_kicked) { diagPush('kick:skip', 'already-kicked'); return }
+		diagPush('kick:attempt', 'state=' + ctx.state)
 		try {
 			var o = ctx.createOscillator(), g = ctx.createGain()
 			g.gain.value = 0.001   // 极低增益：人耳近乎无声，但音频图仍处理非零信号→iOS 解锁
@@ -50,7 +88,20 @@
 			var t = ctx.currentTime || 0
 			o.start(0); o.stop(t + 0.05)
 			_kicked = true
-		} catch (e) {}
+			diagState.kickScheduled = true
+			diagPush('kick:scheduled', 'direct=destination')
+		} catch (e) { diagFail('kick', e) }
+	}
+	function testTone() {
+		if (!ctx && !ensure()) { diagPush('test-tone:skip', 'no-context'); return false }
+		try {
+			var t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain()
+			o.type = 'sine'; o.frequency.value = 440; g.gain.value = 0.03
+			o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.15)
+			diagState.testToneScheduled = true
+			diagPush('test-tone:scheduled', 'direct=destination state=' + ctx.state)
+			return true
+		} catch (e) { diagFail('test-tone', e); return false }
 	}
 
 	// 单振荡器音 + 包络（freqTo 做扫频，type 选波形）
@@ -343,7 +394,9 @@
 		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN } },  // 静音同时静 BGM（BGM 在 master 之下）
 		isMuted: function () { return muted },
 		unlock: function () { ensure(); _kickIos(); resume(function () { _kickIos(); if (!bgmRunning) { startBgm() } }); return !!(ctx && ctx.state === 'running') },   // 首次交互：手势内同步起振荡器(解锁 iOS 管线,含 standalone)+ctx running 后起 BGM；返回 running 供 UI 判断
-		isRunning: function () { return !!(ctx && ctx.state === 'running') }
+		isRunning: function () { return !!(ctx && ctx.state === 'running') },
+		diag: function () { return diagSnapshot() },
+		testTone: testTone
 	}
 	Registry.register('audio', Audio)
 	Log.info('audio 就绪：Web Audio 纯合成 + 程序化 BGM v3')
