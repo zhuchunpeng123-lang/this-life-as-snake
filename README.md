@@ -24,6 +24,16 @@
 - 改任意 `snake55/*.js` 后必须同步 bump `index.html` 的 `?v=` 缓存戳。
 - 代码改动前必须先按 `AGENTS.md` 出计划并等用户确认。
 
+## 提交前静态检查
+
+在提交前执行：
+
+```bash
+node tools/check-project.mjs
+```
+
+该检查不需要 `npm install`，用于校验 `snake55/*.js` 语法、禁止的模块语法、`index.html` 脚本顺序与缓存戳，以及正式 Markdown 入口的本地链接。退出码 `0` 表示全部通过，非 `0` 表示至少存在一项错误。
+
 ## Git
 
 - 远程：`https://github.com/zhuchunpeng123-lang/this-life-as-snake.git`

@@ -76,6 +76,8 @@ git commit -m "type(scope): 中文一句话"
 git push origin main
 ```
 
+提交前先执行 `node tools/check-project.mjs`。该命令不依赖第三方包；退出码 `0` 表示静态检查全绿，非 `0` 表示存在需要处理的错误。
+
 禁止事项：
 
 - 禁止 `git add -A`，避免把本地脚手架或临时文件带进提交。
