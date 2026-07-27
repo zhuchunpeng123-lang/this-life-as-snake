@@ -13,7 +13,7 @@
 	var bgmRunning = false, bgmTimer = null
 	var absStep = 0, nextNoteTime = 0
 	var stepDur = 60 / 88 / 4, targetStepDur = stepDur   // 16 分音符秒；explore 88BPM
-	var curLayer = 'explore', battleHeat = 1.0, pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1   // ⚠️ 暂停/事件duck/密度duck 三系数独立相乘（互不污染），BGM 永不归零
+	var curLayer = 'explore', battleHeat = 1.0, pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1, chooseDuckMul = 1   // ⚠️ 暂停(硬暂停·归零)/事件duck/密度duck/三选一duck 四系数独立相乘（互不污染）；暂停可归零，其余仅压小
 
 	function ensure() {
 		if (ctx) { return true }
@@ -65,6 +65,7 @@
 	// —— 密度感知 duck：窗口内音效 >阈值 自动再压一档（多技能齐发/BGM 不打架，见 §十 密度 duck）——
 	var sfxCount = 0, sfxWinStart = 0, densityOn = false, densityTimer = null
 	var SFX_DENSITY_WINDOW = 200, SFX_DENSITY_TH = 3, SFX_DENSITY_MUL = 0.56   // ⚠️ 可调：窗口(ms)/阈值(次)/深度(×0.56≈−9dB)；回升 220ms、ramp 150ms
+	var CHOOSE_DUCK = 0.5   // ⚠️ 三选一技能(choosing)期间 BGM 压小系数（×0.5≈−6dB，保持可闻、音量变小；硬暂停另走 pauseMul 归零）
 	function sfxPing() {
 		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 		if (!sfxWinStart || (now - sfxWinStart) > SFX_DENSITY_WINDOW) { sfxCount = 0; sfxWinStart = now }
@@ -110,8 +111,8 @@
 	})
 	Bus.on('enemy:die', function () { sfxPing(); throttled('enemy:die', 80, function () { noise(0.12, 0.18); tone({ freq: 220, freqTo: 110, dur: 0.12, type: 'square', gain: 0.12 }) }) })
 	Bus.on('enemy:phase', function () { tone({ freq: 110, freqTo: 60, dur: 0.50, type: 'sawtooth', gain: 0.35 }) })
-	Bus.on('skill:offer', function () { sfxPing(); tone({ freq: 740, freqTo: 1180, dur: 0.18, type: 'sine', gain: 0.20 }) })
-	Bus.on('skill:gained', function () { sfxPing(); tone({ freq: 520, freqTo: 1040, dur: 0.25, type: 'triangle', gain: 0.22 }) })
+	Bus.on('skill:offer', function () { sfxPing(); chooseDuckMul = CHOOSE_DUCK; applyBgmGain(false); tone({ freq: 740, freqTo: 1180, dur: 0.18, type: 'sine', gain: 0.20 }) })   // 三选一：BGM 压小（保持可闻、音量变小），选完恢复
+	Bus.on('skill:gained', function () { sfxPing(); chooseDuckMul = 1; applyBgmGain(false); tone({ freq: 520, freqTo: 1040, dur: 0.25, type: 'triangle', gain: 0.22 }) })   // 选完：BGM 恢复满
 	Bus.on('combo:found', function () { sfxPing(); tone({ freq: 660, dur: 0.10, type: 'square', gain: 0.20 }); tone({ freq: 990, dur: 0.18, type: 'square', gain: 0.20 }) })
 	Bus.on('wave:boss_warn', function () { sfxPing(); tone({ freq: 140, dur: 0.30, type: 'square', gain: 0.30 }) })
 	Bus.on('wave:stage', function () { tone({ freq: 440, freqTo: 660, dur: 0.14, type: 'sine', gain: 0.14 }) })
@@ -170,7 +171,7 @@
 	// 全局 BGM 增益 = bgmVolume × 暂停系数 × ducking 系数
 	function applyBgmGain(immediate) {
 		if (!bgmGain) { return }
-		var v = AUDIO.bgmVolume * pauseMul * eventDuckMul * densityDuckMul   // 三系数相乘；下限 = bgmVolume×0.25×0.5×0.56 ≈ 0.07 > 0，BGM 永不静音
+		var v = AUDIO.bgmVolume * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul   // 四系数相乘；暂停(硬)归零→静音，其余仅压小（三选一 chooseDuckMul）
 		var t = ctx.currentTime, g = bgmGain.gain
 		g.cancelScheduledValues(t)
 		if (immediate) { g.setValueAtTime(v, t) }
@@ -274,7 +275,7 @@
 	// 关键：AudioContext 必须在「用户手势」内创建+resume，否则浏览器 autoplay 策略会在主循环 rAF 内挡住→开局静音，
 	// 要等后续手势(移动键/拾取音效里的 resume)才解锁。core:run_reset 由 startIfMenu→core.resetRun 同步触发，属手势内→合规解锁（修复 2026-07-26）
 	Bus.on('core:run_reset', function () {
-		pauseMul = 1; eventDuckMul = 1; densityDuckMul = 1   // 新一局清空暂停/duck 系数（死亡→重开若残留 0.5 等，避免开局被压）
+		pauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1   // 新一局清空暂停/duck/三选一系数（死亡→重开若残留，避免开局被压/静音）
 		ensure(); resume(); startBgm()                       // 手势内解锁+起 explore BGM；startBgm 自带 bgmRunning 守卫（重开时死亡已 stopBgm→会重启）
 	})
 	Bus.on('wave:stage', function (d) {            // 探索=1 / 战斗=2-4 / Boss=5（核对点1 映射 A）
@@ -307,9 +308,9 @@
 	Bus.on('enemy:phase', duck)                   // 阶段切换让路
 	Bus.on('skill:gained', duck)                  // 获得技能让路
 	Bus.on('combo:found', duck)                   // 连续 combo 让路（防 combo 音效盖过 BGM）
-	Bus.on('game:toggle_pause', function () {     // 暂停压 ≈30%（§4：本作暂停=3选1 升级、一局多次，归零会整段掐断=更乱；仅独立"真·硬暂停"可归零，此处不）
+	Bus.on('game:pause_changed', function () {     // 硬暂停(P/暂停按钮/遮罩)：画面冻结 + 音乐彻底停（pauseMul=0；经 0.15s ramp 防爆音）。三选一(choosing)是另态、走 chooseDuckMul 只压小不静音；监听后置事件 game:pause_changed（status 已切换后触发，脱离 Bus 注册顺序依赖，根治「按 P 音乐不暂停」）
 		var st = (global.GS && global.GS.status)
-		pauseMul = (st === 'paused') ? 0.30 : 1   // ⚠️ 暂停系数 0.25–0.30 区间，对齐规范 §4
+		pauseMul = (st === 'paused') ? 0 : 1   // 硬暂停→BGM 归零静音；恢复→还原
 		applyBgmGain(false)
 	})
 

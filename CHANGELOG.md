@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · fix: 按 P/Esc 音乐不暂停（桌面+移动统一）
+- **根因**：键盘 P/Esc 直接调 `togglePause()` 不发事件；且音频监听 `game:toggle_pause` 注册早于 main（`10_audio.js` 先于 `14_main.js` 加载），emit 时按注册顺序先跑 audio、读到仍是旧 `GS.status`（playing）→ `pauseMul=1` 不静音。桌面与移动同源，故按 P 音乐永不暂停。
+- **修复**：
+  - `14_main.js`：键盘 P/Esc 改走 `Bus.emit('game:toggle_pause')`（与暂停按钮统一）；`togglePause()` 切完状态后发后置事件 `game:pause_changed`；横屏遮罩暂停/恢复两路径也发 `game:pause_changed`（所有暂停态音频一致静音/恢复）。
+  - `10_audio.js`：监听由 `game:toggle_pause` 改为 `game:pause_changed`，读到的是已切换后的 `GS.status`（脱离 Bus 注册顺序依赖）。
+- **是否动 §9**：否，纯事件链路修复，未动玩法/平衡与 core/collision。
+- **验收 ✅❌**：①游戏中按 P/Esc→画面冻结+BGM 淡出静音、再按恢复；②点暂停按钮/点遮罩同样静音恢复；③三选一态(chooseDuckMul 压小)与暂停态(pauseMul 归零)系数独立互不污染；④菜单/死亡态按 P 无副作用（无切换、不误触发音频）。
+
 ## 2026-07-27 · mobile(fix): 移动端无音频 + 火焰美术不出现
 - **音频根因**：`12_ui.js` 的 Web Audio 解锁仅注册 `pointerdown`。iOS Safari 不把 `pointerdown` 视为可解锁 AudioContext 的合法手势(需 `touchstart`/`click`)，导致移动端 ctx 永远 suspended → 音乐+音效全静音。
 - **音频修复**：`unlock` 改多事件注册(`pointerdown/touchstart/mousedown/click/keydown`)，首次任意交互即 `resume()`；one-shot 触发后移除全部监听。

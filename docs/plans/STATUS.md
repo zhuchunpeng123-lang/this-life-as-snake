@@ -28,7 +28,7 @@
 | [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 待办 | 根目录 | docs/plans/ | 移动端优化后置：PC 试玩是手感主战场，移动端是受众扩展项、非原型验收阻塞（用户裁定后置，待网页端手感+成长闭环打完再回头做）；含 viewport/contain 适配/安全区/窄屏 UI |
 | [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 待办(已落地待实测) | 根目录 | docs/plans/ | 需求 A 摇杆之后的 gameplay 核心 bug 修（对齐 §2.1 沿墙滑行+撞墙回正）；仅改 06_snake 撞墙块，复用 turnRate/grace/scrape 零新数字；含补充 abc + 验收加测；独立 commit 不与 A 并批 |
 | [需求AUDIO-程序化BGM系统v3.md](./需求AUDIO-程序化BGM系统v3.md) | 🟡 待办(已落地待实测) | 根目录 | docs/plans/ | 程序化 BGM v3（Web Audio 纯合成·零外部文件）：仅改 10_audio.js+沿用 02_config AUDIO.bgmVolume；三层 explore/battle/boss crossfade 无缝 + ducking + 暂停/死亡响应 + autoplay 合规；曲谱照规范原样转码；与下方补丁合并为音频 commit |
-| [需求AUDIO-音效优化与BGM关系治理.md](./需求AUDIO-音效优化与BGM关系治理.md) | 🟢 已落地(待浏览器实测) | 根目录 | docs/plans/ | 音频补丁（仅 10_audio.js）：①暂停 BGM 压≈30%(§4 不归零) ②火墙 DOT 连发嗡鸣重做温暖火声+节流(0.28s) ③enemy:hit/die 节流+combo:found ducking+密度感知 duck(含护栏·下限不静音) 治"乱糟糟"；火墙 payload 已带 isDot/src 纯读零改 07；零跨层、不碰 §9；与 BGM 合并音频 commit(待实测通过) |
+| [需求AUDIO-音效优化与BGM关系治理.md](./需求AUDIO-音效优化与BGM关系治理.md) | 🟢 已落地(待浏览器实测) | 根目录 | docs/plans/ | 音频补丁（仅 10_audio.js）：①**暂停分流(2026-07-27 裁定)**：硬暂停(P/暂停按钮·status=paused)=BGM 归零静音(画面冻结)；三选一(status=choosing)走独立 chooseDuckMul 压小不静音(保持可闻·音量变小)；②火墙 DOT 连发嗡鸣重做温暖火声+节流(0.28s) ③enemy:hit/die 节流+combo:found ducking+密度感知 duck(含护栏·下限不静音) 治"乱糟糟"；火墙 payload 已带 isDot/src 纯读零改 07；零跨层、不碰 §9；与 BGM 合并音频 commit(待实测通过) |
 
 ## 归档约定（防文件膨胀，详见 README.md）
 1. 新增计划 → 建 `<需求名>.md` 并**立即在 STATUS.md 登记一行**（🟡 active）。

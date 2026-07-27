@@ -324,6 +324,7 @@
 		joyRelease()   // 6① 暂停即挂起摇杆（不误转向/不残留视觉）
 		if (GS.status === 'playing') { GS.status = 'paused' }
 		else if (GS.status === 'paused') { GS.status = 'playing' }
+		Bus.emit('game:pause_changed')   // 后置事件：status 已切换后再通知音频层（脱离 Bus 注册顺序依赖，按 §9 顺序无关）
 	}
 
 	function step(dt) {
@@ -356,14 +357,14 @@
 			if (!pausedByGate) {
 				pausedByGate = true
 				preGateWasPlaying = (GS.status === 'playing')
-				if (GS.status === 'playing') { GS.status = 'paused' }   // 仅在原在玩时挂起；其他界面(菜单/结算)不动
+				if (GS.status === 'playing') { GS.status = 'paused'; Bus.emit('game:pause_changed') }   // 仅在原在玩时挂起；其他界面(菜单/结算)不动；遮罩暂停同样通知音频静音
 			}
 			setGate(true)
 		} else {
 			setGate(false)
 			if (pausedByGate) {
 				pausedByGate = false
-				if (preGateWasPlaying && GS.status === 'paused') { GS.status = 'playing' }   // 仅因遮罩暂停才恢复；手动暂停/三选一/结算不被顶掉
+				if (preGateWasPlaying && GS.status === 'paused') { GS.status = 'playing'; Bus.emit('game:pause_changed') }   // 仅因遮罩暂停才恢复；手动暂停/三选一/结算不被顶掉；恢复时通知音频还原
 				preGateWasPlaying = false
 			}
 		}
@@ -516,7 +517,7 @@ function buildStart(wrap) {
 			if (e.key === 'b' || e.key === 'B') { window.__NO_DIR1 = !(window.__NO_DIR1 !== false) }   // 像素吸附诊断开关（仅改渲染，不再弹顶部横幅，避免遮挡波次条）
 			// 调试：重量级特效开关（2026-07-24 实测定因：白爆(T1)+火墙(T3)是 GPU 填充率尖峰主因）按 V
 			if (e.key === 'v' || e.key === 'V') { _toggleVfx() }   // 重量级特效诊断开关（仅改渲染，不再弹顶部横幅）
-			if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return }
+			if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { Bus.emit('game:toggle_pause'); return }
 			if (e.key !== '`' && e.key !== '~') { startIfMenu() }
 		})
 		function _toggleVfx() {   // 一键关掉最贵的两种 GPU 填充：白爆(T1=suppressWhiteBurst) + 火墙/余烬(T3=suppressFire)，并锁 MED 档防摆动；纯诊断用，不动数值结构
