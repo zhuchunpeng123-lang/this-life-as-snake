@@ -1,4 +1,4 @@
-# workflow.md · 协作与调参操作细则
+# workflow.md · 协作、调参、Git 与文档治理细则
 
 > AGENTS.md 是"守则"（能/不能），本文件是"怎么把活干漂亮"的细则。展开 §九（多窗口）与 §十（调参沙盘）。
 > 配套：AGENTS.md、docs/DEBT.md（债从哪来）、CHANGELOG.md（债还了没）。
@@ -11,8 +11,11 @@
 | CHANGELOG.md | 根 | 版本更新日志（已落地改动） |
 | docs/DEBT.md | docs/ | 技术债 / 设计债台账 |
 | docs/workflow.md | docs/ | 本文（协作 + 调参细则） |
+| docs/RETRO.md | docs/ | 跨会话踩坑教训 |
+| docs/RELEASE.md | docs/ | 5.5 封版快照 |
+| docs/HANDOFF-CODEX.md | docs/ | CodeBuddy 封版交接，历史参考 |
 | 《GDD v0.3 设计意图层》 | docs/ | 设计意图（数值已分离） |
-| 《数值真理源 v0.3 §9》 | docs/ | 数值唯一真理源 |
+| 《数值真理源 v0.3 §9》 | docs/ | 旧数值镜像 / 历史参考；当前以 `snake55/02_config.js` 为准 |
 
 ---
 
@@ -47,50 +50,78 @@
 
 ---
 
-## §3 版本回滚 SOP（Git，本地优先）
+## §3 Git 主工作区与版本 SOP
 
-初始化（本仓库已做）：
-```
-git init
-git add -A && git commit -m "baseline"
-```
-日常落地：
-```
-git add -A
-git commit -m "YYYY-MM-DD · 需求X：一句话"
-```
-回滚（三档）：
-- 看历史：`git log --oneline`
-- 撤单文件到某版：`git checkout <hash> -- snake55/xx.js`
-- 整体回退（保留历史）：`git revert <hash>`（生成新提交）或 `git checkout <hash>`（detached，再 commit 固定）
-- 丢弃未提交改动：`git restore <file>`
+后续 Codex 迭代默认在 `F:\贪吃蛇游戏项目-Codex\_git-main` 执行。外层目录是交接导出快照，只用于对照，不再作为主工作区。
 
-> 本地回滚完全离线；推到 Git 网站见 §4。
+当前远程：
 
----
+- `origin = https://github.com/zhuchunpeng123-lang/this-life-as-snake.git`
+- `main` 跟踪 `origin/main`
+- Codex 接手标签：`codex-handoff-20260727`
+- 本地实验分支 `ab-13c915b` / `ab-52d076a` 不推送；`v0` 弃用不动。
 
-## §4 推送到 Git 网站（GitHub / Gitee / GitLab）
+日常流程：
 
-> 本仓库**远程已建好**：`origin = https://github.com/zhuchunpeng123-lang/this-life-as-snake.git`，`main` 已跟踪 `origin/main`，可直推。以下为接手 / 换环境时的完整 SOP；详尽版见 `docs/HANDOFF-CODEX.md §12`。
-
-**日常推送（Codex 可直接做）**：
 ```bash
-git add <改动文件>            # 显式加，别 git add -A 误带 .codebuddy/_harness
+git status --short --branch
+git pull --ff-only origin main
+git add <改动文件>
 git commit -m "type(scope): 中文一句话"
-git push origin main          # main 已跟踪，直推；禁止 push -f / push --all
+git push origin main
 ```
 
-**🔴 换机/换网络的代理坑**：`.git/config` 写死 `http.proxy = http://127.0.0.1:7897`（用户本机 Clash）。Codex 在别的机器跑会卡死 push：
-- 不需要代理 → `git config --unset http.proxy`
-- 有自己的代理 → `git config http.proxy http://127.0.0.1:<端口>`
+禁止事项：
 
-**🔴 改完 `snake55/*.js` 必须 bump 缓存戳**：`snake55/index.html` 的 15 个 `<script>` 共用 `?v=e392a72bd0`，改任意脚本后全文同步换新值，否则玩家浏览器用旧缓存、线上「假更新」。
+- 禁止 `git add -A`，避免把本地脚手架或临时文件带进提交。
+- 禁止 `push -f` / `push --all`。
+- 不在同一提交里混多个独立改动。
+- 发现计划外文件变化，先停下来说明，不顺手带入。
 
-**首建仓库（仅当远程丢失时）**：Git 默认仅本地，需你在网站建空仓库（AI 无法代建），再：
+回滚优先用保留历史的方式：
+
+```bash
+git log --oneline
+git revert <hash>
 ```
-git remote add origin <仓库URL>
-git branch -M main
-git push -u origin main
+
+仅需撤回单文件到某版时：
+
+```bash
+git checkout <hash> -- snake55/xx.js
 ```
 
-> 凭据：远程是 https，push 按 **Token（PAT, repo 权限）** 认证（GitHub 已禁密码）；本环境无 GitHub 集成，push 需你的授权/凭据。
+## §4 代理、认证与缓存戳
+
+当前本机访问 GitHub 需要 Clash 代理，本仓库本地配置为：
+
+```
+http.proxy = http://127.0.0.1:7897
+https.proxy = http://127.0.0.1:7897
+http.sslBackend = openssl
+```
+
+换机器或换网络时先检查：
+
+```bash
+git config --show-origin --get-all http.proxy
+git config --show-origin --get-all https.proxy
+git ls-remote origin HEAD
+```
+
+如果不需要代理，移除本仓库代理；如果端口变化，改成本机真实端口。不要盲目沿用旧机器的 `127.0.0.1`。
+
+GitHub 认证当前走 GitHub CLI，账号 `zhuchunpeng123-lang` 已有 `repo` 权限。不要在聊天里明文传 PAT；推送失败时优先检查 `gh auth status`。
+
+改任意 `snake55/*.js` 后，必须同步 bump `snake55/index.html` 中 15 个 `<script>` 的 `?v=` 缓存戳。原因：玩家浏览器可能继续使用旧脚本，导致线上“假更新”。只改文档、图片或 manifest 时不需要 bump JS 缓存戳。
+
+## §5 历史资料治理原则
+
+历史资料按用途处理，不按来源情绪处理：
+
+- 保留：能解释当前架构、玩法意图、发布状态、踩坑教训的资料。
+- 归档：封版交接、旧审查、旧计划、旧数值镜像。它们有证据价值，但不作为每日开工入口。
+- 删除：重复文件、断链索引、空占位、明显过期且已有替代的文件。
+- 合并：同一信息在多个文件重复时，只保留一个当前入口，其余移到 release/archive 或删掉。
+
+执行顺序建议：先精简入口，再列取舍表，再经用户确认后做删除或迁移。删除前必须确认 Git 已有可回退锚点。

@@ -1,5 +1,8 @@
 # HANDOFF-CODEX.md · 项目交接圣经（给接续 AI：Codex / 任意协作者）
 
+> **2026-07-27 Codex 接手说明**：本文是 CodeBuddy 封版交接资料，保留作历史证据和深查入口；它不再是每日开工规则源。日常执行优先读根目录 `AGENTS.md`，Git/调参/文档治理流程读 `docs/workflow.md`。若本文与 `AGENTS.md`、当前代码或 `docs/workflow.md` 冲突，以后者为准。
+> **当前主工作区**：`F:\贪吃蛇游戏项目-Codex\_git-main`；Codex 接手标签为 `codex-handoff-20260727`。
+
 > **目标**：读毕即对整个项目了如指掌，可独立定位 bug、扩展特性、不踩历史巨坑。
 > **读者**：接续本项目修 bug / 做特性的 AI（下称「你」）。人类项目负责人（用户）保留所有「计划确认 / §9 真源回写 / 发布开关」决策权。
 > **配套文档**：`AGENTS.md`（守则·最高优先）、`CHANGELOG.md`（改动流水）、`docs/DEBT.md`（债台账）、`docs/plans/STATUS.md`（计划索引）、`docs/RETRO.md`（复盘教训）、`docs/workflow.md`（协作细则）、`docs/RELEASE.md`（封版快照）。
