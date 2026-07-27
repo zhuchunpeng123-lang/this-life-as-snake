@@ -2,6 +2,13 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+> 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。
+
+## 2026-07-27 · 封版快照 · 文档体系收口（RELEASE + HANDOFF-CODEX + 债台账同步）
+- **文档更新（零代码）**：①新增 `docs/RELEASE.md`（封版快照：版本/范围/已知阻塞/部署/验收）；②新增 `docs/HANDOFF-CODEX.md`（给接续 AI Codex 的详尽交接圣经：硬规则/架构/机制/运行/待修清单/巨坑）；③`docs/DEBT.md`：B-TUNE 标为发布硬阻塞、音频/UI 债标记已还、补 manifest 主题色债（已还）；④`docs/plans/STATUS.md`：音频计划标实测绿、移动端优化进度；⑤`docs/RETRO.md`：开放风险加封版 + B-TUNE；⑥`snake55/manifest.webmanifest`：`theme_color`/`background_color` 由 `#0a0e1a` 同步为 `#11162a`（与 index.html 一致，消已装 PWA 刘海缝残留）。
+- **是否动 §9**：否，纯文档 + 资产一致性。
+- **验收**：两份新文档可读、DEBT/STATUS/RETRO 状态与代码现状一致、manifest 色与页面同色。
+
 ## 2026-07-27 · fix: iOS 主屏幕(standalone)仍无声 + 手机 UI 逐行对齐 + 刘海虚影
 - **音频根因(第二轮)**：上一版 `_kickIos` 在 `resume()` 的 Promise `.then` 内才出声——已脱离用户手势调用栈，iOS(尤其添加到主屏幕的 standalone 模式)不认 → 仍不解锁。
 - **音频修复（`10_audio.js`）**：`_kickIos()` 移除 `ctx.state!=='running'` 守卫，改为**在 `unlock()` 手势调用栈内同步 `start()` 振荡器**(ctx 即便 suspended，`start(0)` 进队列、紧接 `resume()` 翻 running 即真实出声→iOS 解锁)；`unlock()` 先 `ensure()`+同步 `_kickIos()`+再 `resume(cb)` 起 BGM。`_kicked` 一次性守卫保留。两端受益、桌面零回归。
