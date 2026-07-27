@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · fix: iOS 主屏幕(standalone)仍无声 + 手机 UI 逐行对齐 + 刘海虚影
+- **音频根因(第二轮)**：上一版 `_kickIos` 在 `resume()` 的 Promise `.then` 内才出声——已脱离用户手势调用栈，iOS(尤其添加到主屏幕的 standalone 模式)不认 → 仍不解锁。
+- **音频修复（`10_audio.js`）**：`_kickIos()` 移除 `ctx.state!=='running'` 守卫，改为**在 `unlock()` 手势调用栈内同步 `start()` 振荡器**(ctx 即便 suspended，`start(0)` 进队列、紧接 `resume()` 翻 running 即真实出声→iOS 解锁)；`unlock()` 先 `ensure()`+同步 `_kickIos()`+再 `resume(cb)` 起 BGM。`_kicked` 一次性守卫保留。两端受益、桌面零回归。
+- **UI（移动端，仅 `isTouch`；桌面保持原右上三联不动）**：上版误把 combo 塞进左簇，用户要求**右簇=技能(row1)+combo(row2) 与左簇生命(row1)/数据(row2) 逐行对齐**。新建 `hudRight`(右上、flex column、同 top+gap 8)容纳 skills+combo 自动逐行对齐；系统按钮(⏸暂停/⛶全屏/⚙GM)移左下竖排，`align-items:stretch`+`min-width:92px`+居中文字→**等宽对齐带文字**(上版纯图标导致大小不一、无字)。
+- **刘海虚影（`index.html`）**：根因=画布 `box-shadow` 黑边光晕 + 身体背景(`#0a0e1a`)≠画布背景(`#11162a`)的 letterbox 缝。改为：①html/body/`#game-wrap` 背景统一 `#11162a`(留白不可见→视觉满屏)；②`@media (pointer:coarse)` 触屏去画布光晕；③`theme-color`→`#11162a` 融合 standalone 状态栏区。桌面保留光晕质感。
+- **是否动 §9**：否，纯音频解锁时机 + UI 表现 + CSS 背景，未动 core/collision/数值/伤害管线。
+- **验收 ✅❌（手机硬刷新后）**：①iOS 主屏幕打开→点开始→BGM 立即响；②左上生命/数据 与 右上技能/combo 逐行对齐；③左下 ⏸暂停/⛶全屏/⚙GM 等宽带字竖排、大小一致；④横屏满屏无黑边光晕/无缝(仅 iOS 状态栏文字 unavoidable)；⑤桌面零回归。
+
 ## 2026-07-27 · fix: iOS 仍无声 + 手机端 UI 重排(combo 入左簇 / 系统按钮移左下)
 - **音频根因**：前次 `_kickIos` 用「1 样本静音 buffer」——iOS 多数版本**静音输出无法解锁** AudioContext 管线；且 `startBgm()`/`unlock()` 在 `ctx.resume()` 异步完成**之前**就调度 BGM，suspended 期 `currentTime` 冻结、音符全堆在 0.1s 处永不前进 → iOS 永久静音。
 - **音频修复（`10_audio.js`）**：①`_kickIos()` 改为 ctx `running` 时输出**极低增益(0.001)非零振荡器**真实出声解锁，并加 `_kicked` 一次性守卫（避免每次 `run_reset` 出咔哒声）；②`resume(cb)` 新增回调——仅在 Promise 成功且 `state==='running'` 后才执行 kick/BGM 重启；③`startBgm()` 整体包进 `resume(cb)`，ctx 真正 running 后才 `absStep=0`+重置 `nextNoteTime`+起 `setInterval(_sched)`；④`unlock()` 与 `core:run_reset` 改走回调式 `startBgm()`。两端(桌面+移动)同步受益、无害。

@@ -9,12 +9,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="5.5 蛇">
-<meta name="theme-color" content="#0a0e1a">
+<meta name="theme-color" content="#11162a">
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #0a0e1a; overflow: hidden; }
-  #game-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #11162a; overflow: hidden; }   /* 背景=画布色：contain 留白不可见→移动端视觉满屏、消除"刘海虚影" */
+  #game-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #11162a; }
   #stage { position: relative; }   /* JS 同步为 canvas 显示尺寸，使 #ui-stage 角标精确贴游戏框（治暂停按钮掉框外） */
   #game-canvas { display: block; background: #11162a; box-shadow: 0 0 40px rgba(0,0,0,.6); touch-action: none; }
+  @media (pointer:coarse) { #game-canvas { box-shadow: none; } }   /* 触屏去黑边光晕(移动端"虚影"主因)；桌面保留屏幕质感 */
   #ui-stage { position: absolute; inset: 0; pointer-events: none; }   /* 角落 HUD 层：贴 canvas 显示区 */
   #ui-full { position: fixed; inset: 0; pointer-events: none; z-index: 50; }   /* 全屏遮罩层：升级/结算/暂停/请横屏 */
   #boot-error { position: fixed; left: 0; top: 0; right: 0; z-index: 9999; display: none;
@@ -51,20 +52,20 @@
 
   <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口；本地双击(file://)打开时去掉 ?v= 缓存版本号，否则 Chrome 对带查询串的本地脚本会 404 导致整游戏白屏（worktree 13c915b 即无 ?v= 可正常加载）；如需强制刷新清缓存用 Ctrl+Shift+R -->
   <!-- 缓存破坏：版本号跟随 build 升，改任意脚本后统一 +1 即强制浏览器拉新，免手动清缓存 -->
-  <script src="02_config.js?v=7f0838b61c"></script>
-  <script src="03_core.js?v=7f0838b61c"></script>
-  <script src="04_collision.js?v=7f0838b61c"></script>
-  <script src="05_particle.js?v=7f0838b61c"></script>
-  <script src="06_snake.js?v=7f0838b61c"></script>
-  <script src="07_enemy.js?v=7f0838b61c"></script>
-  <script src="08_skill.js?v=7f0838b61c"></script>
-  <script src="09_wave.js?v=7f0838b61c"></script>
-  <script src="10_audio.js?v=7f0838b61c"></script>
-  <script src="11_render.js?v=7f0838b61c"></script>
-  <script src="12_ui.js?v=7f0838b61c"></script>
-  <script src="13_editor.js?v=7f0838b61c"></script>
-  <script src="14_main.js?v=7f0838b61c"></script>
-  <script src="15_profiler.js?v=7f0838b61c"></script>
-  <script src="16_skill_econ.js?v=7f0838b61c"></script>
+  <script src="02_config.js?v=e392a72bd0"></script>
+  <script src="03_core.js?v=e392a72bd0"></script>
+  <script src="04_collision.js?v=e392a72bd0"></script>
+  <script src="05_particle.js?v=e392a72bd0"></script>
+  <script src="06_snake.js?v=e392a72bd0"></script>
+  <script src="07_enemy.js?v=e392a72bd0"></script>
+  <script src="08_skill.js?v=e392a72bd0"></script>
+  <script src="09_wave.js?v=e392a72bd0"></script>
+  <script src="10_audio.js?v=e392a72bd0"></script>
+  <script src="11_render.js?v=e392a72bd0"></script>
+  <script src="12_ui.js?v=e392a72bd0"></script>
+  <script src="13_editor.js?v=e392a72bd0"></script>
+  <script src="14_main.js?v=e392a72bd0"></script>
+  <script src="15_profiler.js?v=e392a72bd0"></script>
+  <script src="16_skill_econ.js?v=e392a72bd0"></script>
 </body>
 </html>

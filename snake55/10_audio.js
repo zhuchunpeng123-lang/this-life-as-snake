@@ -38,16 +38,17 @@
 		}
 	}
 	var _kicked = false   // iOS 解锁只需真实出声一次；跑过后不再 kick，避免重复 run_reset 出咔哒声
-	// iOS Safari 经典解锁：仅 resume 不一定激活，须在 ctx 真正 running 时输出「非零」音频才解锁管线；
-	// 静音 1-sample buffer 在多数 iOS 版本无效，故改为极低增益(0.001)振荡器实际出声
+	// iOS Safari 经典解锁：须在用户手势内「实际输出非零音频」才解锁管线。关键：手势调用栈内同步 start 振荡器(即便 ctx 尚 suspended，
+	// start(0) 进队列、紧接 resume() 翻 running 后即真实出声)；仅 resume() 或静音 buffer 在多数 iOS 版本无效(含添加到主屏幕的 standalone 模式)
 	function _kickIos() {
-		if (!ctx || ctx.state !== 'running' || _kicked) { return }
+		if (!ctx || _kicked) { return }
 		try {
 			var o = ctx.createOscillator(), g = ctx.createGain()
-			g.gain.value = 0.001
+			g.gain.value = 0.001   // 极低增益：人耳近乎无声，但音频图仍处理非零信号→iOS 解锁
 			o.type = 'sine'; o.frequency.value = 440
 			o.connect(g); g.connect(ctx.destination)
-			o.start(0); o.stop(ctx.currentTime + 0.05)
+			var t = ctx.currentTime || 0
+			o.start(0); o.stop(t + 0.05)
 			_kicked = true
 		} catch (e) {}
 	}
@@ -341,7 +342,7 @@
 	var Audio = {
 		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN } },  // 静音同时静 BGM（BGM 在 master 之下）
 		isMuted: function () { return muted },
-		unlock: function () { ensure(); resume(function () { _kickIos(); if (!bgmRunning) { startBgm() } }); return !!(ctx && ctx.state === 'running') },   // 首次交互：ctx running 后真实出声解锁 iOS 管线 + 起 BGM；返回 running 供 UI 判断是否在可靠手势内真正解锁
+		unlock: function () { ensure(); _kickIos(); resume(function () { _kickIos(); if (!bgmRunning) { startBgm() } }); return !!(ctx && ctx.state === 'running') },   // 首次交互：手势内同步起振荡器(解锁 iOS 管线,含 standalone)+ctx running 后起 BGM；返回 running 供 UI 判断
 		isRunning: function () { return !!(ctx && ctx.state === 'running') }
 	}
 	Registry.register('audio', Audio)
