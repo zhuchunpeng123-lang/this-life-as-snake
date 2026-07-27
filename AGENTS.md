@@ -5,11 +5,11 @@
 ## 0. 开工路径
 
 - 主工作区：`F:\贪吃蛇游戏项目-Codex\_git-main`。外层目录是交接导出快照，后续迭代默认不在那里改。
-- 默认只读：本文件 + `docs/DEBT.md` 的当前未结项 + 当前任务相关源码。
-- 需要定位状态时读：`CHANGELOG.md`、`docs/plans/STATUS.md`、`docs/RETRO.md`。
+- 默认只读：本文件 + `docs/PROJECT-BRIEF.md` + `docs/DEBT.md` 的当前未结项 + 当前任务相关源码。
+- 需要定位状态时读：`docs/PROJECT-STATUS.md`、`docs/plans/STATUS.md`、`docs/RETRO.md`。
 - 需要设计依据时读：GDD 设计意图文档；旧数值文档只作历史参考。
 - 需要 Git/调参/多窗口流程时读：`docs/workflow.md`。
-- `docs/HANDOFF-CODEX.md`、`docs/RELEASE.md`、历史审查和旧计划是封版证据，不作为每日规则入口。
+- `docs/HANDOFF-CODEX.md`、`docs/RELEASE.md`、`docs/archive/` 和已归档计划是历史证据，不作为每日规则入口。
 
 ## 1. 两条硬墙
 

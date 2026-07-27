@@ -11,6 +11,10 @@
 | CHANGELOG.md | 根 | 版本更新日志（已落地改动） |
 | docs/DEBT.md | docs/ | 技术债 / 设计债台账 |
 | docs/DOCUMENT-RETENTION.md | docs/ | 历史资料取舍表与后续治理顺序 |
+| docs/PROJECT-BRIEF.md | docs/ | 项目简报，适合总控窗口 |
+| docs/PROJECT-STATUS.md | docs/ | 当前状态与正式审查入口 |
+| docs/ARCHITECTURE.md | docs/ | 架构概要 |
+| docs/README.md | docs/ | 文档入口 |
 | docs/workflow.md | docs/ | 本文（协作 + 调参细则） |
 | docs/RETRO.md | docs/ | 跨会话踩坑教训 |
 | docs/RELEASE.md | docs/ | 5.5 封版快照 |

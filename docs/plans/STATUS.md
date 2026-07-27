@@ -1,39 +1,51 @@
-# docs/plans/ STATUS.md — 计划文件总索引
+# docs/plans/STATUS.md · 计划文件总索引
 
-> 本文件是 `docs/plans/` 的**唯一总索引**。每次新增 / 落地 / 废弃计划，必须先更新本表，再动文件。
-> 移动会断开文件间相对引用，故本表记录 supersede 关系与原始路径，保证跨文件可追溯（呼应 AGENTS §八 / §九）。
+> 本文件是 `docs/plans/` 的唯一索引。新增、归档、废弃计划时先更新本表，再移动文件。
 
 ## 状态图例
-- ✅ `archive/` 已落地：代码/配置已 commit，特性可用 → 落地后即移入并标记 ✅
-- 🗑 `deprecated/` 废弃/被推翻：判断有误或被新方案取代，**保留不删**（git 可恢复 + 留作警示）
-- 🔍 `diagnosis/` 诊断已结：仅排查未改码，结论已吸收
-- 🟡 根目录 active：待办 / 被阻塞，留根目录持续跟进
 
-## 索引（13 个计划文件）
+- ✅ `archive/`：已落地或已验收，低频追溯。
+- 🗑 `deprecated/`：判断被推翻或方法过时，保留少量作为反例。
+- 🔍 `diagnosis/`：只诊断不改码，结论已吸收。
+- 🟡 根目录：当前仍需跟进、拍板或用户复验。
 
-| 文件 | 状态 | 处置 | 原始路径 | 互相关系 / 备注 |
-|------|------|------|----------|----------------|
-| [2026-07-20-perf-fps28.md](./archive/2026-07-20-perf-fps28.md) | ✅ 已落地 | archive/ | docs/plans/ | 与 perf-rootcause 互为「提案/实测两轮版」vs「根因提炼版」，同覆盖 07-20 性能根治（火墙单 path 2 stroke + 敌人批量 fill + 主循环丢追帧） |
-| [2026-07-20-perf-rootcause.md](./archive/2026-07-20-perf-rootcause.md) | ✅ 已落地 | archive/ | docs/plans/ | 见上；另含自动性能日志（15_profiler.js） |
-| [2026-07-20-round6-cleanup.md](./archive/2026-07-20-round6-cleanup.md) | ✅ 已落地 | archive/ | docs/plans/ | **supersedes** round5-revert（推翻其 viewZoom 误判）；已全盘核对 |
-| [2026-07-20-view-scale-and-dot.md](./archive/2026-07-20-view-scale-and-dot.md) | ✅ 已落地 | archive/ | docs/plans/ | worldScale 视觉缩放 + 飘字提权 + DOT 叠加澄清 |
-| [B-4-测试清单.md](./archive/B-4-测试清单.md) | ✅ 已落地 | archive/ | docs/plans/ | B-4 combo 视觉特性测试清单（B-4 已 commit baseline-b4） |
-| [2026-07-20-round5-revert.md](./deprecated/2026-07-20-round5-revert.md) | 🗑 废弃 | deprecated/ | docs/plans/ | **superseded-by** round6-cleanup：误判「viewZoom 缩小增 overdraw」致错误回滚 |
-| [b9-diag-test-script.md](./deprecated/b9-diag-test-script.md) | 🗑 废弃 | deprecated/ | docs/plans/ | 人工测量脚本法已被 `15_profiler.js` 自动日志取代，方法过时 |
-| [2026-07-20-fps-regression-diagnosis.md](./diagnosis/2026-07-20-fps-regression-diagnosis.md) | 🔍 诊断已结 | diagnosis/ | docs/plans/ | bisect 排查；结论=掉帧为未提交 WIP，非 committed baseline；WIP 已 stash |
-| [④-蒸汽状态引爆-计划.md](./④-蒸汽状态引爆-计划.md) | ✅ 已落地 | 根目录 | docs/plans/ | 13c2e53 已 commit + 用户浏览器实测绿；零新数值无需 §9 回写（早期"待 Notion 回写"预判已证伪） |
-| [④-蒸汽状态引爆-测试清单.md](./④-蒸汽状态引爆-测试清单.md) | ✅ 已落地 | 根目录 | docs/plans/ | 随 ④ 已落地（实测绿） |
-| [④-B-屏震打击感精修.md](./④-B-屏震打击感精修.md) | 🟡 待办 | 根目录 | docs/plans/ | ④ 已 commit 且实测绿，④-B 解除阻塞可推进（屏震四档已在 07-17 e5d3f7f 部分落地） |
-| [⑥-冰冻机制重做-计划.md](./⑥-冰冻机制重做-计划.md) | ✅ 已落地 | 根目录 | docs/plans/ | 5777395 已 commit、数值已回写 §9；用户确认重做已完成 |
-| [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 进行中(部分落地) | 根目录 | docs/plans/ | 移动端优化后置：PC 试玩是手感主战场，移动端是受众扩展项、非原型验收阻塞（用户裁定后置）。**2026-07-27 已落地**：强制横屏拦截、右侧固定锚点摇杆、iOS 音频解锁（手势内同步起振荡器）、HUD/技能栏/Combo 逐行对齐、系统按钮左下竖排带字、刘海虚影消除（背景同色+触屏去光晕）。剩余：窄屏极端适配 / 表现债微调，仍后置非阻塞 |
-| [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 待办(已落地待实测) | 根目录 | docs/plans/ | 需求 A 摇杆之后的 gameplay 核心 bug 修（对齐 §2.1 沿墙滑行+撞墙回正）；仅改 06_snake 撞墙块，复用 turnRate/grace/scrape 零新数字；含补充 abc + 验收加测；独立 commit 不与 A 并批 |
-| [需求AUDIO-程序化BGM系统v3.md](./需求AUDIO-程序化BGM系统v3.md) | ✅ 已落地(实测绿·2026-07-27 iOS standalone 修复后) | 根目录 | docs/plans/ | 程序化 BGM v3（Web Audio 纯合成·零外部文件）：仅改 10_audio.js+沿用 02_config AUDIO.bgmVolume；三层 explore/battle/boss crossfade 无缝 + ducking + 暂停/死亡响应 + autoplay 合规；曲谱照规范原样转码；与下方补丁合并为音频 commit |
-| [需求AUDIO-音效优化与BGM关系治理.md](./需求AUDIO-音效优化与BGM关系治理.md) | ✅ 已落地(实测绿·2026-07-27) | 根目录 | docs/plans/ | 音频补丁（仅 10_audio.js）：①**暂停分流(2026-07-27 裁定)**：硬暂停(P/暂停按钮·status=paused)=BGM 归零静音(画面冻结)；三选一(status=choosing)走独立 chooseDuckMul 压小不静音(保持可闻·音量变小)；②火墙 DOT 连发嗡鸣重做温暖火声+节流(0.28s) ③enemy:hit/die 节流+combo:found ducking+密度感知 duck(含护栏·下限不静音) 治"乱糟糟"；火墙 payload 已带 isDot/src 纯读零改 07；零跨层、不碰 §9；与 BGM 合并音频 commit(实测绿) |
+## 当前 active
 
-## 归档约定（防文件膨胀，详见 README.md）
-1. 新增计划 → 建 `<需求名>.md` 并**立即在 STATUS.md 登记一行**（🟡 active）。
-2. 落地（commit）→ 移 `archive/` 并改 ✅；前置未满足（如 §9 回写）→ 留 🟡 或转 🗑。
-3. 被推翻/过时 → 移 `deprecated/` 并写明「被 X supersede / 为何废弃」，不默默删除。
-4. 纯诊断 → 移 `diagnosis/`。
-5. 移动前在「互相关系」列补 supersedes / superseded-by 与原始路径。
-6. 每个计划/测试清单尽量自带验收标准 + 复现步骤。
+| 文件 | 状态 | 下一步 |
+|---|---|---|
+| [④-B-屏震打击感精修.md](./④-B-屏震打击感精修.md) | 🟡 待办 | 可被后续总控优化路线重新评估 |
+| [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 部分落地 | 移动端窄屏/表现微调后置 |
+| [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 已落地待实测 | 用户浏览器复验，绿后归档 |
+| [需求B-边缘撞墙回正-测试清单.md](./需求B-边缘撞墙回正-测试清单.md) | 🟡 待实测清单 | 跟随需求B复验结果处理 |
+
+## 已归档
+
+| 文件 | 状态 | 备注 |
+|---|---|---|
+| [2026-07-20-perf-fps28.md](./archive/2026-07-20-perf-fps28.md) | ✅ | 性能根治实测 |
+| [2026-07-20-perf-rootcause.md](./archive/2026-07-20-perf-rootcause.md) | ✅ | 性能根因提炼 |
+| [2026-07-20-round6-cleanup.md](./archive/2026-07-20-round6-cleanup.md) | ✅ | 推翻 round5 误判 |
+| [2026-07-20-view-scale-and-dot.md](./archive/2026-07-20-view-scale-and-dot.md) | ✅ | worldScale 与 DOT 语义 |
+| [B-4-测试清单.md](./archive/B-4-测试清单.md) | ✅ | Combo 视觉测试 |
+| [④-蒸汽状态引爆-计划.md](./archive/④-蒸汽状态引爆-计划.md) | ✅ | 已落地实测绿 |
+| [④-蒸汽状态引爆-测试清单.md](./archive/④-蒸汽状态引爆-测试清单.md) | ✅ | 已落地测试清单 |
+| [⑥-冰冻机制重做-计划.md](./archive/⑥-冰冻机制重做-计划.md) | ✅ | 已落地，用户确认完成 |
+| [需求AUDIO-程序化BGM系统v3.md](./archive/需求AUDIO-程序化BGM系统v3.md) | ✅ | BGM v3 已落地 |
+| [需求AUDIO-程序化BGM系统v3-测试清单.md](./archive/需求AUDIO-程序化BGM系统v3-测试清单.md) | ✅ | BGM v3 测试清单 |
+| [需求AUDIO-音效优化与BGM关系治理.md](./archive/需求AUDIO-音效优化与BGM关系治理.md) | ✅ | 音效与 BGM 治理已落地 |
+
+## 废弃 / 诊断
+
+| 文件 | 状态 | 备注 |
+|---|---|---|
+| [2026-07-20-round5-revert.md](./deprecated/2026-07-20-round5-revert.md) | 🗑 | 被 round6-cleanup 推翻 |
+| [b9-diag-test-script.md](./deprecated/b9-diag-test-script.md) | 🗑 | 被 `15_profiler.js` 自动日志取代 |
+| [2026-07-20-fps-regression-diagnosis.md](./diagnosis/2026-07-20-fps-regression-diagnosis.md) | 🔍 | 结论：掉帧来自未提交 WIP，非 committed baseline |
+
+## 归档约定
+
+1. 新计划先登记到 active。
+2. 落地并确认后移入 `archive/`。
+3. 被推翻后移入 `deprecated/` 并说明原因。
+4. 只诊断不改码的文件移入 `diagnosis/`。
+5. 每个计划尽量自带验收方式，方便浏览器手测和静态审查。

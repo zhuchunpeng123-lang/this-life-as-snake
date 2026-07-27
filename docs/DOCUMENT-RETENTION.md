@@ -74,6 +74,14 @@
 5. 开始代码治理前置修复：B-TUNE dev 工具门控、CONFIG 深冻结/运行时覆盖口径、碰撞盒 headRadius 缺键。
 6. 再进入 gameplay 优化：撞墙回正实测、Boss 子弹/召唤、小怪节奏、技能可读性、移动端后置适配。
 
+## 6.1 第二阶段执行记录（2026-07-27）
+
+- 已新增 `docs/PROJECT-BRIEF.md`、`docs/PROJECT-STATUS.md`、`docs/ARCHITECTURE.md`、`README.md`、`docs/README.md`。
+- 已瘦身 `docs/DEBT.md`，保留当前开放问题，历史审查原文不再混入日常债务表。
+- 已将 `docs/REVIEW-20260723.md` 归档到 `docs/archive/REVIEW-20260723.md`。
+- 已将已落地计划移入 `docs/plans/archive/`，并重写 `docs/plans/STATUS.md` 为 active/archive/deprecated/diagnosis 四类。
+- 未删除历史资料；本阶段只做低风险归档与入口收口。
+
 ## 7. 给 ChatGPT 总控窗口的建议资料包
 
 如果要让 ChatGPT 制定项目优化计划，建议只给以下资料，避免把旧历史噪音全塞进去：

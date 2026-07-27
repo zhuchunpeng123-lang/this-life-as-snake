@@ -1,152 +1,57 @@
-# DEBT.md · 技术债 / 设计债台账
+# DEBT.md · 当前开放问题台账
 
-> 本文件记录"已临时凑合、将来必补"的债。还债按对应流程回写：
-> §9 数值债走 AGENTS.md §十；设计债走 §八；表现债走 ~ 调参器。
-> 配套：AGENTS.md（守则）、docs/workflow.md（怎么还债）、CHANGELOG.md（已还的债）。
+> 本文件只保留“未来仍要决策或修复”的事项。已落地流水看 `CHANGELOG.md`，历史审查原文看 `docs/archive/REVIEW-20260723.md`，踩坑教训看 `docs/RETRO.md`。
 
-## 如何读这张表
-- **类型**：§9 数值债 / 表现债 / 设计债 / 工程债
-- **状态**：🔴 未还 / 🟡 部分 / ✅ 已还
-- **回写动作**：见最后一列
+## 0. 读取方式
 
----
+- `P0`：发布或接手硬阻塞，优先处理。
+- `P1`：明显 bug 或协作风险，进入近期计划。
+- `P2`：体验、表现或文档债，可排期。
+- 代码修复前仍按 `AGENTS.md` 先出《计划》，等待用户确认。
 
-## §1 §9 数值债（影响强度/平衡，须回写真理源 §9）
+## 1. P0 发布阻塞
 
-> 以下变量在代码中以 `🟡` + `TODO(候选)` 占位，真理源 §9 尚未量化，属"待回写债务"。
+| 项 | 影响 | 建议 |
+|---|---|---|
+| B-TUNE dev 工具未隔离 | `13_editor.js` GM 面板、`~` 键、移动端 GM 入口、`07_enemy.js` 训练假人仍可能进入玩家环境 | 加 `CONFIG.DEBUG.enabled/editorEnabled` 门控；发布版关闭；只影响 dev 工具可见性 |
+| iOS standalone 待真机复验 | 音频解锁逻辑已多轮修复，但用户尚未确认主屏模式稳定有声 | 用户用真机复验；失败再开音频专项 |
 
-| 文件 | 变量 | 当前占位 | 候选值 | 回写动作 |
-|---|---|---|---|---|
-| 08_skill.js | `SHIELD_ORBIT_SEC`(已删) | — | — | ✅ 已还：B-2 迁 `CONFIG.SKILL.shield.orbitSec=1.6`（§9 2026-07-12 登记）；08_skill.js 本地常量已删，`11_render.js` drawSkillAura 已同步读 `orbitSec`（消双份真相源） |
-| 08_skill.js | `SHIELD_ORB_RADIUS`(已删) | — | — | ✅ 已还：B-2 迁 `CONFIG.SKILL.shield.orbitRadius=[44,58,72,86,100]`（§9 2026-07-12 登记）；`11_render.js` drawSkillAura 已同步读 `orbitRadius` |
-| 08_skill.js | `ICE_SLOW_LINGER_SEC` | 0.5 | 0.3 / 0.8 | ✅ 已还：B-2 迁 `CONFIG.SKILL.ice.slowLingerSec=0.4`（减速跟随短窗，L1–4 每帧刷新 `applySlow(e,pct,slowLingerSec)`，离开约 0.4s 恢复；L5 冻结仍用 `lv5FreezeSec`）；原本地常量已删，减速时长 ≠ 冰区滞留时长 |
-| 08_skill.js | `COMBO_STEAM_INTERVAL_SEC` | 2.0 | 1.5 / 3.0 | 同上 |
-| 08_skill.js | `COMBO_ELECTRO_INTERVAL_SEC` | 已废弃 | — | ✅ 已还：语义由 `CONFIG.COMBO.electroTurret.cooldownSec=0.5`（§9 2026-07-11）承接，本地常量已删 |
-| 07_enemy.js | `CHARGE_DURATION_SEC` | 0.4 | 0.35 / 0.5 | 实测 → 登记 §9 |
-| 07_enemy.js | `WANDER_REDIR_SEC` | 1.5 | 1.2 / 2.0 | 同上 |
-| 07_enemy.js | `BOSS_FIRE_INTERVAL_SEC` | 1.2 | 1.0 / 1.5 | 同上 |
-| 07_enemy.js | `BOSS_FIRE_COUNT` | 6 | 5 / 8 | 同上 |
-| 07_enemy.js | `BOSS_BULLET_RADIUS` | 9 | 8 / 10 | 同上 |
-| 07_enemy.js | `BOSS_BULLET_LIFE_SEC` | 4.0 | 3 / 4 | 同上 |
-| 07_enemy.js | `DOT_TEXT_MIN` | 4 (原 10) | 3 / 6 | 表现聚合阈值，Commit A 由 10→4 让 DOT 飘字更频繁（视觉「持续小数字」）；**仅影响飘字聚合、不进伤害/命中判定**，登记 §9 |
-| 02_config.js | `STAGE.pool` | GDD 文字推断 | — | 🟡 待 §9 量化 stage pool（段③割草期 pool 已补 elite，对齐 §6 段③「全类型+精英」，§9 2026-07-11 已登记） |
-| 02_config.js | `SKILL.ice.lingerSec` | [2.0,2.5,3.0,3.5,4.0] (A) | 待实测标定 | 🟡 B-2 初值 A：冰区滞留时长（=减速持续初值，L1–4 每帧刷新短窗仍是 slowLingerSec）；实测后由 Notion 真理源 §9 回填 |
-| 02_config.js | `SKILL.ice.slowLingerSec` | 0.4 | 待实测标定 | 🟡 B-2 初值：减速跟随短窗（≠ 滞留时长），离开冰区约 0.4s 恢复；实测回填 §9 |
-| 02_config.js | `SKILL.shield.orbitRadius` | [30,40,50,60,70] (A) | 待实测标定 | 🟡 B-2 初值 A：护盾贴头点防曲线（headRadius=14，球落点刚好头外侧，不扩全身/不压火墙）；实测回填 §9 |
+## 2. P1 确认 bug / 工程护栏
 
----
+| 项 | 影响 | 建议 |
+|---|---|---|
+| CONFIG 深冻结未真正递归生效 | `02_config.js` 顶层先 freeze，`03_core.deepFreeze` 早退，嵌套对象仍可写；运行时调参覆盖也依赖这个现状 | 单独计划修正“冻结 + 覆盖”口径，避免静默篡改或启动炸裂 |
+| GM 碰撞盒蛇头圈默认不画 | `11_render.js` 基线缺 `PLAYER.headRadius`，默认 `arc(NaN)` 静默 no-op | 在渲染基线补键，dev-only 修复 |
+| `RENDER.worldScale` 双源 | `CONFIG.RENDER.worldScale` 看似可调，但实际多走 `PERF.tiers`/RT，易误导调参 | 更新注释或统一取值模型 |
+| RT path 单位/索引陷阱 | `turnRateDecayPerSeg` 百分比/小数双口径、`aggroRangeByStage` 1-based/0-based、虚拟 path 易误持久化 | 给 editor 调参通道加红线或统一命名 |
+| AOE 判定口径不一 | 冰池精确圆判定；火墙/护盾/蒸汽沿用 SpatialHash cell 候选，实效半径大于标称 | 用户拍板：保留 cell 手感并写明，或改精确判定后重调数值 |
 
-## §9 回写清单（2026-07-23 登记 · 仅记账，不碰 §9 真源 MD）
+## 3. P1/P2 Gameplay 与体验债
 
-> 本清单登记「**代码已落值、§9 真源无记录**」的项，供胖胖回写真理源 §9 时逐项核对。
-> 约定：本清单只登记**待回写**项；**设计未量化**项单列于 B，不进回写清单（量化定稿后才归 §3 设计债 / 回写 §9）。
-> AI 绝不改 §9 真源 MD、绝不改 config 值；只在胖胖回写完成后配合更新「§9 已回填」状态。
+| 项 | 状态 | 建议 |
+|---|---|---|
+| 边缘撞墙回正 | 已落地待用户实测 | 复验绿后归档；失败则重开计划 |
+| 铁壁蛇阵 | GDD 有规划，需动 `03_core.js` / `04_collision.js` | 属底层改动，必须先确认影响面 |
+| Boss 召唤小怪 | GDD 有规划，代码未实现 | 作为 Boss 玩法专项 |
+| Boss 子弹命中蛇头伤害 | 审查确认仍待处理 | 需要先定伤害/反馈，再计划 |
+| 满级后溢出转化 | 成长系统未实现 | 作为经济系统专项 |
+| 电磁 Combo 可读性弱 | 与基础闪电链视觉同质 | 先做表现方案，不急改数值 |
+| 移动端窄屏适配 | 主流程可玩，极端窄屏仍后置 | 等桌面手感主线稳定后处理 |
 
-### A. 待回写 §9（3 项 · 代码已落初值、真源无记录）
+## 4. 数值与设计待确认
 
-| 字段 | 当前值 | 候选 / 依据 | 来源 | 状态 |
-|---|---|---|---|---|
-| `PICKUP.food.overflowScore` | 10 | 候选 `[5/10/20]`；score 用途未定，仅占位 | #1 新增 | 🔴 代码已落值、§9 待回写 |
-| `PICKUP.dangerBias.ringMin` / `ringMax` | 40 / 150 | `ringMin` 候选 `[30/40]`；`ringMax` 候选 `[120/150/180]` | 补给危险偏向新增 | 🔴 代码已落值、§9 待回写 |
-| `SKILL.shield.orbitHitMul` | 0.5 | 几何因子「命中半径占 `orbitRadius` 比例」，待标定 | B-2 护盾 | 🔴 代码已落值、§9 待回写 |
+| 字段/主题 | 当前问题 | 建议 |
+|---|---|---|
+| `PICKUP.food.overflowScore` | 代码已有占位，旧数值文档未同步 | 后续按调参提案确认 |
+| `PICKUP.dangerBias.ringMin/ringMax` | 代码已有危险偏向距离 | 后续按调参提案确认 |
+| `SKILL.shield.orbitHitMul` | 几何命中因子待标定 | 通过 GM/实测校准 |
+| `STAGE.pool` | 段位敌池来自设计文字推断 | 作为关卡节奏设计项确认 |
+| 敌人/Boss 若干本地表现值 | 历史表内有候选，但未统一收口 | 做敌人专项时统一迁回 CONFIG 或注明表现值 |
 
-### B. 单列 · 非回写债（设计未量化，不进 §9 回写清单）
+## 5. 美术与发布表现债
 
-| 字段 | 状态 |
-|---|---|
-| `STAGE.pool` | 🟡 设计未量化（GDD 文字推断）；属设计决策队列，量化定稿后才进 §9；**不进本回写清单** |
-
----
-
-## §2 表现债（纯视觉/节奏，不影响平衡）
-
-| 文件 | 位置 | 当前 | 候选 |
-|---|---|---|---|
-| 11_render.js | `TELEGRAPH_BLINK_HZ` | 8 | 6 / 10 |
-| 11_render.js | `TELEGRAPH_ARROW_LEN` | 22 | 18 / 28 |
-| 11_render.js | `BOSS_WARN_PULSE_HZ` | 6 | 4 / 8 |
-| 11_render.js | `BOSS_WARN_BORDER_PX` | 8 | 6 / 12 |
-| 11_render.js | 护盾描边/内晕 alpha | 0.45 / 0.06 | 0.35/0.55, 0.04/0.09 |
-| 11_render.js | 护盾球半径 | 5px | 4 / 6 |
-| 11_render.js | 冰域显示节数 | 5 | 4 / 8 |
-| 05_particle.js | 弹道光束色 `BOLT_COLOR` | #fff1a8 | #ffffff / #ffe066 |
-| 05_particle.js | 弹道光束存活 `BOLT_LIFE` | 0.2s | 0.15 / 0.25 |
-| 05_particle.js | 光束线宽 `BEAM_W_PX` | 3px | 2 / 4 |
-| 05_particle.js | 电链色 `LIGHTNING_COLOR` | #9fd0ff | #bfe3ff / #88ccff |
-| 05_particle.js | 电链线宽 `LIGHTNING_W_PX` | 2px | 3 / 1.5 |
-| 05_particle.js | 电链存活 `LIGHTNING_LIFE` | 0.22s | 0.18 / 0.28 |
-| 05_particle.js | 电链抖动 `LIGHTNING_JAG` | 14px | 10 / 20 |
-| 05_particle.js | 爆环色 `BLAST_COLOR` | #ffb04d | #ff8a3d / #ffd27a |
-| 05_particle.js | 爆环存活 `BLAST_LIFE` | 0.4s | 0.3 / 0.5 |
-| 05_particle.js | 爆环线宽 `BLAST_RING_W` | 4px | 3 / 6 |
-| 05_particle.js | 命中/爆散爆点 `HIT_BURST_N` | 6颗 | 4 / 8 |
-| 05_particle.js | 飞镖飞行时长 `BOLT_FLY_SEC` | 0.14s | 0.12 / 0.18 |
-| 05_particle.js | 飞镖拖尾占比 `DART_TRAIL_PX` | 10 | 8 / 14 |
-| 05_particle.js | DOT 飘字色 `DOT_TEXT_COLOR` | #ff7a3c | #ff6a2c / #ff944d |
-| 05_particle.js | DOT 飘字字号 `DOT_TEXT_SIZE` | 11 | 10 / 12 |
-| 05_particle.js | 来源标签色 `SRC_STYLE.bolt`（飞镖青） | #2ad4ff | #29c7ff / #3fe0ff |
-| 05_particle.js | 来源标签色 `SRC_STYLE.lightning`（闪电紫） | #c9a8ff | #b98cff / #d8bcff |
-| 05_particle.js | 来源标签色 `SRC_STYLE.shield`（护盾白金） | #ffe6a3 | #ffd166 / #fff0c2 |
-| 05_particle.js | 来源标签色 `SRC_STYLE.steam`（蒸汽暖橙） | #ffb04d | #ff8a3d / #ffd27a |
-| 11_render.js | 受击红闪时长 `HURT_VIGNETTE_SEC` | 0.45s | 0.35 / 0.6 |
-| 11_render.js | 火环跳动频率 `FIRE_FLICKER_HZ` | 12 | 10 / 16 |
-| 11_render.js | 护盾拖影占比 `SHIELD_GLOW_TRAIL` | 0.18 | 0.12 / 0.25 |
-| 11_render.js | 护盾球半径（drawSkillAura） | 6px | 4 / 6 |
-| 12_ui.js | combo 横幅配色 `COMBO_COLOR` | 候选值 | UX 复核 |
-| 10_audio.js | 各音效 freq/dur | 候选值 | ~ 调参器微调 |
-| 13_editor.js | 调参清单 | 待确认 | 实测补全 |
-| 12_ui.js | `SKILL_LABEL` | 待确认 | UX 复核 |
-| 08_skill.js / 11_render.js / 10_audio.js | 电磁 Combo(`fx:electroarc`) vs 基础闪电链(`fx:lightning`) 视觉同质 | 满屏特效读不出「弹射→闪电」联动（P1 实测调 cooldownSec 仅提频~25% 仍无感） | 独占色(紫更跳·与基础蓝白拉开)/专属音效/命中锚定弹体(从命中点放射)/更强分叉(hops↑·跳跃更夸张) | 🟡 表现债（① 可见性）：电磁轴暂缓，下一步不做 |
-
----
-
-> **B-4 combo VFX 表现债（2026-07-13）**：`05_particle.js` 新增 `flashCores` 叠层闪核（蒸汽白 `rgba(255,255,255,0.92)`/电磁紫 `rgba(201,168,255,0.55)`）、蒸汽白蒸汽云 `rgba(255,255,255,0.8)`/冰晶 `#9fdcff`、电磁紫电链 `#c9a8ff`、灼烧橙镖 `#ff7a3c`/内芯 `#ffd27a` —— 均为 inline 字面量，与文件顶部 `🟡 TODO` 块风格一致，待 ~ 调参器定稿并建议提进顶部 TODO 块常量（对齐 `SRC_STYLE.lightning` / `DOT_TEXT_COLOR` / 冰区 `COLORS`）。
-
-## §3 设计债（GDD 已规划、代码未实现，须 §八 计划）
-
-- 🔴 **铁壁蛇阵**：需改 `03_core.js` / `04_collision.js` → 走 AGENTS.md §三 流程。
-- 🔴 **Boss 召唤小怪**：`07_enemy.js` 当前未实现。
-- ✅ **技能沿蛇身铺开**：B-2 火/冰/护盾已沿蛇身逐节判定（`08_skill.js` tickFire/tickIce/tickShield 读 config 半径/宽度/`segStep`/`orbitRadius`/`orbitSec`，同帧去重），且 `11_render.js` drawSkillAura 已沿身绘制（火墙/霜冻带沿整条蛇、护盾读 config 公转），视觉=判定；真理源 §4.1/§4.2/§4.4/§9 已回写。
-- 🔴 **满级后溢出转化**：成长系统未实现。
-
-> 以上以《GDD v0.3》为准；落地前须在 `docs/plans/` 出 §四 计划并经你确认。
-
----
-
-## §4 工程债
-
-- ✅ **render.js 硬编码护盾参数**：B-2 已消除——`11_render.js` drawSkillAura 改为读 `CONFIG.SKILL.shield.orbitRadius/orbitSec`（取代写死 26/1.6），火/冰沿蛇身绘制，并补 GM「显示碰撞盒」`drawDebugHitboxes` 钩子（读 `global.GMDBG.showHitboxes`）。双份真相源已消（§1 对应债同步还）。
-- ✅ **手动 .bak 备份**：已被 Git 取代（2026-07-11 落地时清理）。
-- 🔴 **dev-only 标定工具隔离（B-TUNE）·【2026-07-27 封版确认：发布硬阻塞仍开】**：`13_editor.js` 运行时覆盖层 `rtTuning`（`RT()` 桥接 `08_skill.js` tickFire/tickIce/tickShield 实时读取，仅换输入来源、不写 config）与 `07_enemy.js` 训练假人 `spawnDummy`（`die()` 钳血 `e.hp=1` 不秒、`baseSpeed=0` 站着、`countMobs` 排除）均为**纯 dev 测试工具，不得进 release 路径**。**现状（封版快照）**：`13_editor.js` 的初始化、`document.addEventListener('keydown','`/~')`、`Bus.on('editor:toggle')` 与 `07_enemy.js` 的 `spawnDummy` 均**未**受 `CONFIG.DEBUG.enabled`/`editorEnabled` 门控，仍随包加载 → `~` 键 / ⚙ 按钮在玩家环境可唤起 GM、可生成训练假人。**这是封版 / GA 前的硬阻塞**，必须 Codex 接手：将 `13_editor.js` 的 init/`keydown`/`Bus.on` 整体包 `if (CONFIG.DEBUG.editorEnabled)`，`spawnDummy` 调用点加 `DEBUG` 守卫，发布版 `CONFIG.DEBUG.editorEnabled=false`。影响仅 dev 工具可见性，零 gameplay 变化。详见 `docs/HANDOFF-CODEX.md` §7。
-- ✅ **冰区减速每帧扫描（B-2 perf 债·#6 已还）**：`08_skill.js` 的 `enemiesIn`（火墙/冰池/护盾球/蒸汽引爆共用 AOE 索敌）原每帧每 AOE 中心一次 `collision.queryCircle`（含字符串 key 拼接/map 查找/新数组分配的 GC 抖动）。#6 改为复用每帧 `_enemySnap` 做 **cell 覆盖相交判定**，精确复刻 `SpatialHash.query` 返回集合（cell 级宽松、非精确圆），等价候选③「空间网格预筛」且更彻底——所有 AOE 索敌统一受益、零每帧分配；`04_collision.js` 未动；`CONFIG.SPATIAL.cellSize` 复用（§6 禁裸数字）。实测帧时不再卡。
-- ✅ **B-2 回归·Bus 事件名大写导致粒子系统崩溃（2026-07-13 修复）**：`08_skill.js` 新增「敌人进入冰区」事件时用了 `fx:iceSlow`（含大写 `S`），而 `03_core.js` 的 `Bus` 断言强制事件名全小写（`/^[a-z0-9]+:[a-z0-9_]+$/`）。后果：`05_particle.js` 加载期 `Bus.on('fx:iceSlow',…)` 触发断言 **抛错 → 整个粒子系统未注册 → 所有技能特效（火/电/爆环/光束）与伤害数字全部消失**；同时 `08_skill.js` 的 `Bus.emit('fx:iceSlow')` 与监听名不一致 → 「减速」飘字永不发出。修复：两处（on/emit）统一改名为全小写 `fx:iceslow`。**教训**：新增 Bus 事件名必须全小写、且 on 与 emit 必须同名；建议后续在 `Bus.on/emit` 旁加注释提醒，或在代码评审清单里列一条「事件名全小写且收发同名」。**验证**：Node 沙盒加载全部模块确认 `particle` 注册、冰减速 280/400 帧生效、`fx:iceslow` 进入触发 1 次（飘字正常）。
-- ✅ **第三次同类事故·Bus 事件名驼峰致 collision 模块崩溃（2026-07-22·决策A已落地）**：`04_collision.js` `Bus.on('collision:setRadii')`（`setRadii` 含大写 `R`）触发 `03_core.js` Bus 断言抛错 → IIFE 中断 → `Registry.register('collision')` 未执行 → 整个碰撞系统未注册 → 吃食物/撞怪全失效。**已是同类第 3 次**（①2026-07-13 `fx:iceSlow`→粒子系统崩溃；②本次 `collision:setRadii`→碰撞崩溃；③RETRO §4 已立"全小写"铁律仍再犯）。**根因升级认知**：真正要防的 bug 是「on 与 emit 不同名」，而非「用了大写」——当前正则 `/^[a-z0-9]+:[a-z0-9_]+$/` 把"风格违规"升级成"致命崩溃"（整模块静默失效）；且驼峰是开发者/AI 自然习惯、有文档教训仍会犯 → 防线不稳。**决策 A（2026-07-23 落地）**：放宽 Bus 正则允许驼峰（`^[a-z0-9]+:[a-zA-Z0-9_]+$`）+ `on` 的 assert 改为 `Log.warn` 软拒绝（格式可疑仅告警+跳过注册，模块不崩），根除"单事件名错误拖垮整模块"根因；仍建议全小写风格、on/emit 必须同名（真正要防的 bug）。详见对话分析 + CHANGELOG。
-- 🟡 **美术管线基建（#M0 美术债·2026-07-22）**：`11_render.js` 新增精灵子系统（`SPRITE_MANIFEST`/`_spriteCache`/`SPRITE_BASELINE`/`getSpriteRadius`/`preloadSprites`/`drawSprite`），`drawSnake` 头/身/尾接 `drawSprite`、fallback＝原 `circle()` 代码画；`snake55/assets/` 当前为空（`.gitkeep`）→ 全部 404 → 永远走 fallback（画面零变化、不白屏、不抛错）。`13_editor.js` 加 `PLAYER.headRadius`/`PLAYER.bodyRadius` 滑条（`RANGE.playerRadius=[4,40,1]`，L2 实时：rtSet(RT桥→视觉)+Bus('collision:setRadii')→判定/墙碰，免重载；override 仍写供「保存并重载」持久）。**对抗性复查（2026-07-22 已修 2 处）**：①`ASSETS_BASE` 原写死 `'snake55/assets/'`——`img.src` 相对**页面 URL**解析，而 `index.html` 与 `assets/` 同处 `snake55/`，任一服务方式（项目根/`snake55/`根/`file://`）都会拼成 `…/snake55/snake55/assets/` 全 404（被空 assets 静默掩盖，加真图才爆发）；已改 `'assets/'`（相对 index.html，任意方式皆对）。②蛇尾「双绘」——身体循环原把最后一节也画 body 圆/图，之后尾巴块又在同一位置画 `snake_tail`，空 assets 时尾巴块 `drawSprite` 返回 false 不显（看不出），接真图会重影；已改身体循环从 `segs.length-2` 起、尾巴块 fallback 时补画同半径圆，两种状态都只画一次。**#M1（接真图必办）**：①`snake_tail` pivot `[0.5,1.0]` 与 fallback 圆（中心锚点）不一致，接真图会跳位 → 需校 pivot；②manifest `solidDiameterPx`（64/48/48）接图时必须与实际 PNG 实心视觉直径一致，否则缩放错；③head 受击 squash（`s.squash`）与无敌闪烁 alpha 不作用于精灵路径（`drawSprite` 用等比缩放、不吃 squash/blink）→ 接真图后头部挤压/无敌闪会消失（视觉回退，待定是否补进精灵路径）；④head 按 `h.angle`(0=+x) 旋转、tail 用 `pivot:[0.5,1.0]` 并要求美术「连接点朝下/尾尖朝上」，接图须按此约定配图；⑤精灵 `Image` 在 `init` 一次性 `new`，空目录已 `onerror→failed` 永不重试，**放 PNG 后须整页刷新**才会加载（运行时热加不生效）。**时序保证**：`SPRITE_BASELINE` 在 `11_render.js` 模块加载时读取 `PLAYER.headRadius`，而 `03_core.js` 已在 `deepFreeze(CONFIG)` 前 `applyTuningOverrides()` 把 localStorage 覆盖写回 CONFIG，且 `11_render.js` 在 `03_core.js` 之后加载 → 视觉与 `04_collision`（同读冻结 CONFIG）同随（看到=打到）。
-- ✅ **临时碰撞诊断产物（2026-07-22 加·定位用→已还）**：原 `14_main.js` 的 `diagTick()` + `index.html` 的 `#diag` 顶部状态条，为定位"吃不到/撞不到"临时加；根因（`collision` 事件名驼峰违例）已定位并修复后，已按约定**删除** `diagTick`/`#diag`（纯诊断债清理，零功能影响）。保留项：`index.html` onerror 兜底前移（红字）+ `04_collision.js` `try/catch`（启动异常→控制台留痕+红字），作长期防御债，杜绝今后脚本错误被静默吞掉。
-- ✅ **PWA manifest 主题色不一致（2026-07-27 封版修）**：`manifest.webmanifest` 的 `theme_color`/`background_color` 原为 `#0a0e1a`，与 `index.html`（`#11162a`）不一致 → 已装 standalone PWA 用旧色致启动缝/刘海残留（页面侧刘海虚影修复未覆盖已装 PWA）。已同步为 `#11162a`（与页面同色）；用户重新「添加到主屏幕」才刷新 manifest。
-- ✅ **有害调试开关 __CAM_LOCK 已移除（2026-07-23·相机话题冻结）**：GM 面板"相机锁定插值头(消头抖)"开关为失败实验——硬锁蛇头绕过 `updateCamera` 缓动，反而把蛇速逐帧起伏透传到世界滚动→中心区顿(用户实测确诊)。已彻底删除(`11_render` 相机分支 + `13_editor` 开关/矩阵 C3/C4 lock 维度/还原逻辑)，相机永远走 `updateCamera` 帧率无关缓动；其默认本就关，游戏出厂即平滑。此后相机话题冻结。
-- 🟡 **stage0「零图片」→ 混合路线 决策反转（2026-07-24）**：原 stage0 计划「零图片 / 删 M0 精灵基建 / 删 assets」被推翻，改走「PNG 优先 + 代码画兜底」混合路线（已与用户确认）。落地：`11_render.js` 新增敌人守卫式加载器（`ENEMY_SPRITE_FILE` + `drawEnemySprite`/`drawEnemySpriteWithFx`，缺图/失败 → 永远回退代码画、零破功）；`snake55/assets/enemy_wanderer.png` 试点蜗牛贴图已落（AI 生成 512×512 透明 PNG，`?v`/`SPRITE_VER` 双重破缓存）。**2026-07-24p 已修/澄清（用户三点反馈）**：①**大小比例真 bug**= 24n 把 `spriteVisualScale` 设 2.4/2.4/2.0/1.4/1.2 压小大怪、破坏原代码画按 radius(10/11/14/24/60) 的比例→"大小都一样"。已统一 `2.4`(`drawEnemySpriteWithFx:235` 直径=`radius*2*vs`)，恢复 10:11:14:24:60 阶梯(wanderer48/chaser53/charger67/elite115/boss288px)，纯视觉零 gameplay。②**Boss 猫头鹰澄清**=代码已正确加载 `assets/enemy_boss.png`(`drawEnemySprite:222` 全 type 统一路径、无硬编码 fallback)；全工作区仅 5 张 `enemy_*.png`、**无单独猫头鹰图**→"没换猫头鹰"=该 `enemy_boss.png` 非猫头鹰 或 未强刷；请确认/覆盖猫头鹰图(命名 `enemy_boss.png`)或告知真文件名改 `ENEMY_SPRITE_FILE`。③**摇杆排查**=代码无"接不到输入"bug(绑定/方向计算正确)，此前"不灵敏"主因=24o 修的 `_gmOpen` 卡死(已修)，另一"迟钝感"= `06_snake:95` 转向限速 `turnRate=180°/s`(手感设计参数，非 bug)；强刷 `fc6` 复验，仍钝则调 turnRate(§十)。缓存戳升 `fc6`。lint 0 错误。
-**2026-07-24o 已修（三处，用户确认计划）**：①**GM/摇杆卡死根因**= `13_editor.js` 的 `~`键(:641)与 `×`按钮(:308) 直接 `toggle()` 绕开 `Bus.emit('editor:toggle')`，而翻 `_gmOpen`(摇杆挂起标志) 的唯入口是 14_main:158 的 Bus handler → ⚙打开后再用 ~ / × 关闭会让面板 `open` 翻 false 而 `_gmOpen` **卡 true** → 摇杆全位置永久失效。已把 ~ / × 统一改 `Bus.emit`（与 ⚙/14_main handler 同步翻转），任一入口开关后状态恒一致。**此 bug 是引入 ⚙按钮时既有、非 AI 本轮引入，但被本次 ⚙/× 操作触发**；②**怪物顺序**：蜗牛最小→`STAGE` 段1(保护期)只刷 `['wanderer']`、段2 加 `'chaser'`，老鼠成长期登场；③**怪物不重叠**(用户决策"不让怪物重叠"治本)：`07_enemy.js` spawn 加敌-敌间距重试 + update 加分离 pass(纯 list 遍历/不动 core·04/boss·假人豁免保弹幕与冲撞手感)。缓存戳 `?v`/`SPRITE_VER` 升 `fc5`。lint 0 错误。
-**2026-07-24n 修正**：①敌人图实际来源=用户在 `f:/用AI做游戏/Codebuddy专区/` 根**自制**的 5 张英文命名 PNG（500×500·RGBA 透明，已用 IHDR 核验），已复制到 `snake55/assets/` 接管——**非 AI 生成图**（AI 生成的 4 张被用户图覆盖，用户图即意图真源）；②「小方格」根因=小怪半径小+原 `spriteVisualScale=1.2`→显示直径仅 26-34px 糊成方块，已逐只调大(wanderer2.4/chaser2.4/charger2.0/elite1.4/boss1.2)修；纯视觉、零 gameplay。蛇头 PNG 之上叠代码眼 `drawSnakeEyes`——**2026-07-24l 修正：眼睛只随头朝向旋转、瞳孔固定朝前、不追食物/敌人**（上版追目标导致前进时瞳孔朝后翻，已移除 `nearestEyeTarget` 与 config `eyeTrackRangePx` 死字段）。纯视觉，未动 core/collision/07_enemy/02_config 既有数值/§9。
-
----
-
-## §5 今日未决（2026-07-23 渲染调参会话遗留 · 🔴 待修）
-
-- ✅ **中心区蛇头闪（build t/u/v 三版均未打中真凶，已于 2026-07-23f 修复）**
-  - **现象**：地图中心死盯蛇头/身 → 闪烁；边缘（贴墙、相机 clamp 冻结）不闪。GM 无敌时的"双画面重叠"已 by build v 整蛇同淡出修复，但**位置闪烁仍在**。用户确认"以前也会闪烁"（即本轮前已存在，非本次引入）。
-  - **对抗性审查结论（今日复盘·强假设）**：真凶极可能是 **相机像素吸附（`__PIXEL_SNAP`，build i 引入，11_render.js ~527 行）与跟随相机叠加造成的"双重取整 toggle"**，与本轮 t/u/v（原生步进 / 移动实体吸附 / 头旋转烘焙）**正交**，故三版都没修到。
-  - **机制（可复现、解释力最强）**：相机 `rcxS = round(rcx*S)/S`（S=ws*dpr，吸附到设备像素网格）；实体（蛇头）`hx = round(headX*S)/S` 也吸附同网格。屏幕设备像素位置 `headScreen = (hx - rcxS)*S = round(headX*S) - round(rcx*S)`。**两个独立取整相减** ≠ 取整差值：相机连续滚动时其 `round(rcx*S)` 与 `round(headX*S)` 在不同子像素阈值处跳变，差值每跨阈值即 ±1 设备像素跳变 → 中心区（相机自由跟随头、头偏离量≈lookahead 的量化值）蛇头每帧 ±1px 跳 = 肉眼"闪"。**边缘相机被 clamp 冻结** → `round(rcx*S)` 恒定 → 无 toggle → 不闪。**与实测 100% 吻合**。
-  - **为何 t/u/v 没修到**：t=模拟原生步进（治 60Hz 节奏 judder，无关位置取整）；u=把蛇头/身/敌/拾取/护盾/火墙的**世界坐标**独立吸附（仍是"先取整再被吸附相机相减"，toggle 照旧，只是把软亚像素闪变成 1px 硬跳，未消除）；v=头旋转角烘焙进离屏（治旋转重采样爬行，另一类 AA，仍无关位置 toggle）。
-  - **正确修复方向（待 §八 出计划）**：**改"相对屏幕吸附"**——不再 `round(world*S)` 与 `round(cam*S)` 各自取整后相减，而是吸附**差值**：`snapRelX(w) = rcxS + round((w - rcxS)*S)/S`（模块级暴露 `camSnapX/camSnapY`，在 draw() 与 `_snapGrid` 同处写入），整条蛇/敌/拾取/护盾/火墙的 `snapW` 全部改走 `snapRelX/Y`。这样世界（相机吸附）与实体（相对吸附）共网格、且屏位=对"差值"单次取整 → toggle 消失、中心/边缘一致。仅当要保留 build u 的"实体稳定渲染"收益时才需此改；若认为 build i 的相机吸附本就过犹，备选是**直接关 `__PIXEL_SNAP`** 看中心闪是否消失以反证（最快验证假设）。
-  - **验证步骤**：①`window.__PIXEL_SNAP=false` 强刷 → 若中心闪消失/大减 → 坐实相机吸附为元凶（build i 引入）；②若仍闪 → 另查模拟层（见下条 build t 残留核查）。
-  - **2026-07-23 已加游戏内一键诊断（GM 面板「中心闪自动诊断」区）**：点「▶ 一键采样矩阵」自动跑 C1(snap开/cam动)·C2(snap关/cam动)·C3(snap开/cam锁)·C4(snap关/cam锁) 四格（时长可输入，默认 16s），按"蛇头离屏心距离"自动拆**中心相位/边缘相位**对比；指标=屏幕渲染位置(disp)相对本该在的连续位置(true)的逐帧跳变≥1设备px 且 真值几乎未动(<0.5px) 的伪影帧率；点「📋 复制报告」直接发 AI。v2 修正两处 bug：①去掉"真值需位移>0.2px才计数"的错闸门（相机跟随使蛇头屏上≈静止→v1 全 0 漏采）；②prev 改深拷贝（v1 误存 render 每帧 mutate 的同一 _flk 引用→前后帧恒等→差恒 0）。原理：关 snap 时 disp=true→C2/C4 伪影率必≈0 作对照；C1 中心高&C1 边缘低→相机运动(双重取整)为主因。采样时玩家先中心走几圈再去边缘走几圈。
-  - **影响面**：纯渲染、零 gameplay/§9；但改 `snapW` 签名/调用点较多（11_render.js 全实体绘制），走 §八 计划闸。
-  - **✅ 已修复（2026-07-23f · 走 §八 计划闸，用户确认后落地）**：`11_render.js` 旧 `snapW(v)=round(v*S)/S` 改为**相对相机单次取整** `snapWX(v)=(round((v-_camX)*S)+round(_camX*S))/S`、`snapWY(v)` 同理（`_camX/_camY` 在 draw() 相机块后写入未吸附真值 rcx/rcy）。整条蛇头/身、敌、拾取、护盾、火墙的全部 `snapW` 调用改走 `snapWX/snapWY`；相机 `translate(-rcxS)` 维持不变（静态世界仍整数设备像素滚动→不丢 build i 的 shimmer 修复）。数学等价 `rcxS + round((w-rcx)*S)/S` = 对"相对相机差值"**单次取整**，消除 `round(头)-round(相机)` 双取整 toggle→中心闪消除；边缘因相机冻结本就不闪、维持。诊断 `diagFlickerTick` 同步改为采样真实屏位 `round((ih-rcx)*S)`。零 gameplay/§9，零 lint。**待验收**：重跑 GM 一键矩阵，预期 C1/C3 中心相位伪影率（原 39–41%/26%）→≈0%，C2/C4 维持 0%。
-  - **残留定位（2026-07-23g · 纯 dev 诊断增强）**：矩阵中心相位归零后用户仍感中心区蛇头"糊/微动"。根因是吸附位图"最小1px台阶步进"（头在动才跳、非 toggle），旧伪影指标（要求真值不动<0.5px）捕获不到→显示0%。已在 `13_editor.js` 矩阵新增"诚实1px台阶"指标（中心/边缘台阶帧占比% + 估算次/秒，用实时fps）：预期 C1/C3(开吸附)中心台阶率>0、C2/C4(关吸附)=0% → 印证台阶是"清晰吸附"固有代价（清晰⇄平滑不可兼得）。**是否进一步压台阶=待评估**：可走相机滞后 `followLerp=0.4`（手感三参之一，需单开一轴按计划调，不顺手改）或接受（已比修复前好一个量级）。
-
-## 还债顺序（呼应 AGENTS.md §七 / §十）
-
-1. **§9 数值债**：实测 → 回写真理源 §9 → 同步 config.js → 登记 §9 Changelog。
-2. **表现债**：~ 调参器试探 → 定稿 → 删 TODO 占位。
-3. **设计债**：`docs/plans/` 出 §四 计划 → 你确认 → 落地 → CHANGELOG 登记。
+| 项 | 影响 | 建议 |
+|---|---|---|
+| 根目录 `snake_head.png` | 疑似历史/备用素材，`snake55/assets/snake_head.png` 已存在 | 后续比对哈希和引用，确认无用再删 |
+| Boss 图不符合“猫头鹰”预期 | 美术表达不准 | 美术替换专项 |
+| snake body/tail 无图 | 仍由代码绘制 | 视觉升级时再处理 |
