@@ -28,7 +28,11 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var ownedSkillIds = {}
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
-	function audioDiagRequested() { return !!(global.location && /(?:^|[?&])audioDiag=1(?:&|$)/.test(global.location.search || '')) }
+	function audioDiagRequested() {
+		var queryEnabled = !!(global.location && /(?:^|[?&])audioDiag=1(?:&|$)/.test(global.location.search || ''))
+		var standalone = !!(global.navigator && global.navigator.standalone) || !!(global.matchMedia && global.matchMedia('(display-mode: standalone)').matches)
+		return queryEnabled || standalone
+	}
 	function renderAudioDiag() {
 		if (!audioDiagText) { return }
 		var audio = Registry.get('audio'), d = audio && audio.diag ? audio.diag() : null
