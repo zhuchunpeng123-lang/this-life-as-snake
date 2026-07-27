@@ -16,8 +16,6 @@
 | [④-B-屏震打击感精修.md](./④-B-屏震打击感精修.md) | 🟡 待办 | 可被后续总控优化路线重新评估 |
 | [B-TUNE-dev-tools-gating.md](./B-TUNE-dev-tools-gating.md) | 🟡 已落地待复验 | 发布硬化第 1 项；按测试清单复验后归档 |
 | [B-TUNE-dev-tools-gating-测试清单.md](./B-TUNE-dev-tools-gating-测试清单.md) | 🟡 待复验清单 | 覆盖 Release/半开/Dev 三种 DEBUG 组合 |
-| [static-check-project.md](./static-check-project.md) | 🟡 已落地待验收 | 发布硬化第 2 项；等待用户确认验收后归档 |
-| [static-check-project-test-checklist.md](./static-check-project-test-checklist.md) | 🟡 已落地待验收 | 基线与五类故障注入已执行，等待用户确认 |
 | [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 部分落地 | 移动端窄屏/表现微调后置 |
 | [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 已落地待实测 | 用户浏览器复验，绿后归档 |
 | [需求B-边缘撞墙回正-测试清单.md](./需求B-边缘撞墙回正-测试清单.md) | 🟡 待实测清单 | 跟随需求B复验结果处理 |
@@ -26,6 +24,8 @@
 
 | 文件 | 状态 | 备注 |
 |---|---|---|
+| [static-check-project.md](./archive/static-check-project.md) | ✅ | 最小静态检查脚本已落地并完成用户验收 |
+| [static-check-project-test-checklist.md](./archive/static-check-project-test-checklist.md) | ✅ | 基线与五类故障注入均通过 |
 | [2026-07-20-perf-fps28.md](./archive/2026-07-20-perf-fps28.md) | ✅ | 性能根治实测 |
 | [2026-07-20-perf-rootcause.md](./archive/2026-07-20-perf-rootcause.md) | ✅ | 性能根因提炼 |
 | [2026-07-20-round6-cleanup.md](./archive/2026-07-20-round6-cleanup.md) | ✅ | 推翻 round5 误判 |
