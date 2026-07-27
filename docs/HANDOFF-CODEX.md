@@ -227,3 +227,99 @@
 ---
 
 > **一句话收尾**：理解 §2 硬规则 + §3 文件职责 + §4 机制 + §7 待修清单 + §8 巨坑，你就能安全接手本项目。任何不确定，先出计划问用户，别闷头改底层。
+
+---
+
+## 12. Git 仓库配置与版本推送 SOP（给 Codex：无缝接手 + 帮你 push）
+
+> 本仓库已建好远程、已可 push。下面是所有让 Codex 直接 `git push` 不掉坑的事实与命令。**发布决策（是否 GA、是否打 tag）仍由用户拍板**，但日常把改动推上 `origin/main` 是你可以直接做的。
+
+### 12.1 远程与当前状态（已核实）
+```
+remote.origin.url = https://github.com/zhuchunpeng123-lang/this-life-as-snake.git
+branch.main      → 跟踪 origin/main（已 up-to-date，working tree clean）
+```
+- 当前 HEAD：`main`，与 `origin/main` 同步，无未提交改动。Codex 可直接在此基础上工作。
+- 仓库无 CI、无 hook（`.git/hooks/` 为空）、无保护分支规则 → push 是直推，无需 PR。
+- 用户身份已配置（提交者）：`name=zhuchunpeng123-lang` / `email=zhuchunpeng123-lang@users.noreply.github.com`，**不要改**。
+
+### 12.2 分支策略（重要：别乱 push）
+| 分支 | 位置 | 含义 | Codex 操作 |
+|---|---|---|---|
+| `main` | 本地 + origin | **唯一发布基线**，封版快照 commit `5a5b5d6` | 日常改动推这里：`git push origin main` |
+| `v0` | 本地 + origin | 早期旧基线（已弃用） | 别动、别删、别合 |
+| `ab-13c915b` | 仅本地 | 实验快照：smooth 60Hz 累加器 FPS 版（性能对比用） | **别 push**（本地参考，丢了无妨但无远程） |
+| `ab-52d076a` | 仅本地 | 实验快照：美术重写版 | **别 push** |
+
+> ⚠️ `ab-*` 是本地独占的对照实验分支（验证 FPS 根因 / 美术重写用），**没有推到 origin，也不该推**。只维护 `main` 即可。
+
+### 12.3 🔴 代理坑（最容易让 push 卡死）
+`.git/config` 里写死了：
+```
+[http]
+	proxy = http://127.0.0.1:7897
+```
+这是用户本机 Clash 类代理。若 Codex 跑在**另一台机器 / 不同网络**（代理不存在或端口不对），`git push`/`git fetch` 会**直接挂起或超时失败**。
+- 若 Codex 环境不需要代理：`git config --unset http.proxy`（仅影响本仓库，安全）。
+- 若 Codex 环境有自己的代理：改成对应地址，例如 `git config http.proxy http://127.0.0.1:<你的端口>`。
+- 快速自检：`git config --get http.proxy` 看当前值；`git ls-remote origin` 试连，能列出 refs 即网络通。
+
+### 12.4 认证（push 需要 GitHub 凭据）
+- 远程是 **https** 协议 → push 时按 Token 认证（GitHub 已禁密码）。
+- 用户名可任意（如 `zhuchunpeng123-lang`），**密码 = Personal Access Token（repo 权限）**。
+- 若环境无凭据缓存，首次 push 会提示输入；可让用户提供 PAT，或配置凭据助手 `git config --global credential.helper store`（仅本机）。
+- 本环境**无内置 GitHub 集成**，push 需用户授权/提供凭据，无法静默代建仓库。
+
+### 12.5 提交信息约定（照抄，保持历史可读）
+格式：`type(scope): 中文一句话`（scope 可省），可选末尾带 `build 20260727x` 戳。
+- `type` 取值：`feat` / `fix` / `docs` / `tune` / `refactor` / `fix/feat`（混合）。
+- 历史实例：`fix: iOS standalone 手势内同步解锁音频`、`feat(audio): 程序化 BGM v3`、`tune(progress): 加血道具=贪婪悖论 · S3`、`docs: 封版快照…`。
+- 改动性质（是否动 §9 数值真源）按 `CHANGELOG.md` 顶部格式另记，commit 信息只写「做了什么」。
+
+### 12.6 🔴 `?v=` 缓存戳必须同步 bump（否则玩家看不到更新）
+`snake55/index.html` 中 **15 个 `<script>` 标签**共用同一个查询串 `?v=e392a72bd0`：
+```
+<script src="02_config.js?v=e392a72bd0"></script>  …（03~16 同值）…
+```
+- **改了 `snake55/` 下任意 `.js` 后，必须把这 15 处 `?v=` 同步改成同一个新值**（随便换一段唯一串，如 `f1a2b3c4d5`；习惯用提交 hash 前 10 位或随机串）。
+- 不 bump → 玩家浏览器沿用旧缓存，线上「更新了但没更新」，是最常被漏的发布事故。
+- 改法：在 `index.html` 里对 `?v=e392a72bd0` 做**全文替换**（15 处一起改，值必须全相同）。`file://` 本地双击打开时这串可去掉（见 §0 注释），但线上托管必须带且必须 bump。
+
+### 12.7 标准推送流程（Codex 照做即可）
+```bash
+# 1) 改完代码后，确认 ?v= 已 bump（见 12.6），且只改了计划内文件
+git status                      # 看改动范围，别误带 .codebuddy/ 或 _harness
+
+# 2) 暂存（推荐显式加文件，避免 git add -A 误带忽略外产物）
+git add snake55/02_config.js snake55/index.html docs/...
+
+# 3) 提交（约定见 12.5）；如需引用封版基线，可在 body 写 commit 哈希
+git commit -m "fix: 描述一句话"
+
+# 4) 推（main 已跟踪 origin/main，直推即可）
+git push origin main
+```
+- 不要 `git push --force` / `git push -f`：会覆盖远程历史，除非用户明确要求。
+- 不要 `git push --all` / `git push --tags`：会顺手把 `ab-*` 本地实验分支和 `v0` 推上去（见 12.2）。
+- 推荐显式 `git add <文件>` 而非 `git add -A`；`.gitignore` 已拦 `.codebuddy/`、`node_modules/`、`_harness*.js`、`*.harness.js`、OS 垃圾，但显式添加更稳。
+
+### 12.8 版本号 / Tag（建议 Codex 起手即用，便于追溯）
+- 当前「版本」= **commit 哈希**（`5a5b5d6`）+ `index.html` 的 `?v=` 戳 + commit 里的 `build` 串；**仓库尚未用 git tag**。
+- 真正对外发布（GA）时，建议打 annotated tag 并推送，方便回滚：
+  ```bash
+  git tag -a v0.9 -m "封版快照 2026-07-27（B-TUNE 阻塞仍开）"
+  git push origin v0.9
+  ```
+- Tag 命名随意，但与用户商定后再打；`RELEASE.md` 记录冻结 commit 哈希即可。
+
+### 12.9 回滚 SOP（本地优先，安全）
+```bash
+git log --oneline                 # 看历史
+git checkout <hash> -- snake55/xx.js   # 单文件回退到某版
+git revert <hash>                 # 整体回退（生成新提交，保留历史，推荐）
+git restore <file>                # 丢弃未提交改动
+```
+- 远程回退：revert 后正常 `git push origin main` 即可；**禁止 `git push -f` 改写已发布历史**。
+
+### 12.10 一句话给 Codex
+克隆/接手后先 `git config --get http.proxy` 自检网络、只维护 `main`、改完 JS 必 bump `?v=`、commit 用 `type: 中文`、推 `git push origin main`、绝不 force / 绝不 `--all`。这样你就能无缝替用户把版本推上 GitHub。

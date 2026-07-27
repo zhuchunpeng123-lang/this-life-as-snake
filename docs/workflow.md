@@ -71,14 +71,26 @@ git commit -m "YYYY-MM-DD · 需求X：一句话"
 
 ## §4 推送到 Git 网站（GitHub / Gitee / GitLab）
 
-Git 默认**只存在本地**。要上云需两步（账户相关，需你操作）：
+> 本仓库**远程已建好**：`origin = https://github.com/zhuchunpeng123-lang/this-life-as-snake.git`，`main` 已跟踪 `origin/main`，可直推。以下为接手 / 换环境时的完整 SOP；详尽版见 `docs/HANDOFF-CODEX.md §12`。
 
-1. **你**在网站建空仓库（需登录 / 建号）——AI 无法代建。
-2. AI 可代为执行（需你的凭据 / 登录态）：
-   ```
-   git remote add origin <仓库URL>
-   git branch -M main
-   git push -u origin main
-   ```
+**日常推送（Codex 可直接做）**：
+```bash
+git add <改动文件>            # 显式加，别 git add -A 误带 .codebuddy/_harness
+git commit -m "type(scope): 中文一句话"
+git push origin main          # main 已跟踪，直推；禁止 push -f / push --all
+```
 
-> 凭据（账号密码 / Token）由你提供；本环境无 GitHub 集成，push 需你的授权登录。
+**🔴 换机/换网络的代理坑**：`.git/config` 写死 `http.proxy = http://127.0.0.1:7897`（用户本机 Clash）。Codex 在别的机器跑会卡死 push：
+- 不需要代理 → `git config --unset http.proxy`
+- 有自己的代理 → `git config http.proxy http://127.0.0.1:<端口>`
+
+**🔴 改完 `snake55/*.js` 必须 bump 缓存戳**：`snake55/index.html` 的 15 个 `<script>` 共用 `?v=e392a72bd0`，改任意脚本后全文同步换新值，否则玩家浏览器用旧缓存、线上「假更新」。
+
+**首建仓库（仅当远程丢失时）**：Git 默认仅本地，需你在网站建空仓库（AI 无法代建），再：
+```
+git remote add origin <仓库URL>
+git branch -M main
+git push -u origin main
+```
+
+> 凭据：远程是 https，push 按 **Token（PAT, repo 权限）** 认证（GitHub 已禁密码）；本环境无 GitHub 集成，push 需你的授权/凭据。
