@@ -27,7 +27,21 @@
 		layerGain.boss = ctx.createGain(); layerGain.boss.gain.value = 0; layerGain.boss.connect(bgmGain)
 		return true
 	}
-	function resume() { if (ctx && ctx.state === 'suspended') { ctx.resume() } }
+	function resume() {
+		if (ctx && ctx.state === 'suspended') {
+			var p = ctx.resume()
+			if (p && p.then) { p.then(function () { applyBgmGain(false) }).catch(function () {}) }
+		}
+	}
+	// iOS Safari 经典解锁：仅 resume 不一定激活，需在用户手势内实际输出一段音频（即便静音）才能解锁 AudioContext 管线
+	function _kickIos() {
+		if (!ctx) { return }
+		try {
+			var buf = ctx.createBuffer(1, 1, ctx.sampleRate)
+			var src = ctx.createBufferSource(); src.buffer = buf
+			src.connect(ctx.destination); src.start(0)
+		} catch (e) {}
+	}
 
 	// 单振荡器音 + 包络（freqTo 做扫频，type 选波形）
 	function tone(opt) {
@@ -317,7 +331,8 @@
 	var Audio = {
 		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN } },  // 静音同时静 BGM（BGM 在 master 之下）
 		isMuted: function () { return muted },
-		unlock: function () { ensure(); resume(); startBgm() }   // 首次交互启动 BGM（autoplay 合规）
+		unlock: function () { ensure(); resume(); _kickIos(); startBgm(); return !!(ctx && ctx.state === 'running') },   // 首次交互启动 BGM；_kickIos 强制 iOS 解锁音频管线；返回 running 供 UI 判断是否在可靠手势内真正解锁
+		isRunning: function () { return !!(ctx && ctx.state === 'running') }
 	}
 	Registry.register('audio', Audio)
 	Log.info('audio 就绪：Web Audio 纯合成 + 程序化 BGM v3')

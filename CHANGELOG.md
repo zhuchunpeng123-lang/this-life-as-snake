@@ -2,6 +2,14 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · fix: 移动端(尤其 iOS Safari)无音乐 · 音频解锁击穿
+- **根因**：`12_ui.js` 音频解锁为 one-shot——首次 `touchstart` 即移除全部监听。iOS Safari 常在 `touchstart` 内 `resume()` 失败、需 `touchend`/`click` 内才成功，监听被过早移除 → 可靠兜底丢失；且 iOS 仅 `resume()` 不足，需在手势内实际输出音频(`_kickIos` 静音 buffer)才解锁 AudioContext 管线。`core:run_reset`(pointerdown 链)的 resume 在 iOS 亦不可靠。结果 ctx 永久 suspended，BGM 调度器 `_sched` 因 `currentTime` 不前进只调度一拍即丢 → 永久静音（桌面用 `click` 解锁故正常）。
+- **修复**：
+  - `12_ui.js`：解锁事件列表加 `touchend`；`unlock` 改为**仅当 `audio.isRunning()` 真正 running 才移除监听**，保留 touchstart/pointerdown 失败后的 touchend/click 兜底。
+  - `10_audio.js`：新增 `_kickIos()`（手势内输出 1 样本静音 buffer）强制 iOS 解锁；`resume()` 处理 Promise；`unlock()` 调 `_kickIos()` 并返回 running；新增 `isRunning()`。
+- **是否动 §9**：否，纯音频解锁/平台兼容，未动玩法/平衡与 core/collision。
+- **验收 ✅❌**：①iOS 横屏打开→点开始→BGM 响起；②Android 同；③若首触无声，手指抬起(touchend)后应解锁出声；④P/暂停按钮静音恢复仍正常。
+
 ## 2026-07-27 · fix: 按 P/Esc 音乐不暂停（桌面+移动统一）
 - **根因**：键盘 P/Esc 直接调 `togglePause()` 不发事件；且音频监听 `game:toggle_pause` 注册早于 main（`10_audio.js` 先于 `14_main.js` 加载），emit 时按注册顺序先跑 audio、读到仍是旧 `GS.status`（playing）→ `pauseMul=1` 不静音。桌面与移动同源，故按 P 音乐永不暂停。
 - **修复**：

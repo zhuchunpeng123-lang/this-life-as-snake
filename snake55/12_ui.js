@@ -87,10 +87,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		Bus.on('ui:orientation_gate', function (d) { if (gateEl) { gateEl.style.display = (d && d.show) ? 'flex' : 'none' } })
 		// 移动端(iOS Safari)音频解锁：pointerdown 不被 iOS 接受为解锁 AudioContext 的合法手势(需 touchstart/click 等)，
 		// 故多事件兜底，首次任意交互即 resume；触发后移除全部监听（one-shot）
-		var _unlockEvents = ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown']
+		var _unlockEvents = ['pointerdown', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown']
 		var unlock = function () {
 			var a = Registry.get('audio'); if (a) { a.unlock() }
-			for (var i = 0; i < _unlockEvents.length; i++) { document.removeEventListener(_unlockEvents[i], unlock) }
+			// 关键修复：仅在 ctx 真正 running 后才移除监听。原 one-shot 在首次(touchstart)即移除，
+			// 而 iOS 常在 touchstart 内 resume 失败、需 touchend/click 内才成功 → 过早移除会丢失可靠兜底，致永久静音
+			if (a && a.isRunning && a.isRunning()) {
+				for (var i = 0; i < _unlockEvents.length; i++) { document.removeEventListener(_unlockEvents[i], unlock) }
+			}
 		}
 		for (var i = 0; i < _unlockEvents.length; i++) { document.addEventListener(_unlockEvents[i], unlock, { passive: true }) }
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
