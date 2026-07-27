@@ -10,6 +10,7 @@
 | AGENTS.md | 根 | AI 规矩（守则） |
 | CHANGELOG.md | 根 | 版本更新日志（已落地改动） |
 | docs/DEBT.md | docs/ | 技术债 / 设计债台账 |
+| docs/DOCUMENT-RETENTION.md | docs/ | 历史资料取舍表与后续治理顺序 |
 | docs/workflow.md | docs/ | 本文（协作 + 调参细则） |
 | docs/RETRO.md | docs/ | 跨会话踩坑教训 |
 | docs/RELEASE.md | docs/ | 5.5 封版快照 |
