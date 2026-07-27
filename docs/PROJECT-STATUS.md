@@ -22,7 +22,7 @@
 
 ## 当前阻塞
 
-- `P0` iOS standalone 真机复验未完成。
+- `P0` iOS standalone 真机复验未完成，日常执行 A 级；入口：[iOS Standalone 真机测试清单](qa/IOS-STANDALONE-CHECKLIST.md)。
 
 ## 近期待办
 

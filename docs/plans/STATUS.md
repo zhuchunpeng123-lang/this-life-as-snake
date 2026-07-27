@@ -19,6 +19,7 @@
 | [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 部分落地 | 移动端窄屏/表现微调后置 |
 | [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 已落地待实测 | 用户浏览器复验，绿后归档 |
 | [需求B-边缘撞墙回正-测试清单.md](./需求B-边缘撞墙回正-测试清单.md) | 🟡 待实测清单 | 跟随需求B复验结果处理 |
+| [IOS-STANDALONE-CHECKLIST.md](../qa/IOS-STANDALONE-CHECKLIST.md) | 🟡 待真机执行 | 日常默认 A 级；B/C 级按改动或故障触发，不代表已验收 |
 
 ## 已归档
 
