@@ -4,6 +4,13 @@
 
 > 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。
 
+## 2026-07-28 · diagnosis: iOS 静音开关下网页 Web Audio 无声
+- **真机证据**：iPhone 12 / iOS 26.4.1 在 Safari 普通页面与 iOS standalone 均复现；打开静音开关时 BGM、音效和直连测试音均无声，关闭静音开关后声音正常。
+- **诊断结论**：诊断面板显示 `AudioContext=running`、`currentTime` 正常推进、master/BGM 增益非零、测试音已直接调度到 `destination` 且无异常。当前证据不支持继续重写音频节点链，现象按 iOS 静音策略对网页 Web Audio 的平台限制记录。
+- **处理**：移除临时 `AUDIO DIAG ONLY` 面板、诊断直连音按钮及诊断接口；正式版本不保留测试入口。iOS 日常验收应在静音开关关闭、媒体音量正常时执行。
+- **是否动 §9**：否，未改玩法、数值、伤害、碰撞、波次、技能或 `core/collision`。
+- **验收**：用户已完成 Safari 与 standalone 对照测试；关闭静音开关后可正常听到游戏声音。静音开关打开时网页无声不作为本版本的音频代码回归结论。
+
 ## 2026-07-27 · 封版快照 · 文档体系收口（RELEASE + HANDOFF-CODEX + 债台账同步）
 - **文档更新（零代码）**：①新增 `docs/RELEASE.md`（封版快照：版本/范围/已知阻塞/部署/验收）；②新增 `docs/HANDOFF-CODEX.md`（给接续 AI Codex 的详尽交接圣经：硬规则/架构/机制/运行/待修清单/巨坑）；③`docs/DEBT.md`：B-TUNE 标为发布硬阻塞、音频/UI 债标记已还、补 manifest 主题色债（已还）；④`docs/plans/STATUS.md`：音频计划标实测绿、移动端优化进度；⑤`docs/RETRO.md`：开放风险加封版 + B-TUNE；⑥`snake55/manifest.webmanifest`：`theme_color`/`background_color` 由 `#0a0e1a` 同步为 `#11162a`（与 index.html 一致，消已装 PWA 刘海缝残留）。
 - **是否动 §9**：否，纯文档 + 资产一致性。
