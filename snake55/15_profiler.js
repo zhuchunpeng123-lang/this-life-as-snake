@@ -1,6 +1,8 @@
 ;(function (global) {
 	'use strict'
 	var Log = global.Log, Registry = global.Registry
+	var DEBUG = (global.CONFIG && global.CONFIG.DEBUG) || {}
+	if (!DEBUG.enabled) { return }
 	var ring = []                 // 环形日志（最新在末尾）
 	var MAXLINES = 80
 	var lastEnemies = -1, dropping = false

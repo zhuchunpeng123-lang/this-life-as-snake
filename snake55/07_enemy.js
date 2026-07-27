@@ -104,6 +104,8 @@
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
 	function spawnDummy(count, hp) {                   // B-GM 标定沙盒：训练假人（超高血 / 不秒 / 站着），便于看 DOT 逐跳 / 减速时长 / 护盾扫敌
+		var DBG = CONFIG.DEBUG || {}
+		if (!(DBG.enabled && DBG.editorEnabled)) { return 0 }
 		count = count || 1; hp = hp || 5000
 		var sn = Registry.get('snake'), h = sn && sn.head
 		var hx = h ? h.x : GAME.worldWidth / 2, hy = h ? h.y : GAME.worldHeight / 2

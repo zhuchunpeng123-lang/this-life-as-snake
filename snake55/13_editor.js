@@ -2,6 +2,8 @@
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Log = global.Log, Core = global.Core, M = Core.M
 	var LS_KEY = 'snake55_tuning'
+	var DEBUG = CONFIG.DEBUG || {}
+	if (!(DEBUG.enabled && DEBUG.editorEnabled)) { return }
 
 	// —— UI 滑块范围常量（集中，避免逻辑里散落魔法数字；dev 工具边界，非 gameplay 数值）——
 	var RANGE = {

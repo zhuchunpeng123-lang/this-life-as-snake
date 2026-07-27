@@ -19,6 +19,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
 	var seqId = 0
+	function editorAllowed() { var D = CONFIG.DEBUG || {}; return !!(D.enabled && D.editorEnabled) }
 	var timers = []
 	var usedChoiceIds = {}
 	var chooseKeyHandler = null   // 三选一键盘 1/2/3 监听句柄（显示时挂载、hideChoose 时移除）
@@ -80,8 +81,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		fullscreenBtn = mk('div', 'min-width:' + (isTouch ? '92px' : 'auto') + ';text-align:center;padding:' + (isTouch ? '9px 14px' : '10px 14px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		fullscreenBtn.textContent = '⛶ 全屏'
 		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
-		// GM 测试面板按钮：仅触屏设备显示（移动端无 ~ 键，经 Bus 触发 editor.toggle；桌面用 ~ 键）
-		if (isTouch) {
+		// GM 测试面板按钮：仅触屏 + DEBUG 双开时创建；发布配置下 fail-closed。
+		if (isTouch && editorAllowed()) {
 			gmBtn = mk('div', 'min-width:92px;text-align:center;padding:9px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 			gmBtn.textContent = '⚙ GM'
 			gmBtn.onclick = function () { Bus.emit('editor:toggle') }

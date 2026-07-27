@@ -1,6 +1,8 @@
 ;(function (global) {
 	'use strict'
 	var Log = global.Log, Bus = global.Bus, Registry = global.Registry
+	var DEBUG = (global.CONFIG && global.CONFIG.DEBUG) || {}
+	if (!DEBUG.enabled) { return }
 	var panel = null, contentEl = null, copyBtn = null, panelOn = false
 	var SAMPLE_SEC = 1            // 仅面板开启时渲染，1s 刷新足矣（不抢 L 性能日志的密集采样）
 	var timer = null

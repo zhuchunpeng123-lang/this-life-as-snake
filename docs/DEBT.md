@@ -13,7 +13,6 @@
 
 | 项 | 影响 | 建议 |
 |---|---|---|
-| B-TUNE dev 工具未隔离 | `13_editor.js` GM 面板、`~` 键、移动端 GM 入口、`07_enemy.js` 训练假人仍可能进入玩家环境 | 加 `CONFIG.DEBUG.enabled/editorEnabled` 门控；发布版关闭；只影响 dev 工具可见性 |
 | iOS standalone 待真机复验 | 音频解锁逻辑已多轮修复，但用户尚未确认主屏模式稳定有声 | 用户用真机复验；失败再开音频专项 |
 
 ## 2. P1 确认 bug / 工程护栏
@@ -55,3 +54,9 @@
 | 根目录 `snake_head.png` | 疑似历史/备用素材，`snake55/assets/snake_head.png` 已存在 | 后续比对哈希和引用，确认无用再删 |
 | Boss 图不符合“猫头鹰”预期 | 美术表达不准 | 美术替换专项 |
 | snake body/tail 无图 | 仍由代码绘制 | 视觉升级时再处理 |
+
+## 6. 已处理待复验
+
+| 项 | 结果 | 复验 |
+|---|---|---|
+| B-TUNE dev 工具隔离 | 已按两级门控处理：GM/假人走 `DEBUG.enabled && editorEnabled`，Profiler/SkillEcon 走 `DEBUG.enabled` | 按 `docs/plans/B-TUNE-dev-tools-gating-测试清单.md` 做三种 DEBUG 组合复验 |
