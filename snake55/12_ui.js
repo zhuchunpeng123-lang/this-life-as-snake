@@ -14,6 +14,7 @@ var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', 
 
 var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
+var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
 	var heartBreakUntil = 0, lostHeartIndex = -1
 	var _lastHudRefresh = 0   // 性能：HUD 刷新节流时间戳（~10Hz），避免每帧 innerHTML 重建触发 DOM 回流
@@ -43,14 +44,24 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		froot = fullRoot || document.body   // 全屏遮罩层（升级/结算/暂停/请横屏）
 		// —— HUD 容器(inset:0 覆盖, pointer-events:none) + 四组胶囊(§8.4：生命框/数据框/波次条/技能栏) ——
 		hud = mk('div', 'position:absolute;inset:0;pointer-events:none;z-index:10', root)
+		isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)   // 触屏设备：走移动端重排布局；桌面保持原右上三联布局
 		hudStatus = mk('div', 'position:absolute;left:calc(16px + env(safe-area-inset-left));top:calc(16px + env(safe-area-inset-top));display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:10', hud)   // 左上：角色状态簇(两行一组,16px 安全边距)
 		hudLife = capsuleEl('position:relative;left:auto;top:auto;width:fit-content;max-width:calc(100vw - 32px);white-space:nowrap;padding:6px 12px')   // ①生命(×coreHp 实心/空心)，fit-content 自然撑开、禁裁切；左右内边距≥12px
 		hudStatus.appendChild(hudLife)
 		hudData = capsuleEl('position:relative;left:auto;top:auto;width:fit-content;max-width:calc(100vw - 32px);display:inline-flex;flex-wrap:wrap;align-items:center;gap:0 2px;white-space:normal;line-height:1.6;padding:6px 12px')   // ②数据框：fit-content+换行、禁裁切、超宽自动两行(P0/HUD 硬约束)；左右内边距≥12px
 		hudStatus.appendChild(hudData)
 		hudWave = capsuleEl('left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%)')                  // 顶部居中：波次条(Boss 来切红闪 BOSS INCOMING)
-		hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(58px + env(safe-area-inset-top))')     // 右上：5 格技能栏(空槽也画)，在系统按钮(hudSys)下方
-		hudCombo = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(104px + env(safe-area-inset-top));flex-wrap:wrap;gap:6px;max-width:min(72vw,360px)')   // 右上：Combo 图标化徽标(P0-4)，技能栏下方
+		// —— 移动端重排：combo 入左簇(与 HUD 左对齐) + 系统按钮移左下 + 技能栏独占右上；桌面保持原右上三联 ——
+		if (isTouch) {
+			hudCombo = capsuleEl('position:relative;left:auto;top:auto;width:fit-content;max-width:calc(100vw - 32px);flex-wrap:wrap;gap:6px;padding:6px 12px')   // 移动端：combo 进左簇，随 hudStatus 缩放、自动左对齐
+			hudStatus.appendChild(hudCombo)
+			hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top))')   // 移动端：技能栏独占右上顶部
+			hudSys = mk('div', 'position:absolute;left:calc(12px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;align-items:flex-start;pointer-events:auto;z-index:12', root)   // 移动端：系统按钮组移左下竖排小图标，避让右下摇杆区
+		} else {
+			hudSkills = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(58px + env(safe-area-inset-top))')   // 桌面：技能栏在系统按钮下方
+			hudCombo = capsuleEl('right:calc(12px + env(safe-area-inset-right));top:calc(104px + env(safe-area-inset-top));flex-wrap:wrap;gap:6px;max-width:min(72vw,360px)')   // 桌面：Combo 在技能栏下方
+			hudSys = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px;pointer-events:auto;z-index:12', root)   // 桌面：系统按钮右上顶部横排
+		}
 		// 濒死整框红脉冲 keyframes（STYLE.enemy 真源，无新 hex）
 		var _nf = document.createElement('style')
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
@@ -59,20 +70,18 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
-		// 系统按钮归组右上顶部(hudSys)，与技能栏(hudSkills)/Combo(hudCombo)分离(P0-2)
-		hudSys = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px;pointer-events:auto;z-index:12', root)
-		pauseBtn = mk('div', 'padding:10px 16px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
-		pauseBtn.textContent = '⏸ 暂停'
+		// 系统按钮：移动端纯图标(⏸/⛶/⚙)缩小，桌面保留文字（hudSys 已在上方按 isTouch 定位）
+		pauseBtn = mk('div', 'padding:' + (isTouch ? '9px 12px' : '10px 16px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
+		pauseBtn.textContent = isTouch ? '⏸' : '⏸ 暂停'
 		pauseBtn.onclick = function () { Bus.emit('game:toggle_pause') }
 		// 全屏按钮：安卓/桌面一键全屏（经 Bus 由 main 调 API）；iPhone 不支持 JS 全屏→main 提示「添加到主屏幕」
-		fullscreenBtn = mk('div', 'padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
-		fullscreenBtn.textContent = '⛶ 全屏'
+		fullscreenBtn = mk('div', 'padding:' + (isTouch ? '9px 12px' : '10px 14px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
+		fullscreenBtn.textContent = isTouch ? '⛶' : '⛶ 全屏'
 		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
 		// GM 测试面板按钮：仅触屏设备显示（移动端无 ~ 键，经 Bus 触发 editor.toggle；桌面用 ~ 键）
-		var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
 		if (isTouch) {
-			gmBtn = mk('div', 'padding:10px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
-			gmBtn.textContent = '⚙ GM'
+			gmBtn = mk('div', 'padding:9px 12px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
+			gmBtn.textContent = '⚙'
 			gmBtn.onclick = function () { Bus.emit('editor:toggle') }
 		}
 		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:' + hexA(STYLE.bg, 0.55) + ';z-index:25;color:' + STYLE.textMain + ';font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
@@ -526,9 +535,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		// 左上簇：top-left 缩放（右下延展，永不漂进画面）
 		if (hudStatus) { hudStatus.style.transformOrigin = 'top left'; hudStatus.style.transform = 'scale(' + s + ')' }
 		// 右上簇（系统按钮/技能栏/Combo）：top-right 缩放，保持贴右
-		if (hudSys) { hudSys.style.transformOrigin = 'top right'; hudSys.style.transform = 'scale(' + s + ')' }
+		// 右上簇（系统按钮/技能栏/Combo）：桌面 top-right 缩放；移动端系统按钮已移左下(bottom-left)、combo 已入左簇(top-left)
+		if (hudSys) { hudSys.style.transformOrigin = isTouch ? 'bottom left' : 'top right'; hudSys.style.transform = 'scale(' + s + ')' }
 		if (hudSkills) { hudSkills.style.transformOrigin = 'top right'; hudSkills.style.transform = 'scale(' + s + ')' }
-		if (hudCombo) { hudCombo.style.transformOrigin = 'top right'; hudCombo.style.transform = 'scale(' + s + ')' }
+		if (hudCombo) { hudCombo.style.transformOrigin = isTouch ? 'top left' : 'top right'; hudCombo.style.transform = 'scale(' + s + ')' }
 		// 顶部居中簇：中心缩放 + 保留 translateX(-50%) 居中
 		if (hudWave) { hudWave.style.transformOrigin = 'top center'; hudWave.style.transform = 'translateX(-50%) scale(' + s + ')' }
 		if (comboBanner) { comboBanner.style.transformOrigin = 'top center'; comboBanner.style.transform = 'translateX(-50%) scale(' + s + ')' }

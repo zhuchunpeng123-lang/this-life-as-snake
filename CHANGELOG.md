@@ -2,6 +2,13 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
+## 2026-07-27 · fix: iOS 仍无声 + 手机端 UI 重排(combo 入左簇 / 系统按钮移左下)
+- **音频根因**：前次 `_kickIos` 用「1 样本静音 buffer」——iOS 多数版本**静音输出无法解锁** AudioContext 管线；且 `startBgm()`/`unlock()` 在 `ctx.resume()` 异步完成**之前**就调度 BGM，suspended 期 `currentTime` 冻结、音符全堆在 0.1s 处永不前进 → iOS 永久静音。
+- **音频修复（`10_audio.js`）**：①`_kickIos()` 改为 ctx `running` 时输出**极低增益(0.001)非零振荡器**真实出声解锁，并加 `_kicked` 一次性守卫（避免每次 `run_reset` 出咔哒声）；②`resume(cb)` 新增回调——仅在 Promise 成功且 `state==='running'` 后才执行 kick/BGM 重启；③`startBgm()` 整体包进 `resume(cb)`，ctx 真正 running 后才 `absStep=0`+重置 `nextNoteTime`+起 `setInterval(_sched)`；④`unlock()` 与 `core:run_reset` 改走回调式 `startBgm()`。两端(桌面+移动)同步受益、无害。
+- **UI 重排（`12_ui.js`，仅触屏 `isTouch` 生效，桌面保持原右上三联不动）**：①`hudCombo` 由独立「右上绝对定位」改为 append 进左簇 `hudStatus`（数据框下方），随左簇自动左对齐、不再挤右上；②`hudSys`(⏸/⛶/⚙) 由「右上横排」移到**左下角竖排小图标**，避让右下摇杆区；③`hudSkills` 上移右上顶部**独占右上角**；④`applyUiScale` 移动端缩放原点：`hudSys→bottom left`、`hudCombo→top left`；⑤系统按钮文案触屏缩为纯图标(⏸/⛶/⚙)。
+- **是否动 §9**：否，纯音频解锁时机 + UI 表现层位移，未动 core/collision/数值/伤害管线。
+- **验收 ✅❌（手机硬刷新后）**：①iOS 横屏点开始→BGM 立即响起(不必先动摇杆)；②首触无声则 touchend/click 后解锁；③左上=生命/数据/combo 竖向对齐簇、右上仅 5 格技能栏、左下 ⏸⛶⚙ 竖排、右下摇杆，右上不再挤；④⏸暂停静音/再按恢复；⑤桌面端外观零回归。
+
 ## 2026-07-27 · fix: 移动端(尤其 iOS Safari)无音乐 · 音频解锁击穿
 - **根因**：`12_ui.js` 音频解锁为 one-shot——首次 `touchstart` 即移除全部监听。iOS Safari 常在 `touchstart` 内 `resume()` 失败、需 `touchend`/`click` 内才成功，监听被过早移除 → 可靠兜底丢失；且 iOS 仅 `resume()` 不足，需在手势内实际输出音频(`_kickIos` 静音 buffer)才解锁 AudioContext 管线。`core:run_reset`(pointerdown 链)的 resume 在 iOS 亦不可靠。结果 ctx 永久 suspended，BGM 调度器 `_sched` 因 `currentTime` 不前进只调度一拍即丢 → 永久静音（桌面用 `click` 解锁故正常）。
 - **修复**：

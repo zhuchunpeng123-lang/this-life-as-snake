@@ -27,19 +27,28 @@
 		layerGain.boss = ctx.createGain(); layerGain.boss.gain.value = 0; layerGain.boss.connect(bgmGain)
 		return true
 	}
-	function resume() {
-		if (ctx && ctx.state === 'suspended') {
+	function resume(cb) {
+		if (!ctx) { if (cb) { cb() } return }
+		if (ctx.state === 'running') { if (cb) { cb() } return }
+		if (ctx.state === 'suspended') {
 			var p = ctx.resume()
-			if (p && p.then) { p.then(function () { applyBgmGain(false) }).catch(function () {}) }
+			if (p && p.then) {
+				p.then(function () { if (ctx && ctx.state === 'running') { if (cb) { cb() } } }).catch(function () {})
+			} else if (cb) { cb() }
 		}
 	}
-	// iOS Safari 经典解锁：仅 resume 不一定激活，需在用户手势内实际输出一段音频（即便静音）才能解锁 AudioContext 管线
+	var _kicked = false   // iOS 解锁只需真实出声一次；跑过后不再 kick，避免重复 run_reset 出咔哒声
+	// iOS Safari 经典解锁：仅 resume 不一定激活，须在 ctx 真正 running 时输出「非零」音频才解锁管线；
+	// 静音 1-sample buffer 在多数 iOS 版本无效，故改为极低增益(0.001)振荡器实际出声
 	function _kickIos() {
-		if (!ctx) { return }
+		if (!ctx || ctx.state !== 'running' || _kicked) { return }
 		try {
-			var buf = ctx.createBuffer(1, 1, ctx.sampleRate)
-			var src = ctx.createBufferSource(); src.buffer = buf
-			src.connect(ctx.destination); src.start(0)
+			var o = ctx.createOscillator(), g = ctx.createGain()
+			g.gain.value = 0.001
+			o.type = 'sine'; o.frequency.value = 440
+			o.connect(g); g.connect(ctx.destination)
+			o.start(0); o.stop(ctx.currentTime + 0.05)
+			_kicked = true
 		} catch (e) {}
 	}
 
@@ -269,15 +278,16 @@
 	}
 	function startBgm() {
 		if (!ensure()) { return }
-		resume()
-		if (bgmRunning) { return }
-		bgmRunning = true
-		absStep = 0
-		stepDur = targetStepDur = 60 / STEP_BPM.explore / 4
-		nextNoteTime = ctx.currentTime + 0.1
-		applyBgmGain(true)
-		bgmTimer = setInterval(_sched, 25)
-		Log.info('[bgm] 启动 explore')
+		resume(function () {     // 必须等 ctx 真正 running 再调度；suspended 期 currentTime 冻结，音符全堆在 0.1s 处永不会响(原 iOS 静音根因)
+			if (bgmRunning) { return }
+			bgmRunning = true
+			absStep = 0
+			stepDur = targetStepDur = 60 / STEP_BPM.explore / 4
+			nextNoteTime = ctx.currentTime + 0.1
+			applyBgmGain(true)
+			bgmTimer = setInterval(_sched, 25)
+			Log.info('[bgm] 启动 explore')
+		})
 	}
 	function stopBgm() {
 		bgmRunning = false
@@ -290,7 +300,7 @@
 	// 要等后续手势(移动键/拾取音效里的 resume)才解锁。core:run_reset 由 startIfMenu→core.resetRun 同步触发，属手势内→合规解锁（修复 2026-07-26）
 	Bus.on('core:run_reset', function () {
 		pauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1   // 新一局清空暂停/duck/三选一系数（死亡→重开若残留，避免开局被压/静音）
-		ensure(); resume(); startBgm()                       // 手势内解锁+起 explore BGM；startBgm 自带 bgmRunning 守卫（重开时死亡已 stopBgm→会重启）
+		startBgm()                       // 手势内解锁+起 explore BGM；startBgm 内部 ensure+resume(含 ctx running 后真实出声解锁)+调度，自带 bgmRunning 守卫（重开时死亡已 stopBgm→会重启）
 	})
 	Bus.on('wave:stage', function (d) {            // 探索=1 / 战斗=2-4 / Boss=5（核对点1 映射 A）
 		if (!bgmRunning) { startBgm() }           // 兜底：若 run_reset 未起（极少数路径），首波仍兜底起 BGM
@@ -331,7 +341,7 @@
 	var Audio = {
 		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN } },  // 静音同时静 BGM（BGM 在 master 之下）
 		isMuted: function () { return muted },
-		unlock: function () { ensure(); resume(); _kickIos(); startBgm(); return !!(ctx && ctx.state === 'running') },   // 首次交互启动 BGM；_kickIos 强制 iOS 解锁音频管线；返回 running 供 UI 判断是否在可靠手势内真正解锁
+		unlock: function () { ensure(); resume(function () { _kickIos(); if (!bgmRunning) { startBgm() } }); return !!(ctx && ctx.state === 'running') },   // 首次交互：ctx running 后真实出声解锁 iOS 管线 + 起 BGM；返回 running 供 UI 判断是否在可靠手势内真正解锁
 		isRunning: function () { return !!(ctx && ctx.state === 'running') }
 	}
 	Registry.register('audio', Audio)
