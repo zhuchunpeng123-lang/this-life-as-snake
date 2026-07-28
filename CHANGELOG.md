@@ -1,5 +1,11 @@
 # CHANGELOG · 5.5 好玩基因融合版贪吃蛇
 
+## 2026-07-28 - feat(audio): 音频体验优化
+- `10_audio.js` now separates BGM, combat SFX, and UI feedback buses; ordinary hit sounds are throttled without repeatedly ducking BGM.
+- Pause, death, and Boss defeat stop combat voices and the scheduler; start, pickup, choice, pause/resume, narrative, Boss defeat, and death feedback are explicit.
+- Music state now smoothly follows stage, enemy pressure, danger, build maturity, Lv5, Combo, and kill streak without changing gameplay values.
+- Scope is audio presentation plus one non-gameplay UI Bus notification; core, collision, damage, skills, enemies, waves, economy, and external audio remain unchanged.
+
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
 > 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。

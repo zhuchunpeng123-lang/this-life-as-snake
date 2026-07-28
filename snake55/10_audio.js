@@ -6,12 +6,35 @@
 	// 主音量读真理源 AUDIO.masterVolume×sfxVolume；逐事件音效频率/时长为表现层（真理源未定义合成配方）
 	var MASTER_GAIN = AUDIO.masterVolume * AUDIO.sfxVolume
 
-	var ctx = null, master = null, muted = !AUDIO.enabled
+	var ctx = null, master = null, sfxGain = null, uiGain = null, muted = !AUDIO.enabled
 	// —— BGM 子链（程序化 BGM v3，照《此生为蛇》音频规范 v0.1）——
 	var bgmGain = null
 	var layerGain = { explore: null, battle: null, boss: null }
 	var bgmRunning = false, bgmTimer = null
+	var bgmNodes = [], sfxNodes = [], uiNodes = []
 	var absStep = 0, nextNoteTime = 0
+	var sfxPauseMul = 1, duckTimer = null, musicSampleAt = 0, pressureLevel = 0, pressureTarget = 0, buildLevel = 0, buildTarget = 0
+	var comboAudioSeen = {}, runCount = 0
+
+	// 表现层参数：只控制声音密度、层次和响应，不改变任何玩法数值。
+	var AUDIO_MIX = {
+		stateSampleSec: 0.25, stateLerp: 0.18, pressureMobCap: 12, pressureChaseCap: 4,
+		pressureHpWeight: 0.55, pressureMobWeight: 0.75, pressureChaseWeight: 0.65, pressureBossWeight: 0.90,
+		buildSkillWeight: 0.35, buildLevelWeight: 0.06, buildMaxedWeight: 0.25, buildComboWeight: 0.35,
+		buildStreakCap: 8, buildStreakWeight: 0.20, buildHarmonyBand: 0.75, buildLeadBand: 1.65,
+		pressurePulseBand: 1.0, pressureTensionBand: 2.0, duckMul: 0.72, duckSec: 0.18,
+		deathFadeSec: 0.28, pauseRampSec: 0.06
+	}
+	var SKILL_AUDIO = {
+		fire: { base: 180, rise: 1.50, type: 'sawtooth' }, ice: { base: 430, rise: 1.25, type: 'sine' },
+		bolt: { base: 720, rise: 1.35, type: 'square' }, shield: { base: 260, rise: 1.20, type: 'triangle' },
+		lightning: { base: 880, rise: 1.50, type: 'sawtooth' }
+	}
+	var COMBO_AUDIO = {
+		steamExplosion: { notes: [180, 270, 405], type: 'triangle' },
+		electroTurret: { notes: [520, 780, 1170], type: 'square' },
+		burningBarrage: { notes: [220, 330, 495], type: 'sawtooth' }
+	}
 	var stepDur = 60 / 88 / 4, targetStepDur = stepDur   // 16 分音符秒；explore 88BPM
 	var curLayer = 'explore', battleHeat = 1.0, pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1, chooseDuckMul = 1   // ⚠️ 暂停(硬暂停·归零)/事件duck/密度duck/三选一duck 四系数独立相乘（互不污染）；暂停可归零，其余仅压小
 
@@ -20,12 +43,24 @@
 		var AC = global.AudioContext || global.webkitAudioContext
 		if (!AC) { return false }
 		ctx = new AC(); master = ctx.createGain(); master.gain.value = MASTER_GAIN; master.connect(ctx.destination)
+		sfxGain = ctx.createGain(); sfxGain.gain.value = 1; sfxGain.connect(master)
+		uiGain = ctx.createGain(); uiGain.gain.value = 1; uiGain.connect(master)
 		// BGM 子链：layerGain → bgmGain → master（与 SFX 共用 master 但分轨，BGM 垫在 SFX 之下）
 		bgmGain = ctx.createGain(); bgmGain.gain.value = AUDIO.bgmVolume; bgmGain.connect(master)
 		layerGain.explore = ctx.createGain(); layerGain.explore.gain.value = 1; layerGain.explore.connect(bgmGain)
 		layerGain.battle = ctx.createGain(); layerGain.battle.gain.value = 0; layerGain.battle.connect(bgmGain)
 		layerGain.boss = ctx.createGain(); layerGain.boss.gain.value = 0; layerGain.boss.connect(bgmGain)
 		return true
+	}
+	function trackVoice(list, node) {
+		list.push(node)
+		node.onended = function () { var i = list.indexOf(node); if (i >= 0) { list.splice(i, 1) } }
+		return node
+	}
+	function stopVoices(list) {
+		if (!ctx) { list.length = 0; return }
+		var t = ctx.currentTime
+		while (list.length) { var node = list.pop(); try { node.stop(t) } catch (_) {} }
 	}
 	function resume(cb) {
 		if (!ctx) { if (cb) { cb() } return }
@@ -55,10 +90,10 @@
 	}
 
 	// 单振荡器音 + 包络（freqTo 做扫频，type 选波形）
-	function tone(opt) {
+	function tone(opt, dest, when) {
 		if (muted || !ensure()) { return }
-		resume()
-		var t = ctx.currentTime, dur = opt.dur || 0.12
+		if (when == null) { resume() }
+		var t = (when == null) ? ctx.currentTime : when, dur = opt.dur || 0.12
 		var o = ctx.createOscillator(), g = ctx.createGain()
 		o.type = opt.type || 'sine'
 		o.frequency.setValueAtTime(opt.freq, t)
@@ -66,17 +101,19 @@
 		g.gain.setValueAtTime(0.0001, t)
 		g.gain.exponentialRampToValueAtTime(opt.gain || 0.2, t + (opt.attack || 0.005))
 		g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02)
+		var out = dest || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes
+		o.connect(g); g.connect(out); trackVoice(list, o); o.start(t); o.stop(t + dur + 0.02)
 	}
 	// 白噪爆破（爆炸/刮擦/死亡用）
-	function noise(dur, gain) {
+	function noise(dur, gain, dest, when) {
 		if (muted || !ensure()) { return }
-		resume()
+		if (when == null) { resume() }
 		var n = Math.floor(ctx.sampleRate * dur), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0)
 		for (var i = 0; i < n; i++) { d[i] = (Math.random() * 2 - 1) * (1 - i / n) }
 		var src = ctx.createBufferSource(); src.buffer = buf
 		var g = ctx.createGain(); g.gain.value = gain || 0.2
-		src.connect(g); g.connect(master); src.start()
+		var out = dest || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes
+		src.connect(g); g.connect(out); trackVoice(list, src); if (when == null) { src.start() } else { src.start(when) }
 	}
 
 	// —— 节流器：同 key 在 ms 内只触发一次（防割草期/持续伤害音效堆叠成噪海）——
@@ -112,14 +149,15 @@
 		var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700
 		var g = ctx.createGain()
 		g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		src.connect(lp); lp.connect(g); g.connect(master); src.start(t); src.stop(t + dur + 0.02)
+		src.connect(lp); lp.connect(g); g.connect(sfxGain || master); trackVoice(sfxNodes, src); src.start(t); src.stop(t + dur + 0.02)
 		var o = ctx.createOscillator(), og = ctx.createGain()
 		o.type = 'sawtooth'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(90, t + dur)
 		og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.10, t + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(og); og.connect(master); o.start(t); o.stop(t + dur + 0.02)
+		o.connect(og); og.connect(sfxGain || master); trackVoice(sfxNodes, o); o.start(t); o.stop(t + dur + 0.02)
 	}
 
 	// 事件 → 音效（🟡 频率/时长为表现层候选值，可在调参器微调）
+	if (false) {
 	Bus.on('snake:grow', function () { tone({ freq: 660, freqTo: 990, dur: 0.10, type: 'triangle', gain: 0.18 }) })
 	Bus.on('snake:hurt', function () { sfxPing(); tone({ freq: 180, freqTo: 70, dur: 0.22, type: 'sawtooth', gain: 0.30 }) })
 	Bus.on('snake:wall', function () { noise(0.08, 0.12) })
@@ -141,6 +179,75 @@
 	Bus.on('combo:found', function () { sfxPing(); tone({ freq: 660, dur: 0.10, type: 'square', gain: 0.20 }); tone({ freq: 990, dur: 0.18, type: 'square', gain: 0.20 }) })
 	Bus.on('wave:boss_warn', function () { sfxPing(); tone({ freq: 140, dur: 0.30, type: 'square', gain: 0.30 }) })
 	Bus.on('wave:stage', function () { tone({ freq: 440, freqTo: 660, dur: 0.14, type: 'sine', gain: 0.14 }) })
+	}
+
+	function playUiCue(notes, type, gain, spacing) {
+		if (muted || !ensure()) { return }
+		var t = ctx.currentTime, step = spacing || 0.06
+		for (var i = 0; i < notes.length; i++) { tone({ freq: notes[i], dur: 0.12 + i * 0.02, type: type, gain: gain }, uiGain, t + i * step) }
+	}
+	function playSfxCue(notes, type, gain, spacing) {
+		if (muted || !ensure()) { return }
+		var t = ctx.currentTime, step = spacing || 0.06
+		for (var i = 0; i < notes.length; i++) { tone({ freq: notes[i], dur: 0.08 + i * 0.01, type: type, gain: gain }, sfxGain, t + i * step) }
+	}
+	function playSkillCue(id, level) {
+		var a = SKILL_AUDIO[id] || SKILL_AUDIO.fire, lv = Math.max(1, level || 1)
+		if (lv >= 5) {
+			playUiCue([a.base, a.base * a.rise, a.base * a.rise * 1.25], a.type, 0.16, 0.07)
+		} else if (lv > 1) {
+			playUiCue([a.base * 0.85, a.base * a.rise], a.type, 0.13, 0.08)
+		} else {
+			playUiCue([a.base, a.base * a.rise], a.type, 0.12, 0.09)
+		}
+	}
+	function playComboCue(id) {
+		var a = COMBO_AUDIO[id]
+		if (!a) { return }
+		comboAudioSeen[id] = true
+		playUiCue(a.notes, a.type, 0.18, 0.09)
+		duck()
+	}
+	function playPauseCue(paused) { playUiCue(paused ? [240, 180] : [360, 540], 'triangle', 0.14, 0.07) }
+	function playStartCue(replay) { playUiCue(replay ? [300, 450, 600] : [220, 330], 'sine', 0.12, 0.08) }
+	function playDeathCue() { playUiCue([260, 190, 120], 'sawtooth', 0.16, 0.10) }
+	function playBossDefeatCue() {
+		playUiCue([110, 165, 247, 370, 555], 'triangle', 0.20, 0.10)
+		if (ctx) { noise(0.24, 0.12, uiGain, ctx.currentTime + 0.34) }
+	}
+
+	Bus.on('snake:grow', function () { throttled('snake:grow', 90, function () { tone({ freq: 660, freqTo: 990, dur: 0.10, type: 'triangle', gain: 0.12 }) }) })
+	Bus.on('snake:hurt', function () { sfxPing(); tone({ freq: 180, freqTo: 70, dur: 0.22, type: 'sawtooth', gain: 0.30 }); duck() })
+	Bus.on('snake:wall', function () { throttled('snake:wall', 100, function () { noise(0.08, 0.10) }) })
+	Bus.on('enemy:hit', function (d) {
+		d = d || {}
+		if (d.isDot && d.src === 'fire') { throttled('hit:fire', 280, playFire) }
+		else { throttled('hit:other', 70, function () { tone({ freq: 520, dur: 0.05, type: 'triangle', gain: 0.08 }) }) }
+	})
+	Bus.on('enemy:die', function (d) {
+		d = d || {}
+		if (d.kind === 'boss' || d.kind === 'elite') { sfxPing(); duck() }
+		throttled('enemy:die', 90, function () { noise(0.10, 0.12); tone({ freq: 220, freqTo: 110, dur: 0.10, type: 'square', gain: 0.08 }) })
+	})
+	Bus.on('enemy:phase', function () { tone({ freq: 110, freqTo: 60, dur: 0.50, type: 'sawtooth', gain: 0.30 }); duck() })
+	Bus.on('skill:offer', function () { sfxPing(); chooseDuckMul = CHOOSE_DUCK; applyBgmGain(false); playUiCue([520, 660, 880], 'sine', 0.14, 0.08) })
+	Bus.on('skill:gained', function (d) { d = d || {}; chooseDuckMul = 1; applyBgmGain(false); playSkillCue(d.id, d.level); duck() })
+	Bus.on('combo:found', function (d) { playComboCue(d && d.id) })
+	Bus.on('wave:boss_warn', function () { sfxPing(); playUiCue([140, 110, 90], 'square', 0.18, 0.10); duck() })
+	Bus.on('wave:stage', function () { throttled('wave:stage', 120, function () { tone({ freq: 440, freqTo: 660, dur: 0.14, type: 'sine', gain: 0.10 }) }) })
+	Bus.on('pickup:eat', function (d) {
+		d = d || {}
+		if (d.kind === 'skill') { playUiCue([620, 930], 'sine', 0.12, 0.08) }
+		else if (d.kind === 'heal') { playUiCue([300, 450], 'triangle', 0.10, 0.08) }
+		else { throttled('pickup:food', 80, function () { tone({ freq: 780, dur: 0.06, type: 'triangle', gain: 0.07 }) }) }
+	})
+	Bus.on('fx:bolt', function () { throttled('fx:bolt', 110, function () { tone({ freq: 720, freqTo: 980, dur: 0.07, type: 'square', gain: 0.08 }) }) })
+	Bus.on('fx:ice_throw', function () { throttled('fx:ice_throw', 140, function () { tone({ freq: 900, freqTo: 500, dur: 0.10, type: 'sine', gain: 0.08 }) }) })
+	Bus.on('fx:ice_pool', function () { throttled('fx:ice_pool', 220, function () { tone({ freq: 500, freqTo: 900, dur: 0.16, type: 'sine', gain: 0.08 }) }) })
+	Bus.on('fx:lightning', function () { throttled('fx:lightning', 120, function () { tone({ freq: 860, freqTo: 1300, dur: 0.08, type: 'sawtooth', gain: 0.10 }) }) })
+	Bus.on('fx:electroarc', function () { throttled('fx:electroarc', 120, function () { playSfxCue([520, 780, 1170], 'square', 0.08, 0.035) }) })
+	Bus.on('fx:steamblast', function () { throttled('fx:steamblast', 220, function () { noise(0.12, 0.10); tone({ freq: 140, freqTo: 70, dur: 0.18, type: 'sawtooth', gain: 0.12 }) }) })
+	Bus.on('fx:burndart', function () { throttled('fx:burndart', 140, function () { tone({ freq: 220, freqTo: 120, dur: 0.11, type: 'sawtooth', gain: 0.12 }) }) })
 
 	// ================= 程序化 BGM（v3 · 照《此生为蛇》音频规范 v0.1 音符级曲谱） =================
 	// 频率表(Hz) · A 自然小调
@@ -171,7 +278,7 @@
 		g.gain.exponentialRampToValueAtTime(peak, t + a)
 		g.gain.setValueAtTime(peak, susEnd)
 		g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.02)
+		o.connect(g); g.connect(dest); trackVoice(bgmNodes, o); o.start(t); o.stop(t + dur + 0.02)
 	}
 	// PAD：2× triangle，其一 +6 cent 宽度
 	function playPad(freq, t, dur, dest) {
@@ -185,7 +292,7 @@
 		for (var i = 0; i < n; i++) { d[i] = (Math.random() * 2 - 1) * (1 - i / n) }
 		var src = ctx.createBufferSource(); src.buffer = buf
 		var g = ctx.createGain(); g.gain.value = gain
-		src.connect(g); g.connect(dest); src.start(t)
+		src.connect(g); g.connect(dest); trackVoice(bgmNodes, src); src.start(t)
 	}
 	// 层增益 crossfade（~0.8s 无缝）
 	function rampGain(node, v, t, dur) {
@@ -202,6 +309,13 @@
 		if (immediate) { g.setValueAtTime(v, t) }
 		else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + 0.15) }
 	}
+	function applySfxGain(immediate) {
+		if (!sfxGain || !ctx) { return }
+		var t = ctx.currentTime, g = sfxGain.gain, v = sfxPauseMul
+		g.cancelScheduledValues(t)
+		if (immediate) { g.setValueAtTime(v, t) }
+		else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + AUDIO_MIX.pauseRampSec) }
+	}
 	function setLayer(layer) {
 		curLayer = layer
 		targetStepDur = 60 / STEP_BPM[layer] / 4
@@ -214,20 +328,51 @@
 	}
 	// Ducking：关键事件瞬时压低 −6dB(×0.5) ~250ms 再回升（平滑 150ms）
 	function duck() {
-		eventDuckMul = 0.5
+		eventDuckMul = AUDIO_MIX.duckMul
 		applyBgmGain(false)
-		setTimeout(function () { eventDuckMul = 1; applyBgmGain(false) }, 250)
+		if (duckTimer) { clearTimeout(duckTimer) }
+		duckTimer = setTimeout(function () { duckTimer = null; eventDuckMul = 1; applyBgmGain(false) }, AUDIO_MIX.duckSec * 1000)
 	}
 	// 单步编曲（bar 0..3 = Am F C G；stepInBar 0..15）
+	function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
+	function updateMusicState() {
+		if (!ctx || !bgmRunning || (ctx.currentTime - musicSampleAt) < AUDIO_MIX.stateSampleSec) { return }
+		musicSampleAt = ctx.currentTime
+		var gs = global.GS || {}, enemy = Registry && Registry.get ? Registry.get('enemy') : null
+		var stage = clamp(gs.stageId || 1, 1, 5), stageBase = [0.12, 0.32, 0.56, 0.82, 1.05][stage - 1]
+		var mobs = enemy && enemy.countMobs ? enemy.countMobs() : 0
+		var chasing = enemy && enemy.chasingCount ? enemy.chasingCount() : 0
+		var boss = !!(enemy && enemy.hasBoss && enemy.hasBoss())
+		var coreMax = CONFIG.PLAYER && CONFIG.PLAYER.coreHp ? CONFIG.PLAYER.coreHp : 3
+		var hpPressure = clamp(1 - ((gs.coreHp == null ? coreMax : gs.coreHp) / coreMax), 0, 1)
+		pressureTarget = clamp(stageBase + clamp(mobs / AUDIO_MIX.pressureMobCap, 0, 1) * AUDIO_MIX.pressureMobWeight + clamp(chasing / AUDIO_MIX.pressureChaseCap, 0, 1) * AUDIO_MIX.pressureChaseWeight + hpPressure * AUDIO_MIX.pressureHpWeight + (boss ? AUDIO_MIX.pressureBossWeight : 0), 0, 3)
+		var owned = gs.ownedSkills || {}, ownedCount = 0, totalLevel = 0, maxed = 0, key
+		for (key in owned) {
+			if (!Object.prototype.hasOwnProperty.call(owned, key)) { continue }
+			var level = Number(owned[key]) || 0
+			if (level > 0) { ownedCount++; totalLevel += Math.min(5, level); if (level >= 5) { maxed++ } }
+		}
+		var comboCount = (gs.comboHighlights && gs.comboHighlights.length) || 0
+		var streak = clamp((gs.killStreak || 0) / AUDIO_MIX.buildStreakCap, 0, 1)
+		buildTarget = clamp(ownedCount * AUDIO_MIX.buildSkillWeight + totalLevel * AUDIO_MIX.buildLevelWeight + maxed * AUDIO_MIX.buildMaxedWeight + comboCount * AUDIO_MIX.buildComboWeight + streak * AUDIO_MIX.buildStreakWeight, 0, 3)
+		pressureLevel += (pressureTarget - pressureLevel) * AUDIO_MIX.stateLerp
+		buildLevel += (buildTarget - buildLevel) * AUDIO_MIX.stateLerp
+	}
 	function scheduleStep(stepAbs, t) {
 		var bar = Math.floor((stepAbs % 64) / 16)
 		var s = stepAbs % 16
-		var destE = layerGain.explore, destB = layerGain.battle, destS = layerGain.boss
+		var isBattle = (curLayer === 'battle' || curLayer === 'boss')
+		var destE = layerGain.explore, destB = layerGain.battle, destS = layerGain.boss, padDest = (curLayer === 'boss' ? destS : destE)
+		var dynamicDest = (curLayer === 'boss' ? destS : curLayer === 'battle' ? destB : destE)
+		if (buildLevel >= AUDIO_MIX.buildHarmonyBand && (s === 4 || s === 12)) { playOsc(FREQ.A4, 'triangle', t, stepDur * 1.8, 0.035, dynamicDest, 0.01, 0.04) }
+		if (buildLevel >= AUDIO_MIX.buildLeadBand && (s === 3 || s === 11)) { playOsc(FREQ.E5, 'sine', t, stepDur * 1.2, 0.028, dynamicDest, 0.005, 0.03) }
+		if (isBattle && pressureLevel >= AUDIO_MIX.pressurePulseBand && (s === 6 || s === 14)) { playOsc(FREQ.A2, 'triangle', t, stepDur * 1.5, 0.035, dynamicDest, 0.005, 0.03) }
+		if (curLayer === 'boss' && pressureLevel >= AUDIO_MIX.pressureTensionBand && (s === 1 || s === 9)) { playOsc(FREQ.As4, 'sawtooth', t, stepDur * 0.8, 0.035, destS, 0.003, 0.04) }
 		var isBattle = (curLayer === 'battle' || curLayer === 'boss')
 		// [A.1] PAD：每小节步 0 持续整小节；boss pedal 覆盖整循环（bar0 触发）
 		if (s === 0) {
 			var chord = PAD[bar]
-			for (var i = 0; i < chord.length; i++) { playPad(FREQ[chord[i]], t, 16 * stepDur, destE) }
+			for (var i = 0; i < chord.length; i++) { playPad(FREQ[chord[i]], t, 16 * stepDur, padDest) }
 			if (curLayer === 'boss' && bar === 0) { playOsc(FREQ.A2, 'triangle', t, 64 * stepDur, 0.10, destS, 0.4, 0.8) }
 		}
 		// [A.2] BASS
@@ -271,6 +416,7 @@
 	// lookahead 调度器（不进主循环、零每帧分配；~25ms 轮询）
 	function _sched() {
 		if (!bgmRunning || !ctx) { return }
+		updateMusicState()
 		while (nextNoteTime < ctx.currentTime + 0.12) {
 			scheduleStep(absStep, nextNoteTime)
 			absStep++
@@ -284,7 +430,7 @@
 			if (bgmRunning) { return }
 			bgmRunning = true
 			absStep = 0
-			stepDur = targetStepDur = 60 / STEP_BPM.explore / 4
+			stepDur = targetStepDur = 60 / STEP_BPM[curLayer] / 4
 			nextNoteTime = ctx.currentTime + 0.1
 			applyBgmGain(true)
 			bgmTimer = setInterval(_sched, 25)
@@ -294,12 +440,19 @@
 	function stopBgm() {
 		bgmRunning = false
 		if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null }
+		stopVoices(bgmNodes)
+	}
+	function clearAudioTimers() {
+		if (densityTimer) { clearTimeout(densityTimer); densityTimer = null }
+		if (duckTimer) { clearTimeout(duckTimer); duckTimer = null }
+		densityOn = false; densityDuckMul = 1; eventDuckMul = 1
 	}
 
 	// —— BGM 事件订阅（追加，不动既有 12 事件音效行）——
 	// 开局/重开局：在用户手势同步链内解锁音频并起 explore BGM。
 	// 关键：AudioContext 必须在「用户手势」内创建+resume，否则浏览器 autoplay 策略会在主循环 rAF 内挡住→开局静音，
 	// 要等后续手势(移动键/拾取音效里的 resume)才解锁。core:run_reset 由 startIfMenu→core.resetRun 同步触发，属手势内→合规解锁（修复 2026-07-26）
+	if (false) {
 	Bus.on('core:run_reset', function () {
 		pauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1   // 新一局清空暂停/duck/三选一系数（死亡→重开若残留，避免开局被压/静音）
 		startBgm()                       // 手势内解锁+起 explore BGM；startBgm 内部 ensure+resume(含 ctx running 后真实出声解锁)+调度，自带 bgmRunning 守卫（重开时死亡已 stopBgm→会重启）
@@ -338,6 +491,44 @@
 		var st = (global.GS && global.GS.status)
 		pauseMul = (st === 'paused') ? 0 : 1   // 硬暂停→BGM 归零静音；恢复→还原
 		applyBgmGain(false)
+	})
+
+	}
+
+	Bus.on('core:run_reset', function () {
+		if (densityTimer) { clearTimeout(densityTimer); densityTimer = null }
+		if (duckTimer) { clearTimeout(duckTimer); duckTimer = null }
+		stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
+		pauseMul = 1; sfxPauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1
+		densityOn = false; sfxCount = 0; sfxWinStart = 0; curLayer = 'explore'; battleHeat = 1.0
+		pressureLevel = 0; pressureTarget = 0; buildLevel = 0; buildTarget = 0; musicSampleAt = 0; comboAudioSeen = {}; runCount++
+		if (ensure()) { applySfxGain(true); setLayer('explore') }
+		startBgm()
+		resume(function () { playStartCue(runCount > 1) })
+	})
+	Bus.on('wave:stage', function (d) {
+		if (!bgmRunning) { startBgm() }
+		var sid = d && d.stageId, layer = sid === 5 ? 'boss' : (sid >= 2 ? 'battle' : 'explore')
+		battleHeat = sid === 4 ? 2.0 : sid === 3 ? 1.4 : 1.0
+		setLayer(layer)
+	})
+	Bus.on('wave:boss_warn', function () { if (!bgmRunning) { startBgm() }; battleHeat = 2.0; setLayer('boss'); duck() })
+	Bus.on('snake:dead', function () {
+		clearAudioTimers(); stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
+		pauseMul = 0; sfxPauseMul = 0; applyBgmGain(true); applySfxGain(true); playDeathCue()
+	})
+	Bus.on('boss:defeated', function () {
+		clearAudioTimers(); stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
+		pauseMul = 0; sfxPauseMul = 0; applyBgmGain(true); applySfxGain(true); playBossDefeatCue()
+	})
+	Bus.on('narrative:choice', function () { playUiCue([420, 630], 'sine', 0.10, 0.08) })
+	Bus.on('game:pause_changed', function () {
+		var st = global.GS && global.GS.status
+		if (st === 'paused') {
+			stopVoices(uiNodes); playPauseCue(true); stopBgm(); stopVoices(sfxNodes); pauseMul = 0; sfxPauseMul = 0; applyBgmGain(false); applySfxGain(false)
+		} else {
+			pauseMul = 1; sfxPauseMul = 1; applyBgmGain(false); applySfxGain(false); startBgm(); resume(function () { playPauseCue(false) })
+		}
 	})
 
 	var Audio = {
