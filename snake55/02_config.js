@@ -125,7 +125,25 @@
 		// 2026-07-24p · 贴图显示直径仍以碰撞半径为基线，但各 PNG 按透明主体占比做视觉校准，不改判定半径。
 		//   wanderer/chaser/charger/elite 为角色定位倍率；bossIdle/bossCharge 独立校准，保证收翼核心与张翼核心连续。
 		//   boss 仍保持明显高于普通敌人的视觉层级；GM 经 editor.rtSet('RENDER.spriteVisualScale.*') 可实时覆调，零 gameplay。
-		spriteVisualScale: { wanderer: 2.4, chaser: 2.6, charger: 2.5, elite: 2.3, boss: 2.4, bossIdle: 2.4, bossCharge: 2.62 }
+		spriteVisualScale: { wanderer: 2.4, chaser: 2.6, charger: 2.5, elite: 2.3, boss: 2.2, bossIdle: 2.2, bossCharge: 3.37 },
+		// Boss PNG v2：主体指标来自当前透明像素包围盒，视觉参数只影响显示，不改变碰撞或攻击。
+		bossVisual: {
+			idleBreathPeriodSec: 3.8,
+			idleBreathMaxRatio: 0.025,
+			preWarnSec: 0.6,
+			chargeSec: 0.45,
+			preWarnMaxRatio: 1.08,
+			releaseHoldSec: 0.16,
+			releaseFlashSec: 0.14,
+			recoverySec: 0.48,
+			recoveryRetractSec: 0.30,
+			recoveryCrossfadeSec: 0.18,
+			spriteTransitionSec: 0.10,
+			idleRingAlpha: 0.04,
+			idleRingPulseAlpha: 0.02,
+			idleSprite: { width: 773, height: 790, centerX: 511.5, centerY: 501 },
+			chargeSprite: { width: 810, height: 556, centerX: 511, centerY: 489 }
+		}
 	},
 
 		// —— §2.3 JUICE 手感基因（新增） ——

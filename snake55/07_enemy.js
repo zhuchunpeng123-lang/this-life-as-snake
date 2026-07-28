@@ -91,14 +91,20 @@
 		list.push(e)
 		return e
 	}
-	function bossVisualRadius(radius) {
-		var scales = CONFIG.RENDER && CONFIG.RENDER.spriteVisualScale
-		var scale = scales && (scales.bossCharge || scales.boss)
-		return radius * (typeof scale === 'number' && scale > 0 ? scale : 1)
+	function bossBulletSpawnDistance(radius, ang) {
+		var render = CONFIG.RENDER || {}, scales = render.spriteVisualScale || {}, visual = render.bossVisual || {}
+		var scale = scales.bossCharge || scales.boss || 1
+		var metric = visual.chargeSprite || {}
+		var halfW = radius * scale * (metric.width || 1024) / 1024
+		var halfH = radius * scale * (metric.height || 1024) / 1024
+		var c = Math.cos(ang), s = Math.sin(ang)
+		var denom = (halfW > 0 && halfH > 0) ? Math.sqrt((c * c) / (halfW * halfW) + (s * s) / (halfH * halfH)) : 0
+		var edge = denom > 0 ? 1 / denom : radius * scale
+		return edge + BOSS_BULLET_RADIUS
 	}
 	function spawnBullet(x, y, ang, bossRadius) {
 		var e = pool.acquire()
-		var edge = bossVisualRadius(bossRadius || 0) + BOSS_BULLET_RADIUS
+		var edge = bossBulletSpawnDistance(bossRadius || 0, ang)
 		var spawnX = x + Math.cos(ang) * edge, spawnY = y + Math.sin(ang) * edge
 		e.active = true; e.id = ++_id; e.type = 'bossBullet'
 		e.x = spawnX; e.y = spawnY; e.prevX = spawnX; e.prevY = spawnY; e.radius = BOSS_BULLET_RADIUS

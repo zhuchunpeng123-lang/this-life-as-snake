@@ -2,6 +2,7 @@
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	var M = Core.M
+	var BOSS_ACTION = (CONFIG.RENDER && CONFIG.RENDER.bossVisual) || {}
 	var GAME = CONFIG.GAME, PLAYER = CONFIG.PLAYER, CAM = PLAYER.camera, COL = CONFIG.COLORS, SHK = CONFIG.COMBAT.shake
 	var STYLE = CONFIG.STYLE   // §5.5 视觉真源（唯一引用；全文件禁再写 CONFIG.STYLE 或散色）
 
@@ -122,13 +123,18 @@
 	var BOSS_VISUAL = {   // 纯视觉参数：不参与 Boss 数值、攻击、碰撞或阶段判定
 		floatHz: 0.7,
 		floatRatio: 0.012,
-		idleBreathPeriodSec: 3.8,
-		idleBreathRatio: 0.012,
-		preWarnSec: 0.5,
-		chargeWindowSec: 0.42,
+		idleBreathPeriodSec: BOSS_ACTION.idleBreathPeriodSec || 3.8,
+		idleBreathMaxRatio: BOSS_ACTION.idleBreathMaxRatio || 0.025,
+		idleBreathRatio: BOSS_ACTION.idleBreathMaxRatio || 0.025,
+		preWarnSec: BOSS_ACTION.preWarnSec || 0.6,
+		chargeWindowSec: BOSS_ACTION.chargeSec || 0.45,
 		releaseDetectDelta: 0.1,
-		releaseHoldSec: 0.32,
-		releaseFlashSec: 0.14,
+		releaseHoldSec: BOSS_ACTION.releaseHoldSec || 0.16,
+		releaseFlashSec: BOSS_ACTION.releaseFlashSec || 0.14,
+		recoverySec: BOSS_ACTION.recoverySec || 0.48,
+		recoveryRetractSec: BOSS_ACTION.recoveryRetractSec || 0.30,
+		recoveryCrossfadeSec: BOSS_ACTION.recoveryCrossfadeSec || 0.18,
+		spriteTransitionSec: BOSS_ACTION.spriteTransitionSec || 0.10,
 		releasePunchScale: 0.035,
 		releaseRingAlpha: 0.62,
 		releaseRingBase: 0.54,
@@ -138,8 +144,8 @@
 		baseAuraAlpha: 0.22,
 		warningAuraAlpha: 0.14,
 		chargeAuraAlpha: 0.12,
-		idleRingAlpha: 0.08,
-		idleRingPulseAlpha: 0.04,
+		idleRingAlpha: BOSS_ACTION.idleRingAlpha || 0.04,
+		idleRingPulseAlpha: BOSS_ACTION.idleRingPulseAlpha || 0.02,
 		idleRingWidth: 3,
 		idleRingWidthPulse: 1,
 		idleRingOffset: 8,
@@ -509,6 +515,159 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		withGlow(STYLE.elite, r * STYLE.glowBlur * 2, 0.4 + pulse * 0.3, function () {
 			ctx.beginPath(); ctx.arc(x, y, r * 1.35, 0, M.PI2); ctx.strokeStyle = STYLE.elite; ctx.lineWidth = 2; ctx.stroke()
 		})
+	}
+	function drawBossSprite(ctx, type, d, metric) {
+		var rec = _spriteCache['enemy_' + type]
+		if (!rec || rec.failed || !rec.ready || !rec.img) { return false }
+		var img = rec.img, nw = img.naturalWidth, nh = img.naturalHeight
+		if (!(nw > 0 && nh > 0 && d > 0)) { return false }
+		var m = metric || {}, cx = typeof m.centerX === 'number' ? m.centerX : 512, cy = typeof m.centerY === 'number' ? m.centerY : 512
+		var dx = (512 - cx) * d / 1024, dy = (512 - cy) * d / 1024
+		ctx.drawImage(img, -d / 2 + dx, -d / 2 + dy, d, d)
+		return true
+	}
+	function clampBoss01(v) { return Math.max(0, Math.min(1, v)) }
+	function easeBoss(v) { v = clampBoss01(v); return v * v * (3 - 2 * v) }
+	function lerpBoss(a, b, t) { return a + (b - a) * t }
+	function bossIdleBreathScale(t) {
+		var phase = 0.5 + 0.5 * Math.sin(t * M.PI2 / BOSS_VISUAL.idleBreathPeriodSec)
+		return 1 + phase * BOSS_VISUAL.idleBreathMaxRatio
+	}
+	function bossImageReady(type) {
+		var rec = _spriteCache['enemy_' + type]
+		return !!(rec && rec.ready && !rec.failed)
+	}
+	var _bossVisualStateV2 = {}
+	function getBossVisualStateV2(b, t, warningWindow, canWarn) {
+		var key = b.id || 'boss'
+		var fireT = (typeof b.fireT === 'number') ? b.fireT : 0
+		var state = _bossVisualStateV2[key]
+		if (!state) {
+			state = { lastFireT: fireT, releaseAt: -1, preWarnStartScale: null }
+			_bossVisualStateV2[key] = state
+		} else {
+			if (fireT > state.lastFireT + BOSS_VISUAL.releaseDetectDelta) {
+				state.releaseAt = t
+				state.preWarnStartScale = null
+			}
+			if (canWarn && fireT < warningWindow && (state.lastFireT >= warningWindow || state.preWarnStartScale === null)) {
+				state.preWarnStartScale = bossIdleBreathScale(t)
+			}
+			if (fireT >= warningWindow && state.releaseAt < 0) { state.preWarnStartScale = null }
+			state.lastFireT = fireT
+		}
+		return state
+	}
+	function drawBossBodyV2(b, t) {
+		var x = _ix(b), y = _iy(b), r = b.radius
+		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
+		var metrics = BOSS_ACTION
+		var idleMetric = metrics.idleSprite || { width: 773, height: 790, centerX: 511.5, centerY: 501 }
+		var chargeMetric = metrics.chargeSprite || { width: 810, height: 556, centerX: 511, centerY: 489 }
+		var idleVs = vsTab.bossIdle || vsTab.boss || 2.2
+		var chargeVs = vsTab.bossCharge || idleVs
+		var idleD = r * 2 * idleVs
+		var chargeD = r * 2 * chargeVs
+		var handoffVs = idleVs * idleMetric.height / chargeMetric.height
+		var handoffRatio = chargeVs > 0 ? handoffVs / chargeVs : 1
+		var chargeHeightRatio = idleVs > 0 ? chargeVs * chargeMetric.height / (idleVs * idleMetric.height) : 1
+		var preWarnTarget = Math.max(1, Math.min(metrics.preWarnMaxRatio || 1.08, chargeHeightRatio))
+		var warningWindow = BOSS_VISUAL.preWarnSec + BOSS_VISUAL.chargeWindowSec
+		var canWarn = b.invuln <= 0
+		var state = getBossVisualStateV2(b, t, warningWindow, canWarn)
+		var releaseAge = state.releaseAt >= 0 ? t - state.releaseAt : -1
+		var releaseActive = releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseHoldSec + BOSS_VISUAL.recoverySec
+		var releaseHold = releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseHoldSec
+		var recoveryAge = releaseAge >= BOSS_VISUAL.releaseHoldSec ? releaseAge - BOSS_VISUAL.releaseHoldSec : -1
+		var warning = !releaseActive && canWarn && b.fireT >= 0 && b.fireT < warningWindow ? clampBoss01((warningWindow - b.fireT) / BOSS_VISUAL.preWarnSec) : 0
+		var charge = warning > 0 && b.fireT < BOSS_VISUAL.chargeWindowSec ? clampBoss01((BOSS_VISUAL.chargeWindowSec - b.fireT) / BOSS_VISUAL.chargeWindowSec) : 0
+		var preStartScale = state.preWarnStartScale == null ? bossIdleBreathScale(t) : state.preWarnStartScale
+		var preScale = lerpBoss(preStartScale, preWarnTarget, easeBoss((warningWindow - b.fireT) / BOSS_VISUAL.preWarnSec))
+		var chargeAge = charge > 0 ? BOSS_VISUAL.chargeWindowSec - b.fireT : 0
+		var chargeBlend = charge > 0 ? clampBoss01(chargeAge / BOSS_VISUAL.spriteTransitionSec) : 0
+		var recoveryProgress = recoveryAge >= 0 ? clampBoss01(recoveryAge / BOSS_VISUAL.recoverySec) : 0
+		var retractProgress = recoveryAge >= 0 ? clampBoss01(recoveryAge / BOSS_VISUAL.recoveryRetractSec) : 0
+		var crossfadeStart = Math.max(0, BOSS_VISUAL.recoverySec - BOSS_VISUAL.recoveryCrossfadeSec)
+		var crossfadeProgress = recoveryAge >= crossfadeStart ? clampBoss01((recoveryAge - crossfadeStart) / BOSS_VISUAL.recoveryCrossfadeSec) : 0
+		var breath = !warning && !releaseActive ? bossIdleBreathScale(t) : 1
+		var effectD = idleD * breath
+		var idleAlpha = 1, chargeAlpha = 0, idleDrawD = effectD, chargeDrawD = chargeD
+		if (warning > 0 && charge <= 0) {
+			idleDrawD = idleD * preScale
+			effectD = idleDrawD
+		} else if (charge > 0) {
+			idleDrawD = idleD * preWarnTarget
+			chargeAlpha = chargeBlend
+			idleAlpha = 1 - chargeBlend
+			effectD = lerpBoss(idleDrawD, chargeD, chargeBlend)
+		} else if (releaseHold) {
+			idleAlpha = 0
+			chargeAlpha = 1
+			chargeDrawD = chargeD
+			effectD = chargeD
+		} else if (recoveryAge >= 0 && recoveryAge < BOSS_VISUAL.recoverySec) {
+			var retractD = lerpBoss(chargeD, chargeD * handoffRatio, easeBoss(retractProgress))
+			chargeDrawD = recoveryAge < crossfadeStart ? retractD : chargeD * handoffRatio
+			idleDrawD = idleD
+			chargeAlpha = 1 - crossfadeProgress
+			idleAlpha = crossfadeProgress
+			effectD = lerpBoss(chargeDrawD, idleD, crossfadeProgress)
+		}
+		var visualY = y + Math.sin(t * BOSS_VISUAL.floatHz) * r * BOSS_VISUAL.floatRatio
+		var ringCol = b.phase >= 2 ? '#ff5ab0' : STYLE.boss
+		var chargeReady = bossImageReady('bossCharge')
+		var idleReady = bossImageReady('boss')
+		var legacyReady = bossImageReady('bossLegacy')
+		var chargeType = chargeReady ? 'bossCharge' : (idleReady ? 'boss' : 'bossLegacy')
+		var idleType = idleReady ? 'boss' : (chargeReady ? 'bossCharge' : (legacyReady ? 'bossLegacy' : 'boss'))
+		var hasSprite = bossImageReady(chargeType) || bossImageReady(idleType)
+		ctx.save(); ctx.translate(x, visualY)
+		var vx = (b.prevX != null) ? (b.x - b.prevX) : 0
+		if (vx < 0) { ctx.scale(-1, 1) }
+		if (hasSprite) {
+			var auraAlpha = BOSS_VISUAL.baseAuraAlpha + warning * BOSS_VISUAL.warningAuraAlpha + charge * BOSS_VISUAL.chargeAuraAlpha
+			if (releaseHold) { auraAlpha += (1 - releaseAge / BOSS_VISUAL.releaseHoldSec) * BOSS_VISUAL.chargeAuraAlpha }
+			drawHalo('boss', 0, 0, effectD * 0.72, ringCol, auraAlpha)
+			if (idleAlpha > 0) {
+				ctx.globalAlpha = idleAlpha
+				drawBossSprite(ctx, idleType, idleDrawD, idleType === 'boss' ? idleMetric : null)
+			}
+			if (chargeAlpha > 0) {
+				ctx.globalAlpha = chargeAlpha
+				drawBossSprite(ctx, chargeType, chargeDrawD, chargeType === 'bossCharge' ? chargeMetric : null)
+			}
+		} else {
+			ctx.scale(effectD / (r * 2), effectD / (r * 2))
+			drawBossFallback(ctx, r, t, b)
+		}
+		ctx.restore()
+		if (b.flashT > 0) { ctx.globalAlpha = 0.5; circle(x, visualY, effectD * 0.5, '#ffdff0'); ctx.globalAlpha = 1 }
+		else if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { ctx.globalAlpha = 0.5; circle(x, visualY, effectD * 0.5, '#ffffff'); ctx.globalAlpha = 1 }
+		if (releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseFlashSec) {
+			var releasePulse = 1 - releaseAge / BOSS_VISUAL.releaseFlashSec
+			ctx.globalAlpha = BOSS_VISUAL.releaseRingAlpha * releasePulse
+			ctx.lineWidth = BOSS_VISUAL.releaseRingWidth + releasePulse * BOSS_VISUAL.releaseRingWidthPulse
+			ctx.strokeStyle = '#f7e9ff'
+			ctx.beginPath(); ctx.arc(x, visualY, effectD * (BOSS_VISUAL.releaseRingBase + releasePulse * BOSS_VISUAL.releaseRingExpand), 0, M.PI2); ctx.stroke()
+		}
+		var pulse = 0.5 + 0.5 * Math.sin(t * 2.5)
+		ctx.globalAlpha = BOSS_VISUAL.idleRingAlpha + pulse * BOSS_VISUAL.idleRingPulseAlpha
+		ctx.lineWidth = BOSS_VISUAL.idleRingWidth + pulse * BOSS_VISUAL.idleRingWidthPulse; ctx.strokeStyle = ringCol
+		ctx.beginPath(); ctx.arc(x, visualY, effectD * 0.5 + BOSS_VISUAL.idleRingOffset + pulse * BOSS_VISUAL.idleRingPulseOffset, 0, M.PI2); ctx.stroke()
+		if (warning > 0) {
+			var warningPulse = 0.5 + 0.5 * Math.sin(t * BOSS_VISUAL.warningRingHz)
+			ctx.globalAlpha = BOSS_VISUAL.warningRingAlpha + warning * BOSS_VISUAL.warningRingPulseAlpha
+			ctx.lineWidth = BOSS_VISUAL.warningRingWidth + warning * BOSS_VISUAL.warningRingWidthPulse
+			ctx.strokeStyle = ringCol
+			ctx.beginPath(); ctx.arc(x, visualY, effectD * (BOSS_VISUAL.warningRingBase + warning * BOSS_VISUAL.warningRingExpand + warningPulse * BOSS_VISUAL.warningRingPulseRadius), 0, M.PI2); ctx.stroke()
+		}
+		if (b.phase >= 2) {
+			ctx.globalAlpha = BOSS_VISUAL.phase2RingAlpha + pulse * BOSS_VISUAL.phase2RingPulseAlpha
+			ctx.lineWidth = BOSS_VISUAL.phase2RingWidth + pulse
+			ctx.strokeStyle = '#f7e9ff'
+			ctx.beginPath(); ctx.arc(x, visualY, effectD * 0.5 + BOSS_VISUAL.phase2RingOffset + pulse * 2, 0, M.PI2); ctx.stroke()
+		}
+		ctx.globalAlpha = 1
 	}
 	var _bossVisualState = {}
 	function getBossVisualState(b, t) {
@@ -1075,6 +1234,8 @@ function drawDebugHud() {
 	Bus.on('core:run_reset', function () { _bossVisualState = {} })   // Boss 视觉 fireT 跳变检测只保留本局状态，不触碰 gameplay
 
 	var Render = { init: init, resize: resize, draw: draw, camera: cam, getFlickerSample: function () { return { head: _flkHead, body: _flkBody } }, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
+	drawBossBody = drawBossBodyV2
+	Bus.on('core:run_reset', function () { _bossVisualStateV2 = {} })
 	Registry.register('render', Render)
 	Log.info('render 就绪：镜头跟随 + 世界绘制 + 四档屏震')
 
