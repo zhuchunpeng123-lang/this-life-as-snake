@@ -4,6 +4,12 @@
 
 > 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。
 
+## 2026-07-28 · fix(debug): GM 碰撞盒补回蛇头基线
+- **根因**：`11_render.js` 的 `SPRITE_BASELINE` 缺少 `PLAYER.headRadius`，GM 碰撞盒请求该键后得到 `undefined`，蛇头 `arc()` 半径为 `NaN`，因此静默不显示。
+- **修复**：补入 `PLAYER.headRadius` 基线；继续通过现有 `RT()` 读取 GM 实时覆盖值，仅修复调试绘制数据来源，不改变实际碰撞半径。
+- **范围**：仅 dev-only 碰撞盒绘制；未改 gameplay、数值、伤害、技能、波次、`03_core.js` 或 `04_collision.js`。
+- **验收**：静态检查通过；浏览器需在 DEBUG/GM 开启后确认蛇头红色碰撞圈与实际判定半径一致。
+
 ## 2026-07-28 · diagnosis: iOS 静音开关下网页 Web Audio 无声
 - **真机证据**：iPhone 12 / iOS 26.4.1 在 Safari 普通页面与 iOS standalone 均复现；打开静音开关时 BGM、音效和直连测试音均无声，关闭静音开关后声音正常。
 - **诊断结论**：诊断面板显示 `AudioContext=running`、`currentTime` 正常推进、master/BGM 增益非零、测试音已直接调度到 `destination` 且无异常。当前证据不支持继续重写音频节点链，现象按 iOS 静音策略对网页 Web Audio 的平台限制记录。

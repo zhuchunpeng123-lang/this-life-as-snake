@@ -136,6 +136,7 @@
 	// 读取时机：本文件在 03_core.deepFreeze(CONFIG) 之后才加载（index.html 顺序）→ PLAYER.headRadiusRender 此刻已是 config-override 注入后的冻结值 → 视觉只读 headRadiusRender（渲染半径），与碰撞 headRadius 解耦（视觉≥判定）。
 	var SPRITE_BASELINE = {
 		'PLAYER.headRadiusRender': PLAYER.headRadiusRender,
+		'PLAYER.headRadius': PLAYER.headRadius,
 		'PLAYER.bodyRadius': PLAYER.bodyRadius
 	}
 	var MIN_SPRITE_R = 8   // 与 04_collision.MIN_JUDGE_R / 13_editor RANGE.playerRadius 最小对齐：视觉安全下限，避免 localStorage 残留过小半径导致蛇画得过小（判定已回退 14，视觉须同步抬高，否则「小蛇大判定」不一致）
