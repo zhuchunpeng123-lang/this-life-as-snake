@@ -80,7 +80,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		// 全屏按钮：安卓/桌面一键全屏（经 Bus 由 main 调 API）；iPhone 不支持 JS 全屏→main 提示「添加到主屏幕」
 		fullscreenBtn = mk('div', 'min-width:' + (isTouch ? '92px' : 'auto') + ';text-align:center;padding:' + (isTouch ? '9px 14px' : '10px 14px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		fullscreenBtn.textContent = '⛶ 全屏'
-		fullscreenBtn.onclick = function () { Bus.emit('ui:fullscreen_toggle') }
+		fullscreenBtn.onclick = function () { Bus.emit('ui:feedback', { kind: 'toggle', id: 'fullscreen' }); Bus.emit('ui:fullscreen_toggle') }
 		// GM 测试面板按钮：仅触屏 + DEBUG 双开时创建；发布配置下 fail-closed。
 		if (isTouch && editorAllowed()) {
 			gmBtn = mk('div', 'min-width:92px;text-align:center;padding:9px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
@@ -254,7 +254,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		// 再来一局按钮：紧跟评级下方(与评级同时出现,不延迟、不沉底)；九项置于其下最底
 		var btn = mk('button', 'display:block;margin:0 auto 16px;padding:13px 30px;border:2px solid ' + STYLE.player + ';border-radius:12px;background:' + STYLE.player + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer;box-shadow:0 0 14px ' + hexA(STYLE.player, 0.5), stage)   // 恢复原始紧凑居中尺寸(不拉满宽)
 		btn.textContent = win ? '再来一局' : '再来一条蛇生'
-		btn.onclick = function () { var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
+		btn.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'replay' }); var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
 		// 九项：图标 + 标签 + 数值 卡片行；整块=stage 宽度(与随身结语 euWrap 同宽,视觉一致)；三列固定→中列等列居中
 		var rows = [
 			[SCORE_ICON.seg, '此生长度', '长到 ' + GS.maxSegments + ' 节'],
@@ -300,7 +300,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		global.addEventListener('orientationchange', _rotateHandler)
 		global.addEventListener('resize', _rotateHandler)
 		var cb = rotateChoiceEl.querySelector('#rc_continue')
-		if (cb) { cb.onclick = finish }   // 兜底：竖屏也能继续，绝不卡死
+		if (cb) { cb.onclick = function () { Bus.emit('ui:feedback', { kind: 'back', id: 'rotate_continue' }); finish() } }   // 兜底：竖屏也能继续，绝不卡死
 	}
 	function hideRotateChoice() {
 		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); global.removeEventListener('resize', _rotateHandler); _rotateHandler = null }
@@ -327,14 +327,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 					+ '<span style="padding:2px 10px;border-radius:999px;background:' + hexA(col, 0.16) + ';border:1px solid ' + col + ';color:' + col + ';font:700 12px system-ui">' + lvlTxt + '</span>'
 					+ '<span style="padding:2px 10px;border-radius:8px;background:' + hexA(STYLE.ui, 0.12) + ';border:1px solid ' + hexA(STYLE.ui, 0.3) + ';color:' + STYLE.textDim + ';font:700 12px system-ui">按 ' + (idx + 1) + '</span>'
 					+ '</div>'
-				card.onclick = function () { var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
+				card.onclick = function () { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_card' }); var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
 			})(choices[i], i)
 		}
 		// 键盘 1/2/3 选卡（与卡片底部提示一致）
 		if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null }
 		chooseKeyHandler = function (e) {
 			var n = parseInt(e.key, 10)
-			if (n >= 1 && n <= choices.length) { var cc = choices[n - 1]; var s = Registry.get('skill'); if (s && cc) { s.pick(cc.id) } hideChoose() }
+			if (n >= 1 && n <= choices.length) { var cc = choices[n - 1]; var s = Registry.get('skill'); if (s && cc) { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_card' }); s.pick(cc.id) } hideChoose() }
 		}
 		global.addEventListener('keydown', chooseKeyHandler)
 		choose.style.display = 'flex'

@@ -1,5 +1,11 @@
 # CHANGELOG · 5.5 好玩基因融合版贪吃蛇
 
+## 2026-07-28 · fix(audio): 音频分轨、火焰和 Boss 结算收口
+- `10_audio.js` 修正 master/BGM/SFX/UI 增益链；master 只读 `masterVolume`，SFX、BGM 和 UI 各自独立控制，暂停期间硬静音且恢复不补播。
+- 火焰 DOT、`fx:burndart`、`fx:steamblast` 改为短暖噪声与弱三角热气音，降低低频冲突并保留三者辨识度。
+- `boss:defeated` 补齐“重击—留白—英雄动机—轻量结算氛围”；`12_ui.js` 通过 `ui:feedback` 统一主要点击语义，避免点击音与奖励音重复叠加。
+- 仅修改音频表现、UI Bus 通知和缓存戳；未修改玩法、数值、`03_core.js` 或 `04_collision.js`。
+
 ## 2026-07-28 - feat(audio): 音频体验优化
 - `10_audio.js` now separates BGM, combat SFX, and UI feedback buses; ordinary hit sounds are throttled without repeatedly ducking BGM.
 - Pause, death, and Boss defeat stop combat voices and the scheduler; start, pickup, choice, pause/resume, narrative, Boss defeat, and death feedback are explicit.
