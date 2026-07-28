@@ -117,6 +117,7 @@
 	var joy = { active: false, dx: 0, dy: 0, pid: null }
 	var _gmOpen = false   // GM 编辑器打开标志：经 Bus('editor:toggle') 与 13_editor 内部 open 同步翻转（零改 editor）
 	var joyBase = null, joyKnob = null   // 摇杆视觉 DOM（固定锚点、常驻淡显；pointer-events:none 不吞 UI 点击）
+	var joyGeom = null, joyGeomDirty = true
 	// 6① 挂起：菜单 / 3选1 / 暂停 / 结算 时摇杆不接管——GM 不再禁摇杆（用户要 GM 开着也能试玩操控；面板内拖拽由 joyDown 排除 #gm_editor_panel 防误触）
 	function inputBlocked() { return GS.status !== 'playing' }
 	// —— 移动端「强制横屏」拦截（仅触屏设备；桌面 PC 竖窗不触发）——
@@ -144,54 +145,77 @@
 		var r = _safeProbe.getBoundingClientRect()
 		return { left: r.left, top: r.top, right: (global.innerWidth || 0) - r.right, bottom: (global.innerHeight || 0) - r.bottom }
 	}
+	function invalidateJoyGeometry() { joyGeomDirty = true }
+	function applyJoyGeometry(g) {
+		if (!g || !joyBase || !joyKnob) { return }
+		joyBase.style.width = (g.baseR * 2) + 'px'; joyBase.style.height = (g.baseR * 2) + 'px'
+		joyBase.style.left = g.baseScreen.x + 'px'; joyBase.style.top = g.baseScreen.y + 'px'
+		joyKnob.style.width = (g.knobR * 2) + 'px'; joyKnob.style.height = (g.knobR * 2) + 'px'
+		joyKnob.style.left = g.baseScreen.x + 'px'; joyKnob.style.top = g.baseScreen.y + 'px'
+	}
+	function rebuildJoyGeometry() {
+		if (!canvas) { return null }
+		var r = canvas.getBoundingClientRect()
+		if (!(r.width > 0) || !(r.height > 0)) { return null }
+		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
+		var logicalW = CONFIG.GAME.logicalWidth || 960, logicalH = CONFIG.GAME.logicalHeight
+		var scale = r.width / logicalW
+		var baseR = (jc.baseRadius || 72) * scale
+		var minR = (jc.minScreenRadius != null ? jc.minScreenRadius : 64)
+		var useR = Math.max(baseR, minR)
+		var bx = (jc.baseFracX != null ? jc.baseFracX : 0.84)
+		if (_gmOpen) { bx = 0.16 }
+		var sa = getSafeArea()
+		var fx = r.width * bx
+		fx = Math.max(sa.left + useR, Math.min(fx, r.width - sa.right - useR))
+		var fy = r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80)
+		fy = Math.max(sa.top + useR, Math.min(fy, r.height - sa.bottom - useR))
+		var baseScreen = { x: r.left + fx, y: r.top + fy }
+		joyGeom = {
+			rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+			sx: logicalW / r.width, sy: logicalH / r.height,
+			baseScreen: baseScreen,
+			baseLogical: { x: fx * logicalW / r.width, y: fy * logicalH / r.height },
+			baseR: useR,
+			knobR: (jc.knobRadius || 30) * scale,
+			travel: (jc.travelFrac != null ? jc.travelFrac : 0.6) * useR
+		}
+		joyGeomDirty = false
+		applyJoyGeometry(joyGeom)
+		return joyGeom
+	}
+	function ensureJoyGeometry() {
+		if (joyGeomDirty) {
+			if (!rebuildJoyGeometry()) { return null }
+		}
+		return joyGeom
+	}
 	function joyRelease() {
 		joy.active = false; joy.pid = null; joy.dx = 0; joy.dy = 0
 		if (joyKnob) { joyKnob.style.opacity = '0' }   // 底座常驻淡显由 frame() 驱动；仅推钮归零
 	}
 	// 固定锚点屏幕坐标（占画布显示区比例，随屏缩放，永不居中）
 	function joyBaseScreen() {
-		var r = canvas.getBoundingClientRect()
-		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		var scale = r.width / (CONFIG.GAME.logicalWidth || 960)
-		var baseR = (jc.baseRadius || 72) * scale
-		var minR = (jc.minScreenRadius != null ? jc.minScreenRadius : 64)   // 屏幕半径下限：小屏 contain 缩放后底座过小捏不住
-		var useR = Math.max(baseR, minR)
-		var bx = (jc.baseFracX != null ? jc.baseFracX : 0.84)
-		if (_gmOpen) { bx = 0.16 }   // GM 面板占右侧320px→摇杆锚点移到左侧，避免被面板盖住、方便试玩操控
-		var sa = getSafeArea()   // 锚点内缩到 safe-area 内的可用区，避开刘海/底部手势条
-		var fx = r.width * bx
-		fx = Math.max(sa.left + useR, Math.min(fx, r.width - sa.right - useR))
-		var fy = r.height * (jc.baseFracY != null ? jc.baseFracY : 0.80)
-		fy = Math.max(sa.top + useR, Math.min(fy, r.height - sa.bottom - useR))
-		return { x: r.left + fx, y: r.top + fy }
+		var g = ensureJoyGeometry()
+		return g ? g.baseScreen : { x: 0, y: 0 }
 	}
 	// 固定锚点逻辑坐标（输入死区判定用，与屏幕锚点同源）
 	function joyBaseLogical() {
-		var r = canvas.getBoundingClientRect()
-		var s = joyBaseScreen()
-		return { x: (s.x - r.left) * (CONFIG.GAME.logicalWidth / r.width), y: (s.y - r.top) * (CONFIG.GAME.logicalHeight / r.height) }
+		var g = ensureJoyGeometry()
+		return g ? g.baseLogical : { x: 0, y: 0 }
 	}
 	// 摇杆视觉定位（模块级：frame() 在模块作用域常驻调用，必须提升到 boot() 外，否则 ReferenceError: updateJoyVisual is not defined → 一进游戏卡暂停）
-	function updateJoyVisual(clientX, clientY) {
-		if (!joyBase) { return }
-		var rect = canvas.getBoundingClientRect()
-		var scale = rect.width / CONFIG.GAME.logicalWidth
-		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		var baseR = Math.max((jc.baseRadius || 72) * scale, (jc.minScreenRadius != null ? jc.minScreenRadius : 64))   // 屏幕半径下限：底座可视/可捏面积保底，避免小屏缩成几像素
-		var knobR = (jc.knobRadius || 30) * scale
-		var travel = (jc.travelFrac != null ? jc.travelFrac : 0.6) * baseR   // 推钮最大行程(占 baseRadius 比例，纯视觉)
-		var bs = joyBaseScreen()
-		var dxs = clientX - bs.x, dys = clientY - bs.y
+	function updateJoyVisual(clientX, clientY, g) {
+		if (!joyBase || !joyKnob) { return }
+		g = g || ensureJoyGeometry()
+		if (!g) { return }
+		var dxs = clientX - g.baseScreen.x, dys = clientY - g.baseScreen.y
 		var dist = Math.hypot(dxs, dys)
 		var ang = Math.atan2(dys, dxs)
-		var t = dist > 1 ? Math.min(dist, travel) : 0   // 推柄视觉位移=方向×min(手指位移,maxDef)；方向恒等于手指向量，增益仅视觉(6②/红线)
-		joyBase.style.width = (baseR * 2) + 'px'; joyBase.style.height = (baseR * 2) + 'px'
-		joyBase.style.left = bs.x + 'px'; joyBase.style.top = bs.y + 'px'
-		joyKnob.style.width = (knobR * 2) + 'px'; joyKnob.style.height = (knobR * 2) + 'px'
-		joyKnob.style.left = bs.x + 'px'; joyKnob.style.top = bs.y + 'px'
+		var t = dist > 1 ? Math.min(dist, g.travel) : 0   // 推柄视觉位移=方向×min(手指位移,maxDef)；方向恒等于手指向量，增益仅视觉(6②/红线)
 		joyKnob.style.transform = 'translate(-50%,-50%) translate(' + (Math.cos(ang) * t) + 'px,' + (Math.sin(ang) * t) + 'px)'
 	}
-	Bus.on('editor:toggle', function () { _gmOpen = !_gmOpen; if (_gmOpen) { joyRelease() } })   // GM 面板打开即挂起摇杆（不误转向/不吞点击），与 13_editor 内部 open 同步
+	Bus.on('editor:toggle', function () { _gmOpen = !_gmOpen; invalidateJoyGeometry(); if (_gmOpen) { joyRelease() } })   // GM 面板打开即挂起摇杆（不误转向/不吞点击），与 13_editor 内部 open 同步
 	// —— DIAG（调试用，window.__SNAKE_DIAG=true 开启；排查直行 stutter + 鼠标自动转向）——
 	var _diag = { t: 0, frames: 0, steps: {}, keyFrames: 0, mouseFrames: 0, mouseNoKey: 0, alphaMin: 1, alphaMax: 0, prevMouseNoKey: false,
 		dtHist: {}, headHist: {}, freeze: 0, prevHx: null, prevHy: null }
@@ -373,7 +397,7 @@
 		var _showBase = (GS.status === 'playing')   // GM 开着也显示摇杆底座（用户要 GM 时也能操控；锚点由 joyBaseScreen 移到左侧避开面板）
 		if (joyBase) { joyBase.style.opacity = _showBase ? (joy.active ? String(_jc.activeOpacity != null ? _jc.activeOpacity : 0.96) : String(_jc.idleOpacity != null ? _jc.idleOpacity : 0.5)) : '0' }
 		if (!_showBase && joyKnob) { joyKnob.style.opacity = '0' }
-		if (_showBase && !joy.active) { var _bs = joyBaseScreen(); updateJoyVisual(_bs.x, _bs.y) }   // 常驻(未激活)时也把底座钉在固定锚点，否则停在初始 (0,0) 左上角
+		if (_showBase && !joy.active) { var _g = ensureJoyGeometry(); if (_g) { updateJoyVisual(_g.baseScreen.x, _g.baseScreen.y, _g) } }   // 常驻(未激活)时也把底座钉在固定锚点，否则停在初始 (0,0) 左上角
 		if (elapsed > 0.05) { elapsed = 0.05 }   // 大间隔封顶 50ms：防穿模/突发多子步
 		// 2026-07-24b 移除 maxFps 封顶旋钮：封顶跳帧在 _acc 累加前 return，但 last 已推进 → 被跳帧的真实时间永久丢失 → 世界整体变慢(165Hz 封 60 ≈ 1/3 速)；且实测不封顶已稳 165，无存在必要
 		global.__FRAME_DT = elapsed   // 本帧真实时间，供相机/屏震做帧率无关缓动
@@ -453,22 +477,30 @@ function buildStart(wrap) {
 				'box-shadow:0 6px 18px rgba(0,0,0,.55), 0 0 22px rgba(77,255,195,.6), inset 0 3px 8px rgba(255,255,255,.45), inset 0 -4px 8px rgba(0,0,0,.25);' +
 				'opacity:0;transition:opacity .2s, transform .045s linear;pointer-events:none;z-index:15'
 			document.body.appendChild(joyBase); document.body.appendChild(joyKnob)
+			invalidateJoyGeometry(); ensureJoyGeometry()
 		}
 		function showJoy() {
 			if (!joyBase) { return }
 			var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
 			joyBase.style.opacity = String(jc.activeOpacity != null ? jc.activeOpacity : 0.96)
 			joyKnob.style.opacity = '1'
-			var bs = joyBaseScreen()
-			updateJoyVisual(bs.x, bs.y)   // 推钮初始居中（未拖动）
+			var g = ensureJoyGeometry()
+			if (g) { updateJoyVisual(g.baseScreen.x, g.baseScreen.y, g) }   // 推钮初始居中（未拖动）
 		}
 		buildJoy()
+		if (global.ResizeObserver) {
+			var joyResizeObserver = new global.ResizeObserver(function () { invalidateJoyGeometry() })
+			joyResizeObserver.observe(canvas)
+		}
+		if (global.visualViewport && global.visualViewport.addEventListener) {
+			global.visualViewport.addEventListener('resize', invalidateJoyGeometry)
+		}
 
 		// 固定锚点摇杆：方向 = 指针相对「固定锚点(左下角安全区)」向量；touch/鼠标/pen 均走摇杆；桌面鼠标 hover 转向已移除（仅摇杆+键盘）
-		function toLogical(e) {
-			var rect = canvas.getBoundingClientRect()
-			var sx = CONFIG.GAME.logicalWidth / rect.width, sy = CONFIG.GAME.logicalHeight / rect.height
-			return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy }
+		function toLogical(e, g) {
+			g = g || ensureJoyGeometry()
+			if (!g) { return { x: 0, y: 0 } }
+			return { x: (e.clientX - g.rect.left) * g.sx, y: (e.clientY - g.rect.top) * g.sy }
 		}
 		function joyDown(e) {
 			startIfMenu()                                // 点「开始/再来一局」先翻 playing，使本次按压的余下拖动即可转向（修开始遮罩吞 pointerdown→首手势摇杆不激活/蛇不转向）
@@ -478,7 +510,8 @@ function buildStart(wrap) {
 			// HUD 按钮(暂停/全屏/GM，均在 #ui-stage 内且 pointer-events:auto)点击不误触摇杆；游戏画布/开始/结算遮罩不在 #ui-stage → 正常激活
 			if (GS.status === 'playing' && e.target && e.target.closest && e.target.closest('#ui-stage')) { return }
 			if (e.target && e.target.closest && e.target.closest('#gm_editor_panel')) { return }   // GM 面板(右侧320px)内拖拽不误触摇杆（GM 开着也能操控摇杆→只在面板外激活）
-			var p = toLogical(e), b = joyBaseLogical()
+			var g = ensureJoyGeometry(); if (!g) { return }
+			var p = toLogical(e, g), b = g.baseLogical
 			joy.dx = p.x - b.x; joy.dy = p.y - b.y     // 方向=指针相对「固定锚点」向量（底座永不居中，不盖蛇）
 			joy.active = true; joy.pid = e.pointerId
 			try { canvas.setPointerCapture(e.pointerId) } catch (_) {}   // 捕获到稳定元素 canvas：即便开始遮罩被隐藏也不触发 pointercancel，首手势拖动可持续转向（移动端关键）
@@ -487,9 +520,10 @@ function buildStart(wrap) {
 		function joyMove(e) {
 			if (!joy.active || e.pointerId !== joy.pid) { return }   // 6② 仅锁定指更新位移，多指不重置锚点
 			if (inputBlocked()) { joyRelease(); return }            // 模态中途弹出（如 3选1）→ 立即挂起
-			var p = toLogical(e), b = joyBaseLogical()
+			var g = ensureJoyGeometry(); if (!g) { return }
+			var p = toLogical(e, g), b = g.baseLogical
 			joy.dx = p.x - b.x; joy.dy = p.y - b.y
-			updateJoyVisual(e.clientX, e.clientY)
+			updateJoyVisual(e.clientX, e.clientY, g)
 		}
 		function joyUp(e) {
 			if (e.pointerId !== joy.pid) { return }   // 6② 仅锁定指释放，多指不误释放
@@ -510,7 +544,7 @@ function buildStart(wrap) {
 		})
 		global.addEventListener('pointerup', function (e) { cursor.on = false; joyUp(e) })       // 松手保持最后方向（蛇按末向续行，不丢输入）
 		global.addEventListener('pointercancel', function (e) { cursor.on = false; joyUp(e) })
-		global.addEventListener('orientationchange', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸
+		global.addEventListener('orientationchange', function () { invalidateJoyGeometry(); var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸
 		global.addEventListener('keydown', function (e) {
 			keys[e.key] = true
 			// 调试：像素吸附开关（2026-07-24 FPS 回归 A/B；实测已证伪=对卡顿无影响，保留仅作对照）按 B
@@ -540,7 +574,7 @@ function buildStart(wrap) {
 			}
 		}
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
-		global.addEventListener('resize', function () { var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
+		global.addEventListener('resize', function () { invalidateJoyGeometry(); var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
 
 		Log.info('main 就绪：循环启动（固定 STEP 累加器 ' + STEP.toFixed(4) + 's · 锁 60Hz 仿真 + 渲染插值 · 不封顶跑满刷新率）')
 		global.requestAnimationFrame(frame)
