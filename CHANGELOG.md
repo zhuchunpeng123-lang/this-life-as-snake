@@ -4,6 +4,12 @@
 
 > 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。
 
+## 2026-07-28 · fix(audio): standalone 音频状态与开始手势兜底
+- **现象**：Safari 普通页面开局有声，但 iOS standalone 仍可能要等食物或技能点击后才有声，出现时间不稳定。
+- **修复**：`10_audio.js` 对所有非 `running`/`closed` 状态主动调用 `AudioContext.resume()`，覆盖 standalone 可能出现的 `interrupted`；`14_main.js` 开始控件增加直接 `touchend`/`click` 解锁兜底。
+- **范围**：仅音频恢复状态和首次手势兜底；未改音频配方、玩法、数值、技能、敌人、波次、经济、`03_core.js` 或 `04_collision.js`。
+- **验收**：静态检查通过；iOS Safari 与 standalone 需分别冷启动多次，确认点击开始后立即有声且不再依赖食物/技能点击。
+
 ## 2026-07-28 · fix(audio): iOS 首次开始同步解锁音频
 - **现象**：iOS Safari 首次点击开始后没有声音，直到技能三选一时再次点击技能卡才出现声音；静音开关已确认关闭。
 - **根因**：开始流程先重置本局并依赖 document 级音频兜底监听，未在开始处理函数内明确同步调用 `Audio.unlock()`；iOS 可能未在首次 `pointerdown` 链路完成 `AudioContext.resume()`，后续技能卡 `click` 才触发成功解锁。

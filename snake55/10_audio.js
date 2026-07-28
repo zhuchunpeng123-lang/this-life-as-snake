@@ -30,12 +30,13 @@
 	function resume(cb) {
 		if (!ctx) { if (cb) { cb() } return }
 		if (ctx.state === 'running') { if (cb) { cb() } return }
-		if (ctx.state === 'suspended') {
-			var p = ctx.resume()
+		if (ctx.state === 'closed' || typeof ctx.resume !== 'function') { return }
+		try {
+			var p = ctx.resume()   // Safari standalone 可能报告 interrupted；所有非 running/closed 状态都走同一恢复路径
 			if (p && p.then) {
 				p.then(function () { if (ctx && ctx.state === 'running') { if (cb) { cb() } } }).catch(function () {})
-			} else if (cb) { cb() }
-		}
+			} else if (ctx.state === 'running' && cb) { cb() }
+		} catch (_) {}
 	}
 	var _kicked = false   // iOS 解锁只需真实出声一次；跑过后不再 kick，避免重复 run_reset 出咔哒声
 	// iOS Safari 经典解锁：须在用户手势内「实际输出非零音频」才解锁管线。关键：手势调用栈内同步 start 振荡器(即便 ctx 尚 suspended，

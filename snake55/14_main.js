@@ -443,13 +443,15 @@
 		}
 	}
 
-function buildStart(wrap) {
+	function buildStart(wrap) {
 		startEl = document.createElement('div')
 		startEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#fff;font:700 24px system-ui;background:rgba(8,10,20,0.6);z-index:15;cursor:pointer'
 		var t = document.createElement('div'); t.textContent = '5.5 好玩基因融合版贪吃蛇'; startEl.appendChild(t)
 		var sub = document.createElement('div'); sub.style.cssText = 'font-size:16px;opacity:.8'; sub.textContent = '点击 / 方向键(WASD) 开始 · ~ 调参'; startEl.appendChild(sub)
 		wrap.appendChild(startEl)
 		startEl.addEventListener('pointerdown', startIfMenu)
+		startEl.addEventListener('touchend', function () { var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() } }, { passive: true })
+		startEl.addEventListener('click', function () { var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() } })
 	}
 
 	function boot() {
