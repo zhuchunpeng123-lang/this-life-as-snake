@@ -9,6 +9,8 @@
 - Codex 守则：`AGENTS.md`
 - 当前开放问题：`docs/DEBT.md`
 - 架构概要：`docs/ARCHITECTURE.md`
+- AI 协作规范：`docs/AI-COLLABORATION.md`
+- 世界观与冠夜鸮视觉规范：`docs/design/`
 - 文档目录：`docs/README.md`
 
 ## 运行

@@ -10,6 +10,7 @@
 - `ARCHITECTURE.md`：架构和模块职责。
 - `workflow.md`：Git、代理、调参、多窗口、文档治理细则。
 - `DOCUMENT-RETENTION.md`：历史资料取舍表。
+- `AI-COLLABORATION.md`：AI角色分工和工作流。
 
 ## 计划与验收
 
@@ -25,6 +26,8 @@
 - `archive/`：旧审查等历史证据。
 - `releases/`：封版、交接和版本快照。
 - GDD 设计意图文档：玩法与叙事规划依据。
+- `design/WORLD-BIBLE.md`：世界观真理源。
+- `design/BOSS-冠夜鸮-视觉设计规范.md`：冠夜鸮视觉生产规范。
 - 旧数值文档：历史镜像；当前运行时以 `snake55/02_config.js` 为准。
 
 ## 推荐阅读顺序
