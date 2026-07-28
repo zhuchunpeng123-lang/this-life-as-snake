@@ -9,7 +9,6 @@
 	// 🟡 行为节奏：真理源未量化（仅给速度/半径/弹速），手感占位 + 候选，待回写真理源
 	var CHARGE_DURATION_SEC = 0.4        // TODO: 待确认（候选 0.35 / 0.5）
 	var WANDER_REDIR_SEC = CONFIG.ENEMIES.wanderer.wanderRedirSec   // 收编进 config：ENEMIES.wanderer.wanderRedirSec（去裸数字/TODO）
-	var BOSS_FIRE_INTERVAL_SEC = 1.2     // TODO: 待确认（候选 1.0 / 1.5）
 	var BOSS_FIRE_COUNT = 6              // TODO: 待确认（候选 5 / 8）
 	var BOSS_BULLET_RADIUS = 9           // TODO: 待确认（候选 8 / 10）
 	var BOSS_BULLET_LIFE_SEC = 4.0       // TODO: 待确认（候选 3 / 4）
@@ -31,7 +30,7 @@
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {}, visualBirthRemaining: 0,   // B-4 衍生：DOT 分源累加器；visualBirthRemaining 仅供 Boss 弹出生绘制，不参与碰撞
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值）
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -81,11 +80,10 @@
 		e.color = colorByType[type] || '#fff'
 		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
-		e.visualBirthRemaining = 0
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
-			e.phase = 1; e.invuln = 0; e.fireT = BOSS_FIRE_INTERVAL_SEC; e.kbImmune = true; e.senseRange = -1
+			e.phase = 1; e.invuln = 0; e.fireT = cfg.fireIntervalSec; e.kbImmune = true; e.senseRange = -1
 		} else {
 			e.hp = e.maxHp = cfg.hp; e.baseSpeed = cfg.speed; e.atk = cfg.atk
 			e.senseRange = cfg.senseRange; e.kbImmune = (type === 'elite')
@@ -95,17 +93,19 @@
 	}
 	function bossVisualRadius(radius) {
 		var scales = CONFIG.RENDER && CONFIG.RENDER.spriteVisualScale
-		var scale = scales && scales.boss
+		var scale = scales && (scales.bossCharge || scales.boss)
 		return radius * (typeof scale === 'number' && scale > 0 ? scale : 1)
 	}
 	function spawnBullet(x, y, ang, bossRadius) {
 		var e = pool.acquire()
+		var edge = bossVisualRadius(bossRadius || 0) + BOSS_BULLET_RADIUS
+		var spawnX = x + Math.cos(ang) * edge, spawnY = y + Math.sin(ang) * edge
 		e.active = true; e.id = ++_id; e.type = 'bossBullet'
-		e.x = x; e.y = y; e.prevX = x; e.prevY = y; e.radius = BOSS_BULLET_RADIUS
+		e.x = spawnX; e.y = spawnY; e.prevX = spawnX; e.prevY = spawnY; e.radius = BOSS_BULLET_RADIUS
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.visualBirthRemaining = bossVisualRadius(bossRadius || 0); e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
@@ -127,7 +127,6 @@
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
-			e.visualBirthRemaining = 0
 			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
 			list.push(e)
@@ -254,7 +253,7 @@
 		steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt)
 		e.fireT -= dt
 		if (e.invuln <= 0 && e.fireT <= 0) {
-			e.fireT = BOSS_FIRE_INTERVAL_SEC * (e.phase === 2 ? 0.7 : 1)
+			e.fireT = e.phase === 2 ? EN.boss.phase2FireIntervalSec : EN.boss.fireIntervalSec
 			var base = Math.atan2(hy - e.y, hx - e.x), spread = M.deg2rad(60)
 			for (var i = 0; i < BOSS_FIRE_COUNT; i++) {
 				var t = BOSS_FIRE_COUNT === 1 ? 0.5 : i / (BOSS_FIRE_COUNT - 1)
@@ -272,7 +271,6 @@
 		if (e.flashT > 0) { e.flashT -= dt }   // ⑥ 闪白计时衰减
 		if (e.type === 'bossBullet') {
 			e.lifeT -= dt; e.x += e.vx * dt; e.y += e.vy * dt
-			if (e.visualBirthRemaining > 0) { e.visualBirthRemaining = Math.max(0, e.visualBirthRemaining - M.len(e.vx, e.vy) * dt) }
 		if (e.lifeT <= 0 || !inWorld(e.x, e.y, -e.radius)) { e.active = false }
 		return
 	}

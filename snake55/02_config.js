@@ -122,12 +122,10 @@
 	RENDER: {
 		worldScale: 0.8,         // 视图缩放默认 0.8（还原「更小更精致」蛇/怪画面）；GM「视图缩放(纯视觉)」滑条 0.6–1.0 实时可调；×1.0=原始 1:1（注：此值仅作文档真理源，render 实际由 RT('RENDER.worldScale',0.8) 取、editor 覆盖优先）
 		// 敌人贴图视觉微调系数（只缩放显示，不动碰撞/血量/速度/伤害；纯视觉，允许视觉≥判定）。
-		// 2026-07-24p · 修"大小看起来都一样"：之前逐只设 2.4/2.4/2.0/1.4/1.2 把大怪压小、破坏原代码画按 radius 的比例。
-		//   原代码画(代码圆)显示直径 ∝ 碰撞半径，阶梯 = wanderer10 / chaser11 / charger14 / elite24 / boss60（10:11:14:24:60）。
-		//   贴图方式必须保持同一比例（用户明示"按能力定位大小不同"）→ 统一倍率 k，显示直径 = radius×2×k，比例即 radius 比例，零偏差。
-		//   取 k=2.4：wanderer48 / chaser53 / charger67 / elite115 / boss288(px)，小怪清晰(修 24n 小方格)且严格保 10:11:14:24:60 阶梯(boss≈小怪6倍、elite≈小怪2.4倍)。
-		//   boss 288 直径(视觉≥判定允许)为大但符合"boss 最大"定位；若实测过大可单独降 boss 而不破坏其余比例。GM 经 editor.rtSet('RENDER.spriteVisualScale.*') 仍实时覆调；零 gameplay。
-		spriteVisualScale: { wanderer: 2.4, chaser: 2.4, charger: 2.4, elite: 2.4, boss: 2.4 }
+		// 2026-07-24p · 贴图显示直径仍以碰撞半径为基线，但各 PNG 按透明主体占比做视觉校准，不改判定半径。
+		//   wanderer/chaser/charger/elite 为角色定位倍率；bossIdle/bossCharge 独立校准，保证收翼核心与张翼核心连续。
+		//   boss 仍保持明显高于普通敌人的视觉层级；GM 经 editor.rtSet('RENDER.spriteVisualScale.*') 可实时覆调，零 gameplay。
+		spriteVisualScale: { wanderer: 2.4, chaser: 2.6, charger: 2.5, elite: 2.3, boss: 2.4, bossIdle: 2.4, bossCharge: 2.62 }
 	},
 
 		// —— §2.3 JUICE 手感基因（新增） ——
@@ -145,7 +143,7 @@
 			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px(索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调);wanderRedirSec=游荡重定向间隔s(收编自硬编码 WANDER_REDIR_SEC)
 			charger: { hp: 25, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
 			elite: { hp: 200, atk: 1, speed: 60, senseRange: -1, radius: 24 },
-			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, bulletSpeed: 140, radius: 60 }
+			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
 
 		SPAWN: { ringInner: 520, ringOuter: 760 },
