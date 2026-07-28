@@ -312,6 +312,7 @@
 
 	function startIfMenu() {
 		if (GS.status === 'menu') {
+			var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() }   // iOS 首次开始必须在同一用户手势内同步解锁，再重置本局并启动 BGM
 			// 不 display:none：隐藏元素会触发浏览器对本手势 pointer 的 pointercancel，把刚激活的摇杆瞬间释放（移动端触摸隐式捕获尤甚）→ 点开始后按住拖动全部失效
 			// 改为透明+不可交互，元素仍留 DOM 不触发 cancel；下一拍(手势已离开/已捕获到 canvas)再彻底移除
 			if (startEl) { startEl.style.pointerEvents = 'none'; startEl.style.opacity = '0'; setTimeout(function () { if (startEl) { startEl.style.display = 'none' } }, 400) }
