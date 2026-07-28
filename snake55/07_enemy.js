@@ -31,7 +31,7 @@
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值），每来源独立 flush、独立标签（火墙🔥火墙/灼烧🔥灼烧），互不混
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {}, visualBirthRemaining: 0,   // B-4 衍生：DOT 分源累加器；visualBirthRemaining 仅供 Boss 弹出生绘制，不参与碰撞
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -81,6 +81,7 @@
 		e.color = colorByType[type] || '#fff'
 		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
+		e.visualBirthRemaining = 0
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
@@ -92,14 +93,19 @@
 		list.push(e)
 		return e
 	}
-	function spawnBullet(x, y, ang) {
+	function bossVisualRadius(radius) {
+		var scales = CONFIG.RENDER && CONFIG.RENDER.spriteVisualScale
+		var scale = scales && scales.boss
+		return radius * (typeof scale === 'number' && scale > 0 ? scale : 1)
+	}
+	function spawnBullet(x, y, ang, bossRadius) {
 		var e = pool.acquire()
 		e.active = true; e.id = ++_id; e.type = 'bossBullet'
 		e.x = x; e.y = y; e.prevX = x; e.prevY = y; e.radius = BOSS_BULLET_RADIUS
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.visualBirthRemaining = bossVisualRadius(bossRadius || 0); e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
@@ -121,6 +127,7 @@
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
+			e.visualBirthRemaining = 0
 			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
 			list.push(e)
@@ -251,7 +258,7 @@
 			var base = Math.atan2(hy - e.y, hx - e.x), spread = M.deg2rad(60)
 			for (var i = 0; i < BOSS_FIRE_COUNT; i++) {
 				var t = BOSS_FIRE_COUNT === 1 ? 0.5 : i / (BOSS_FIRE_COUNT - 1)
-				spawnBullet(e.x, e.y, base - spread / 2 + spread * t)
+				spawnBullet(e.x, e.y, base - spread / 2 + spread * t, e.radius)
 			}
 		}
 	}
@@ -265,6 +272,7 @@
 		if (e.flashT > 0) { e.flashT -= dt }   // ⑥ 闪白计时衰减
 		if (e.type === 'bossBullet') {
 			e.lifeT -= dt; e.x += e.vx * dt; e.y += e.vy * dt
+			if (e.visualBirthRemaining > 0) { e.visualBirthRemaining = Math.max(0, e.visualBirthRemaining - M.len(e.vx, e.vy) * dt) }
 		if (e.lifeT <= 0 || !inWorld(e.x, e.y, -e.radius)) { e.active = false }
 		return
 	}

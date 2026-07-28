@@ -118,13 +118,16 @@
 	// 职责：manifest 登记精灵 → init 一次性预载（每帧不 new/decode）→ drawSprite 按判定半径算缩放接图；无图/404/NaN 一律回退代码画（零破功）。
 	// 铁律：①判定半径只读不改（getSpriteRadius 仅从冻结 CONFIG/RT 读）；②缩放系数由判定半径算，禁魔法数字；③保留代码画 fallback，绝不白屏/抛错。
 	var ASSETS_BASE = 'assets/'   // 相对 index.html（index.html 与 assets/ 同处 snake55/）→ 任意服务/打开方式（项目根/ snake55/ 根 / file://）均正确；原 'snake55/assets/' 会被拼成 …/snake55/snake55/assets/ 全 404（#M0 复查修）
-	var SPRITE_VER = 'bossv2-charge-20260728'   // 贴图缓存戳：与 index.html ?v 同步递增，破浏览器对 PNG 的历史 404/旧响应缓存（贴图 src 不加戳 → 旧 404 被缓存后永 fallback）
+	var SPRITE_VER = 'bossv2-rhythm-20260728'   // 贴图缓存戳：与 index.html ?v 同步递增，破浏览器对 PNG 的历史 404/旧响应缓存（贴图 src 不加戳 → 旧 404 被缓存后永 fallback）
 	var BOSS_VISUAL = {   // 纯视觉参数：不参与 Boss 数值、攻击、碰撞或阶段判定
-		floatHz: 1.35,
-		floatRatio: 0.02,
-		idleBreathRatio: 0.03,
-		chargeBreathRatio: 0.005,
-		chargeWindowSec: 0.4,
+		floatHz: 0.7,
+		floatRatio: 0.012,
+		idleBreathHz: 0.85,
+		idleBreathRatio: 0.014,
+		chargeBreathRatio: 0.002,
+		warningWindowSec: 0.54,
+		chargeWindowSec: 0.3,
+		chargeScaleRatio: 0.045,
 		releaseDetectDelta: 0.1,
 		releaseHoldSec: 0.22,
 		releaseFlashSec: 0.14,
@@ -135,7 +138,22 @@
 		releaseRingWidth: 3,
 		releaseRingWidthPulse: 2,
 		baseAuraAlpha: 0.22,
+		warningAuraAlpha: 0.14,
 		chargeAuraAlpha: 0.12,
+		idleRingAlpha: 0.32,
+		idleRingPulseAlpha: 0.12,
+		idleRingWidth: 3,
+		idleRingWidthPulse: 1,
+		idleRingOffset: 8,
+		idleRingPulseOffset: 1,
+		warningRingAlpha: 0.2,
+		warningRingPulseAlpha: 0.42,
+		warningRingWidth: 2,
+		warningRingWidthPulse: 2,
+		warningRingBase: 0.52,
+		warningRingExpand: 0.12,
+		warningRingPulseRadius: 0.025,
+		warningRingHz: 4.5,
 		phase2RingOffset: 12,
 		phase2RingAlpha: 0.18,
 		phase2RingPulseAlpha: 0.10,
@@ -515,14 +533,18 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		var d = r * 2 * vs
 		var releaseAge = getBossVisualState(b, t)
 		var releaseHold = releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseHoldSec
+		var warning = 0
 		var charge = 0
-		if (!releaseHold && b.invuln <= 0 && b.fireT >= 0 && b.fireT < BOSS_VISUAL.chargeWindowSec) {
-			charge = Math.max(0, Math.min(1, (BOSS_VISUAL.chargeWindowSec - b.fireT) / BOSS_VISUAL.chargeWindowSec))
+		if (!releaseHold && b.invuln <= 0 && b.fireT >= 0 && b.fireT < BOSS_VISUAL.warningWindowSec) {
+			warning = Math.max(0, Math.min(1, (BOSS_VISUAL.warningWindowSec - b.fireT) / BOSS_VISUAL.warningWindowSec))
+			if (b.fireT < BOSS_VISUAL.chargeWindowSec) {
+				charge = Math.max(0, Math.min(1, (BOSS_VISUAL.chargeWindowSec - b.fireT) / BOSS_VISUAL.chargeWindowSec))
+			}
 		}
 		var charging = charge > 0 || releaseHold
-		var breathAmp = charging ? BOSS_VISUAL.chargeBreathRatio : BOSS_VISUAL.idleBreathRatio
-		var breath = 1 + breathAmp * Math.sin(t * 2.1)
-		if (charge > 0) { breath += charge * charge * 0.12 }   // 保留现有攻击前鼓起，不改变 fireT/CD
+		var breathAmp = warning > 0 || charging ? BOSS_VISUAL.chargeBreathRatio : BOSS_VISUAL.idleBreathRatio
+		var breath = 1 + breathAmp * Math.sin(t * BOSS_VISUAL.idleBreathHz)
+		if (charge > 0) { breath += charge * charge * BOSS_VISUAL.chargeScaleRatio }   // 仅视觉鼓起，不改变 fireT/CD
 		if (releaseHold) {
 			breath += (1 - releaseAge / BOSS_VISUAL.releaseHoldSec) * BOSS_VISUAL.releasePunchScale
 		}
@@ -536,7 +558,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		var vx = (b.prevX != null) ? (b.x - b.prevX) : 0
 		if (vx < 0) { ctx.scale(-breath, breath) } else { ctx.scale(breath, breath) }   // billboard 仅 flipX + 呼吸/释放缩放
 		if (ready) {
-			var auraAlpha = BOSS_VISUAL.baseAuraAlpha + charge * BOSS_VISUAL.chargeAuraAlpha
+			var auraAlpha = BOSS_VISUAL.baseAuraAlpha + warning * BOSS_VISUAL.warningAuraAlpha + charge * BOSS_VISUAL.chargeAuraAlpha
 			if (releaseHold) { auraAlpha += (1 - releaseAge / BOSS_VISUAL.releaseHoldSec) * BOSS_VISUAL.chargeAuraAlpha }
 			drawHalo('boss', 0, 0, d * 0.72, ringCol, auraAlpha)
 			drawEnemySprite(ctx, spriteType, d)
@@ -556,11 +578,18 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			ctx.strokeStyle = '#f7e9ff'
 			ctx.beginPath(); ctx.arc(x, visualY, d * (BOSS_VISUAL.releaseRingBase + releasePulse * BOSS_VISUAL.releaseRingExpand), 0, M.PI2); ctx.stroke()
 		}
-		// 相位环（不随呼吸缩放）：脉动描边，直径≈冠夜鸮外圈
+		// 常态环保持低幅脉动；预警阶段叠加逐渐增强、收缩的警戒环。
 		var pulse = 0.5 + 0.5 * Math.sin(t * 2.5)
-		ctx.globalAlpha = 0.5 + pulse * 0.4
-		ctx.lineWidth = 4 + pulse * 2; ctx.strokeStyle = ringCol
-		ctx.beginPath(); ctx.arc(x, visualY, d * 0.5 + 8, 0, M.PI2); ctx.stroke()
+		ctx.globalAlpha = BOSS_VISUAL.idleRingAlpha + pulse * BOSS_VISUAL.idleRingPulseAlpha
+		ctx.lineWidth = BOSS_VISUAL.idleRingWidth + pulse * BOSS_VISUAL.idleRingWidthPulse; ctx.strokeStyle = ringCol
+		ctx.beginPath(); ctx.arc(x, visualY, d * 0.5 + BOSS_VISUAL.idleRingOffset + pulse * BOSS_VISUAL.idleRingPulseOffset, 0, M.PI2); ctx.stroke()
+		if (warning > 0) {
+			var warningPulse = 0.5 + 0.5 * Math.sin(t * BOSS_VISUAL.warningRingHz)
+			ctx.globalAlpha = BOSS_VISUAL.warningRingAlpha + warning * BOSS_VISUAL.warningRingPulseAlpha
+			ctx.lineWidth = BOSS_VISUAL.warningRingWidth + warning * BOSS_VISUAL.warningRingWidthPulse
+			ctx.strokeStyle = ringCol
+			ctx.beginPath(); ctx.arc(x, visualY, d * (BOSS_VISUAL.warningRingBase + warning * BOSS_VISUAL.warningRingExpand + warningPulse * BOSS_VISUAL.warningRingPulseRadius), 0, M.PI2); ctx.stroke()
+		}
 		if (b.phase >= 2) {
 			ctx.globalAlpha = BOSS_VISUAL.phase2RingAlpha + pulse * BOSS_VISUAL.phase2RingPulseAlpha
 			ctx.lineWidth = BOSS_VISUAL.phase2RingWidth + pulse
@@ -577,16 +606,22 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		g.beginPath(); g.arc(0, 0, r * 0.55, 0, M.PI2); g.fillStyle = '#2a0a1e'; g.fill()
 		g.globalAlpha = 0.6 + pulse * 0.4; circle(0, 0, r * 0.3, col); g.globalAlpha = 1
 	}
+	function drawBossBullet(e) {
+		if (e.visualBirthRemaining > 0) { return }
+		var x = _ix(e), y = _iy(e), r = e.radius
+		ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, M.PI2); ctx.fillStyle = enemyColorByType('bossBullet'); ctx.fill()
+	}
 	function drawEnemies() {
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉；GM 经 editor.rtSet 仍优先
 		var l = En.list, t = GS.timeSec
 		var sn = Registry.get('snake'), hx = sn && sn.head ? sn.head.x : 0, hy = sn && sn.head ? sn.head.y : 0
 	// 第一遍：boss 单独处理；其余先试守卫式贴图（成功→画贴图+光环+动画，并保留受击白闪套在贴图上），失败→走代码画兜底（逐字保留原分组填充优化）
-	var groups = {}, elites = [], bosses = []
+	var groups = {}, elites = [], bosses = [], bossBullets = []
 	for (var i = 0; i < l.length; i++) {
 		var e = l[i]; if (!e.active) { continue }
 		if (e.type === 'boss') { bosses.push(e); continue }
+		if (e.type === 'bossBullet') { bossBullets.push(e); continue }
 		// 守卫式贴图：成功 → 画贴图(+光环+动画)；受击白闪套在贴图之上（不替换贴图）；失败 → 走下方代码画兜底
 		if (drawEnemySpriteWithFx(e, t, _ix(e), _iy(e), hx, hy)) {
 			if (e.flashT > 0) { drawEnemyFlashOverlay(e, _ix(e), _iy(e)) }   // ⑥ 受击白闪（套在贴图之上）
@@ -603,6 +638,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			for (var j = 0; j < arr.length; j++) { addEnemyShape(arr[j], gk, t, hx, hy, 1) }
 			ctx.fillStyle = enemyColorByType(gk); ctx.fill()
 		}
+		for (var bb = 0; bb < bossBullets.length; bb++) { drawBossBullet(bossBullets[bb]) }
 		for (var ei = 0; ei < elites.length; ei++) { drawEliteAura(elites[ei], t) }   // 精英光环（少量）
 		for (var bi = 0; bi < bosses.length; bi++) { drawBossBody(bosses[bi], t) }     // Boss 专属
 		// 第二遍：标记 + 血条（单敌少量，保留原逻辑）
