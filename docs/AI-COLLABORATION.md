@@ -97,6 +97,17 @@ Codex是工程执行者。
 
 收到已经确认的设计正文时，以忠实落地为主。
 
+### Codex Git 执行环境
+
+Codex应负责完成提交和推送闭环，不把日常 push 固定转交给用户。
+
+* 主工作区为 `F:\贪吃蛇游戏项目-Codex\_git-main`。
+* 本仓库通过 `http://127.0.0.1:7897` 访问 GitHub；先用 `git ls-remote origin HEAD` 验证代理链路。
+* Codex普通沙箱可能以 `CodexSandboxOffline` 身份运行，不能读取 Darry 用户的 Windows Git 凭据；遇到 HTTP 401 时不要误判为手机热点或代理故障。
+* 已完成 GitHub 登录后，Codex执行 push 应使用宿主机权限路径复用 Windows Git Credential Manager，不在聊天中索取或传输 PAT。
+* 推送后必须核对 `git rev-parse HEAD` 与远程 `main` 的提交一致，不能仅凭空白输出或退出码判断成功。
+* 只有宿主机网络或 GitHub 凭据确实不可用时，才报告阻塞原因和最小恢复动作。
+
 ## 6. 文档真理源
 
 * GDD：玩法与设计意图
@@ -133,4 +144,3 @@ Codex是工程执行者。
 * 不重复背景
 * 不进行无关扩展
 * 用户未要求全面审查时不写长篇报告
-
