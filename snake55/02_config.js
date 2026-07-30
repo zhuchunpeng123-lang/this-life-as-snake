@@ -391,7 +391,8 @@
 		icons: {
 			paddingPx: 2,
 			scale: 1,
-			framePx: { card: 34, hud: 30, combo: 22 },
+			scaleByKind: { card: 1, hud: 1.1, combo: 1 },
+			framePx: { card: 34, hud: 30, combo: 26 },
 			assets: {
 				fire: { src: 'assets/skill_fire_v1.png' },
 				ice: { src: 'assets/skill_ice_v1.png' },

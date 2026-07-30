@@ -33,7 +33,8 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	function iconMarkup(id, fallback, kind) {
 		var spec = UI_ICON_ASSETS[id] || {}, frames = UI_ICONS.framePx || {}, frame = frames[kind] || frames.hud || 30
 		var pad = UI_ICONS.paddingPx != null ? UI_ICONS.paddingPx : 2
-		var scale = spec.scale != null ? spec.scale : (UI_ICONS.scale != null ? UI_ICONS.scale : 1)
+		var scaleByKind = UI_ICONS.scaleByKind || {}, kindScale = scaleByKind[kind] != null ? scaleByKind[kind] : 1
+		var scale = (spec.scale != null ? spec.scale : (UI_ICONS.scale != null ? UI_ICONS.scale : 1)) * kindScale
 		var text = iconText(fallback), box = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:' + frame + 'px;height:' + frame + 'px;padding:' + pad + 'px;overflow:hidden;flex:0 0 auto;line-height:1;text-align:center'
 		if (!spec.src) { return '<span style="' + box + ';font:800 15px system-ui">' + text + '</span>' }
 		var src = iconText(spec.src)
@@ -449,11 +450,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var nameCol = active ? col : hexA(STYLE.ui, 0.5)
 			var comboIcon = UI_ICON_ASSETS[key] && UI_ICON_ASSETS[key].src ? iconMarkup(key, gA + '+' + gB, 'combo') : ''
 			if (comboIcon) { gA = ''; gB = '' }
-			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + ';line-height:1;vertical-align:middle">' + comboIcon
+			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + ';line-height:1;vertical-align:middle">' + comboIcon
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gA + '</span>'
 				+ (comboIcon ? '' : '<span style="color:' + hexA(STYLE.ui, 0.45) + ';font:700 10px system-ui">+</span>')
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gB + '</span>'
-				+ '<span style="display:inline-flex;align-items:center;color:' + nameCol + ';font:700 11px/1 system-ui;margin-left:2px;white-space:nowrap">' + (active ? name : '未激活') + '</span>'   // 未激活：仅「未激活」(短,与激活态长度一致)；激活：显 Combo 名
+				+ '<span style="display:inline-flex;align-items:center;color:' + nameCol + ';font:700 13px/1 system-ui;margin-left:1px;white-space:nowrap">' + (active ? name : '未激活') + '</span>'   // 未激活：仅「未激活」(短,与激活态长度一致)；激活：显 Combo 名
 				+ '</span>'   // 仅当两部件皆持有(comboReady)才 active 高亮；单部件→灰色「未激活·X」
 		}
 		return html
