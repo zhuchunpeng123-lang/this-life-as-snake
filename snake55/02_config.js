@@ -393,14 +393,14 @@
 			scale: 1,
 			framePx: { card: 34, hud: 30, combo: 18 },
 			assets: {
-				fire: { src: '' },
-				ice: { src: '' },
-				bolt: { src: '' },
-				shield: { src: '' },
-				lightning: { src: '' },
-				steamExplosion: { src: '' },
-				electroTurret: { src: '' },
-				burningBarrage: { src: '' }
+				fire: { src: 'assets/skill_fire_v1.png' },
+				ice: { src: 'assets/skill_ice_v1.png' },
+				bolt: { src: 'assets/skill_bolt_v1.png' },
+				shield: { src: 'assets/skill_shield_v1.png' },
+				lightning: { src: 'assets/skill_lightning_v1.png', scale: 1.06 },
+				steamExplosion: { src: 'assets/combo_steamExplosion_v1.png', scale: 0.97 },
+				electroTurret: { src: 'assets/combo_electroTurret_v1.png', scale: 0.97 },
+				burningBarrage: { src: 'assets/combo_burningBarrage_v1.png', scale: 1.06 }
 			}
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
