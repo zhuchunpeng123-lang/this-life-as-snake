@@ -68,6 +68,12 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		// 濒死整框红脉冲 keyframes（STYLE.enemy 真源，无新 hex）
 		var _nf = document.createElement('style')
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
+		if (!isTouch && hudSys) {
+			hudSys.style.left = 'calc(12px + env(safe-area-inset-left))'
+			hudSys.style.right = 'auto'
+			hudSys.style.top = 'auto'
+			hudSys.style.bottom = 'calc(16px + env(safe-area-inset-bottom))'
+		}
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
@@ -540,7 +546,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (hudStatus) { hudStatus.style.transformOrigin = 'top left'; hudStatus.style.transform = 'scale(' + s + ')' }
 		// 右上簇（系统按钮/技能栏/Combo）：top-right 缩放，保持贴右
 		// 右上簇（系统按钮/技能栏/Combo）：桌面 top-right 缩放；移动端系统按钮已移左下(bottom-left)、combo 入右簇(row2)→top-right
-		if (hudSys) { hudSys.style.transformOrigin = isTouch ? 'bottom left' : 'top right'; hudSys.style.transform = 'scale(' + s + ')' }
+		if (hudSys) { hudSys.style.transformOrigin = 'bottom left'; hudSys.style.transform = 'scale(' + s + ')' }
 		if (hudSkills) { hudSkills.style.transformOrigin = 'top right'; hudSkills.style.transform = 'scale(' + s + ')' }
 		if (hudCombo) { hudCombo.style.transformOrigin = 'top right'; hudCombo.style.transform = 'scale(' + s + ')' }
 		// 顶部居中簇：中心缩放 + 保留 translateX(-50%) 居中
