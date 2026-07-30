@@ -113,6 +113,7 @@ Codex应负责完成提交和推送闭环，不把日常 push 固定转交给用
 * GDD：玩法与设计意图
 * `WORLD-BIBLE.md`：世界观
 * `ART-BIBLE.md`：未来全局视觉语言
+* `ASSET-SPEC.md`：美术资源技术生产与接入规则
 * `BOSS-xxx-视觉设计规范.md`：具体Boss视觉
 * `AGENTS.md`：工程/Codex硬规则
 * `AI-COLLABORATION.md`：AI角色分工和工作流

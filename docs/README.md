@@ -27,7 +27,10 @@
 - `releases/`：封版、交接和版本快照。
 - GDD 设计意图文档：玩法与叙事规划依据。
 - `design/WORLD-BIBLE.md`：世界观真理源。
+- `design/ART-BIBLE.md`：全局视觉风格真理源。
+- `design/ASSET-SPEC.md`：美术资源技术生产与接入真理源。
 - `design/BOSS-冠夜鸮-视觉设计规范.md`：冠夜鸮视觉生产规范。
+- 旧 UI 图标规范：规则已迁移至 `ART-BIBLE.md` 与 `ASSET-SPEC.md`，不作为正式真相源。
 - 旧数值文档：历史镜像；当前运行时以 `snake55/02_config.js` 为准。
 
 ## 推荐阅读顺序
@@ -46,3 +49,10 @@
 3. `docs/DEBT.md`
 4. `docs/plans/STATUS.md`
 5. GDD 设计意图文档
+
+视觉、UI、美术任务：
+
+1. `design/ART-BIBLE.md`
+2. `design/ASSET-SPEC.md`
+3. 涉及世界设定时再读 `design/WORLD-BIBLE.md`
+4. 涉及冠夜鸮时再读 `design/BOSS-冠夜鸮-视觉设计规范.md`

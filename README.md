@@ -10,6 +10,8 @@
 - 当前开放问题：`docs/DEBT.md`
 - 架构概要：`docs/ARCHITECTURE.md`
 - AI 协作规范：`docs/AI-COLLABORATION.md`
+- 视觉总规范：`docs/design/ART-BIBLE.md`
+- 美术资源技术规范：`docs/design/ASSET-SPEC.md`
 - 世界观与冠夜鸮视觉规范：`docs/design/`
 - 文档目录：`docs/README.md`
 
