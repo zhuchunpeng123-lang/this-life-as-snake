@@ -449,11 +449,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var nameCol = active ? col : hexA(STYLE.ui, 0.5)
 			var comboIcon = UI_ICON_ASSETS[key] && UI_ICON_ASSETS[key].src ? iconMarkup(key, gA + '+' + gB, 'combo') : ''
 			if (comboIcon) { gA = ''; gB = '' }
-			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + '">' + comboIcon
+			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + ';line-height:1;vertical-align:middle">' + comboIcon
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gA + '</span>'
 				+ (comboIcon ? '' : '<span style="color:' + hexA(STYLE.ui, 0.45) + ';font:700 10px system-ui">+</span>')
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gB + '</span>'
-				+ '<span style="color:' + nameCol + ';font:700 11px system-ui;margin-left:3px">' + (active ? name : '未激活') + '</span>'   // 未激活：仅「未激活」(短,与激活态长度一致)；激活：显 Combo 名
+				+ '<span style="display:inline-flex;align-items:center;color:' + nameCol + ';font:700 11px/1 system-ui;margin-left:2px;white-space:nowrap">' + (active ? name : '未激活') + '</span>'   // 未激活：仅「未激活」(短,与激活态长度一致)；激活：显 Combo 名
 				+ '</span>'   // 仅当两部件皆持有(comboReady)才 active 高亮；单部件→灰色「未激活·X」
 		}
 		return html
@@ -478,11 +478,13 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = ''
 		for (var s = 0; s < list.length; s++) {
 			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
-			var assetIcon = UI_ICON_ASSETS[id] && UI_ICON_ASSETS[id].src ? iconMarkup(id, g, 'hud') : ''
+			var hudFrame = (UI_ICONS.framePx && UI_ICONS.framePx.hud) || 30
+			var hudIcon = iconMarkup(id, g, 'hud')
+			var slotStyle = 'position:relative;display:inline-flex;align-items:center;justify-content:center;width:' + hudFrame + 'px;height:' + hudFrame + 'px;border-radius:8px;background:' + hexA(col, 0.18) + ';border:2px solid ' + col + ';color:' + col + ';font:800 15px system-ui;flex:0 0 auto'
 			if (lvl > 0) {
-				html += '<span title="' + id + '" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(col, 0.18) + ';border:2px solid ' + col + ';color:' + col + ';font:800 15px system-ui">' + (assetIcon || g) + '<sub style="font-size:9px;margin-left:1px">' + lvl + '</sub></span>'
+				html += '<span title="' + id + '" style="' + slotStyle + '"><span style="position:absolute;left:0;top:0;width:' + hudFrame + 'px;height:' + hudFrame + 'px;display:flex;align-items:center;justify-content:center">' + hudIcon + '</span><sub style="position:absolute;right:0;bottom:0;z-index:1;min-width:12px;height:12px;padding:0 2px;box-sizing:border-box;border-radius:6px;background:' + STYLE.panel + ';border:1px solid ' + col + ';color:' + col + ';font:800 9px/10px system-ui;text-align:center">' + lvl + '</sub></span>'
 			} else {
-				html += '<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(STYLE.panel, 0.5) + ';border:1px solid ' + hexA(STYLE.ui, 0.25) + ';color:' + hexA(STYLE.ui, 0.35) + ';font:800 15px system-ui">·</span>'
+				html += '<span title="' + id + '" style="display:inline-flex;align-items:center;justify-content:center;width:' + hudFrame + 'px;height:' + hudFrame + 'px;border-radius:8px;background:' + hexA(STYLE.panel, 0.5) + ';border:1px solid ' + hexA(STYLE.ui, 0.25) + ';color:' + hexA(STYLE.ui, 0.35) + ';font:800 15px system-ui;flex:0 0 auto">·</span>'
 			}
 		}
 		return html
