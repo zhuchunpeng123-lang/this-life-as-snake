@@ -3,6 +3,8 @@
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	var STYLE = CONFIG.STYLE   // GATE B：UI 只读 STYLE 真源（禁散写 hex）
 	var PLAYER = CONFIG.PLAYER, STAGE = CONFIG.STAGE, NARR = CONFIG.NARR
+	var UI_ICONS = (CONFIG.UI && CONFIG.UI.icons) || {}
+	var UI_ICON_ASSETS = UI_ICONS.assets || {}
 
 	var SKILL_LABEL = { fire: '火焰光环', ice: '冰霜领域', bolt: '追踪飞镖', shield: '守护力场', lightning: '连锁闪电' } // TODO: 待确认
 	var SKILL_GLYPH = { fire: '火', ice: '冰', bolt: '镖', shield: '盾', lightning: '雷' }   // 技能栏单字徽标（文本，非 hex）
@@ -27,6 +29,16 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var ownedSkillIds = {}
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
+	function iconText(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
+	function iconMarkup(id, fallback, kind) {
+		var spec = UI_ICON_ASSETS[id] || {}, frames = UI_ICONS.framePx || {}, frame = frames[kind] || frames.hud || 30
+		var pad = UI_ICONS.paddingPx != null ? UI_ICONS.paddingPx : 2
+		var scale = spec.scale != null ? spec.scale : (UI_ICONS.scale != null ? UI_ICONS.scale : 1)
+		var text = iconText(fallback), box = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:' + frame + 'px;height:' + frame + 'px;padding:' + pad + 'px;overflow:hidden;flex:0 0 auto;line-height:1;text-align:center'
+		if (!spec.src) { return '<span style="' + box + ';font:800 15px system-ui">' + text + '</span>' }
+		var src = iconText(spec.src)
+		return '<span style="' + box + '"><img src="' + src + '" alt="" style="display:block;max-width:100%;max-height:100%;object-fit:contain;transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
+	}
 	function fmtTime(s) { var m = Math.floor(s / 60), ss = Math.floor(s % 60); return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss }
 	function hexA(hex, a) {   // STYLE token → rgba（派生透明度，无新 hex 字面量）；用于面板底/描边/阴影
 		var h = String(hex).replace('#', '')
@@ -333,6 +345,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 					+ '<span style="padding:2px 10px;border-radius:999px;background:' + hexA(col, 0.16) + ';border:1px solid ' + col + ';color:' + col + ';font:700 12px system-ui">' + lvlTxt + '</span>'
 					+ '<span style="padding:2px 10px;border-radius:8px;background:' + hexA(STYLE.ui, 0.12) + ';border:1px solid ' + hexA(STYLE.ui, 0.3) + ';color:' + STYLE.textDim + ';font:700 12px system-ui">按 ' + (idx + 1) + '</span>'
 					+ '</div>'
+				var cardIconSlot = card.querySelector('div > span')
+				if (cardIconSlot) { cardIconSlot.outerHTML = iconMarkup(c.id, SKILL_GLYPH[c.id] || '?', 'card') }
 				card.onclick = function () { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_card' }); var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
 			})(choices[i], i)
 		}
@@ -433,9 +447,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var glow = active ? ('box-shadow:0 0 8px ' + col) : ''
 			var glyphCol = active ? col : hexA(STYLE.ui, 0.4)   // 未激活(仅持有其一,Combo 未成)：图标/文字置灰，明显区别于已激活高亮
 			var nameCol = active ? col : hexA(STYLE.ui, 0.5)
-			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + '">'
+			var comboIcon = UI_ICON_ASSETS[key] && UI_ICON_ASSETS[key].src ? iconMarkup(key, gA + '+' + gB, 'combo') : ''
+			if (comboIcon) { gA = ''; gB = '' }
+			html += '<span title="' + title + '" style="display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:9px;border:1px solid ' + hexA(col, active ? 0.85 : 0.3) + ';background:' + hexA(col, active ? 0.2 : 0.05) + ';' + glow + '">' + comboIcon
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gA + '</span>'
-				+ '<span style="color:' + hexA(STYLE.ui, 0.45) + ';font:700 10px system-ui">+</span>'
+				+ (comboIcon ? '' : '<span style="color:' + hexA(STYLE.ui, 0.45) + ';font:700 10px system-ui">+</span>')
 				+ '<span style="color:' + glyphCol + ';font:800 12px system-ui">' + gB + '</span>'
 				+ '<span style="color:' + nameCol + ';font:700 11px system-ui;margin-left:3px">' + (active ? name : '未激活') + '</span>'   // 未激活：仅「未激活」(短,与激活态长度一致)；激活：显 Combo 名
 				+ '</span>'   // 仅当两部件皆持有(comboReady)才 active 高亮；单部件→灰色「未激活·X」
@@ -462,8 +478,9 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = ''
 		for (var s = 0; s < list.length; s++) {
 			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
+			var assetIcon = UI_ICON_ASSETS[id] && UI_ICON_ASSETS[id].src ? iconMarkup(id, g, 'hud') : ''
 			if (lvl > 0) {
-				html += '<span title="' + id + '" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(col, 0.18) + ';border:2px solid ' + col + ';color:' + col + ';font:800 15px system-ui">' + g + '<sub style="font-size:9px;margin-left:1px">' + lvl + '</sub></span>'
+				html += '<span title="' + id + '" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(col, 0.18) + ';border:2px solid ' + col + ';color:' + col + ';font:800 15px system-ui">' + (assetIcon || g) + '<sub style="font-size:9px;margin-left:1px">' + lvl + '</sub></span>'
 			} else {
 				html += '<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:' + hexA(STYLE.panel, 0.5) + ';border:1px solid ' + hexA(STYLE.ui, 0.25) + ';color:' + hexA(STYLE.ui, 0.35) + ';font:800 15px system-ui">·</span>'
 			}

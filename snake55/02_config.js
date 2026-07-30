@@ -388,6 +388,21 @@
 	// —— UI（仅移动端表现值 · 非 §9 平衡真源） ——
 	// 仅控制 HUD/摇杆在手机上的缩放与下限，不牵动任何玩法强度/平衡。
 	UI: {
+		icons: {
+			paddingPx: 2,
+			scale: 1,
+			framePx: { card: 34, hud: 30, combo: 18 },
+			assets: {
+				fire: { src: '' },
+				ice: { src: '' },
+				bolt: { src: '' },
+				shield: { src: '' },
+				lightning: { src: '' },
+				steamExplosion: { src: '' },
+				electroTurret: { src: '' },
+				burningBarrage: { src: '' }
+			}
+		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
 	},
 
