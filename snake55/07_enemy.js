@@ -181,6 +181,7 @@
 				var dx = e.x - hx, dy = e.y - hy, L = M.len(dx, dy) || 1
 				e.kbx = dx / L * CB.enemyKnockbackPx; e.kby = dy / L * CB.enemyKnockbackPx
 			}
+			if (src === 'lightning' || src === 'electro') { e.flashT = 0 }
 		}
 	if (isDot) {                                                  // ⑦ DOT 分源聚合飘字（B-4 衍生）：每来源独立累积/flush，互不混
 		if (!src) { src = '_dot' }                              // 兜底 key（所有 DOT 调用均应传 src；兜底防 dotMap[undefined]）
