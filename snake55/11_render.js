@@ -1109,7 +1109,6 @@ function drawSnake() {
 	ctx.restore()
 	drawHurtVignette()
 	drawBossWarn()
-	drawBossHpBar()
 	drawPerfBadge()
 	drawDebugHud()
 	if (p && p.DBG) { p.DBG.ignite = 0; p.DBG.fireDot = 0; p.DBG.flashDrawn = 0; p.DBG.steamBlasts = 0; p.DBG.steamAoeCmp = 0 }   // b9-diag/measure：计数器按帧归零（HUD 已读本帧值）
@@ -1127,22 +1126,6 @@ function drawSnake() {
 	_lastOv = ovk
 	_frameMs = ((global.performance && global.performance.now) ? global.performance.now() : Date.now()) - tFrame0
 }
-	function drawBossHpBar() {                                       // Boss 屏幕顶部大血条：条 + 血量数值 + 阶段/无敌提示（无敌期说明伤害数字为何不跳）
-		var En = Registry.get('enemy'); if (!En || !En.list) { return }
-		var boss = null
-		for (var i = 0; i < En.list.length; i++) { if (En.list[i].active && En.list[i].type === 'boss') { boss = En.list[i]; break } }
-		if (!boss || !boss.maxHp) { return }
-		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-		var w = GAME.logicalWidth * 0.6, hgt = 14, x = (GAME.logicalWidth - w) / 2, y = 30
-		var ratio = M.clamp(boss.hp / boss.maxHp, 0, 1)
-		ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x - 2, y - 2, w + 4, hgt + 4)
-		ctx.fillStyle = '#3a0d18'; ctx.fillRect(x, y, w, hgt)
-		ctx.fillStyle = STYLE.boss; ctx.fillRect(x, y, w * ratio, hgt)
-		ctx.fillStyle = STYLE.textMain; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'
-		var inv = boss.invuln > 0 ? '  [无敌]' : ''
-		ctx.fillText('BOSS  ' + Math.ceil(boss.hp) + ' / ' + boss.maxHp + '  (阶段 ' + boss.phase + ')' + inv, GAME.logicalWidth / 2, y + 11)
-		ctx.restore()
-	}
 	var _vignetteGrad = null   // 受击 vignette 径向渐变缓存：几何仅依赖逻辑分辨率(恒定)，建一次复用，免每帧 createRadialGradient 分配
 	function getVignetteGrad() {
 		if (_vignetteGrad) { return _vignetteGrad }

@@ -14,7 +14,7 @@
 var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
 var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
-var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudWave = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
+var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
 var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
@@ -47,6 +47,52 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16)
 		return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'
 	}
+	function getUiTuning(path) {
+		var v, ed = Registry.get('editor')
+		if (ed && ed.rtGet) { v = ed.rtGet('UI.tuning.' + path); if (v !== undefined) { return v } }
+		var cur = CONFIG.UI && CONFIG.UI.tuning, parts = path.split('.')
+		for (var i = 0; cur && i < parts.length; i++) { cur = cur[parts[i]] }
+		return cur
+	}
+	function uiVar(name, value, unit) { if (hud) { hud.style.setProperty(name, String(value) + (unit || '')) } }
+	function ensureHudStyle() {
+		if (document.getElementById('snake-ui-v1-style')) { return }
+		var style = document.createElement('style')
+		style.id = 'snake-ui-v1-style'
+		style.textContent = ''
+			+ '.ui-v1-hud{position:absolute;inset:0;pointer-events:none;z-index:10;color:var(--ui-text);font-family:system-ui,sans-serif}'
+			+ '.ui-v1-status,.ui-v1-center,.ui-v1-build,.ui-v1-system{position:absolute;pointer-events:none;z-index:10}'
+			+ '.ui-v1-status{left:calc(env(safe-area-inset-left) + var(--ui-edge) + var(--ui-status-x));top:calc(env(safe-area-inset-top) + var(--ui-top) + var(--ui-status-y));display:flex;flex-direction:column;gap:var(--ui-cluster-gap);max-width:42vw}'
+			+ '.ui-v1-center{left:50%;top:calc(env(safe-area-inset-top) + var(--ui-top));transform:translateX(-50%);display:flex;align-items:center;gap:4px;min-width:0}'
+			+ '.ui-v1-build{right:calc(env(safe-area-inset-right) + var(--ui-edge) + var(--ui-build-x));top:calc(env(safe-area-inset-top) + var(--ui-top) + var(--ui-build-y));display:flex;flex-direction:column;align-items:flex-end;gap:var(--ui-cluster-gap);max-width:44vw}'
+			+ '.ui-v1-system{left:calc(env(safe-area-inset-left) + var(--ui-edge) + var(--ui-system-x));bottom:calc(env(safe-area-inset-bottom) + var(--ui-edge) + var(--ui-system-y));display:flex;flex-direction:column;gap:var(--ui-system-gap);align-items:flex-start;pointer-events:auto;z-index:12}'
+			+ '.ui-v1-panel{box-sizing:border-box;background:var(--ui-panel-primary);border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:0 4px var(--ui-glow-blur) var(--ui-glow);text-shadow:0 1px 2px var(--ui-shadow)}'
+			+ '.ui-v1-life{width:fit-content;padding:6px 10px;font-size:var(--ui-value);letter-spacing:1px;white-space:nowrap}'
+			+ '.ui-v1-data{display:flex;flex-wrap:wrap;gap:3px 8px;max-width:100%;padding:5px 9px;font-size:var(--ui-body);line-height:1.35;color:var(--ui-text-dim)}'
+			+ '.ui-v1-data strong{color:var(--ui-text);font-size:var(--ui-value);font-weight:800}'
+			+ '.ui-v1-stage{display:flex;align-items:center;gap:7px;min-height:22px;padding:4px 9px;background:var(--ui-panel-secondary);border:1px solid var(--ui-border);border-radius:var(--ui-radius);font-size:var(--ui-meta);color:var(--ui-text-dim);white-space:nowrap}.ui-v1-stage strong{font-size:var(--ui-title);color:var(--ui-text)}'
+			+ '.ui-v1-stage.is-boss{border-color:var(--ui-boss-border);color:var(--ui-text)}'
+			+ '.ui-v1-stage-track{width:76px;height:4px;border-radius:999px;overflow:hidden;background:var(--ui-track)}.ui-v1-stage-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-accent)}'
+			+ '.ui-v1-boss{display:none;width:min(var(--ui-boss-width),var(--ui-boss-max));margin-top:var(--ui-boss-offset-y);padding:5px 8px 7px;background:var(--ui-panel-primary);border:1px solid var(--ui-boss-border);border-radius:var(--ui-radius);box-shadow:0 4px var(--ui-glow-blur) var(--ui-boss-glow);text-align:center}.ui-v1-boss.is-active{display:block}.ui-v1-boss-label{display:flex;justify-content:center;gap:7px;margin-bottom:4px;font-size:var(--ui-boss-label);font-weight:800;color:var(--ui-text)}.ui-v1-boss.is-invuln .ui-v1-boss-label{color:var(--ui-boss)}.ui-v1-boss-track{height:var(--ui-boss-height);overflow:hidden;border-radius:999px;background:var(--ui-boss-track)}.ui-v1-boss-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-boss);transition:width .12s linear}'
+			+ '.ui-v1-skills{display:flex;align-items:center;gap:var(--ui-skill-gap);padding:4px;background:var(--ui-panel-secondary);border:1px solid var(--ui-border);border-radius:var(--ui-radius)}.ui-v1-skill{position:relative;display:flex;align-items:center;justify-content:center;width:var(--ui-slot);height:var(--ui-slot);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--skill-color) 55%,transparent);border-radius:calc(var(--ui-radius) * .72);background:color-mix(in srgb,var(--skill-color) 13%,var(--ui-panel-secondary));color:var(--skill-color)}.ui-v1-skill.is-empty{border-color:var(--ui-border);background:var(--ui-slot-empty);color:var(--ui-text-dim)}.ui-v1-icon-cell{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:var(--ui-skill-icon);height:var(--ui-skill-icon);padding:var(--ui-icon-pad);overflow:hidden;line-height:1;text-align:center;flex:0 0 auto}.ui-v1-combo .ui-v1-icon-cell{width:var(--ui-combo-icon);height:var(--ui-combo-icon)}.ui-v1-icon-cell img{display:block;max-width:100%;max-height:100%;object-fit:contain}.ui-v1-level{position:absolute;right:-3px;bottom:-3px;z-index:1;min-width:var(--ui-badge);height:var(--ui-badge);padding:0 2px;box-sizing:border-box;border-radius:999px;background:var(--ui-panel-primary);border:1px solid var(--skill-color);color:var(--skill-color);font:800 calc(var(--ui-badge) * .7)/calc(var(--ui-badge) - 1px) system-ui;text-align:center}'
+			+ '.ui-v1-combo{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:var(--ui-combo-item-gap);max-width:100%}.ui-v1-combo-item{display:inline-flex;align-items:center;gap:var(--ui-combo-inner-gap);min-height:var(--ui-combo-icon);padding:var(--ui-combo-pad-y) var(--ui-combo-pad-x);border-radius:var(--ui-radius);border:1px solid color-mix(in srgb,var(--combo-color) 35%,transparent);background:var(--ui-panel-secondary);font-size:var(--ui-combo-font);line-height:1;white-space:nowrap}.ui-v1-combo-item.is-active{border-color:color-mix(in srgb,var(--combo-color) 68%,transparent);box-shadow:0 2px 8px color-mix(in srgb,var(--combo-color) 24%,transparent)}.ui-v1-combo-name{color:var(--combo-color);font-weight:800}.ui-v1-combo-item:not(.is-active) .ui-v1-combo-name{color:var(--ui-text-dim)}'
+			+ '.ui-v1-system-btn{min-width:92px;box-sizing:border-box;padding:9px 14px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:var(--ui-system-panel);color:var(--ui-text);font:700 var(--ui-body)/1 system-ui;text-align:center;cursor:pointer;pointer-events:auto}.ui-v1-system-btn:active{transform:translateY(1px);background:var(--ui-panel-secondary)}'
+			+ '@media (max-width:620px){.ui-v1-status{max-width:39vw}.ui-v1-build{max-width:43vw}.ui-v1-data{gap:2px 5px}.ui-v1-system-btn{min-width:86px}.ui-v1-boss{max-width:52vw}}'
+		document.head.appendChild(style)
+	}
+	function applyUiTuning() {
+		if (!hud) { return }
+		uiVar('--ui-edge', getUiTuning('layout.edgePad'), 'px'); uiVar('--ui-top', getUiTuning('layout.topPad'), 'px'); uiVar('--ui-cluster-gap', getUiTuning('layout.clusterGap'), 'px')
+		uiVar('--ui-status-x', getUiTuning('layout.statusOffsetX'), 'px'); uiVar('--ui-status-y', getUiTuning('layout.statusOffsetY'), 'px'); uiVar('--ui-build-x', getUiTuning('layout.buildOffsetX'), 'px'); uiVar('--ui-build-y', getUiTuning('layout.buildOffsetY'), 'px'); uiVar('--ui-system-x', getUiTuning('layout.systemOffsetX'), 'px'); uiVar('--ui-system-y', getUiTuning('layout.systemOffsetY'), 'px')
+		uiVar('--ui-radius', getUiTuning('surface.cornerPx'), 'px'); uiVar('--ui-glow-blur', getUiTuning('surface.glowBlurPx'), 'px')
+		uiVar('--ui-title', getUiTuning('type.titlePx'), 'px'); uiVar('--ui-value', getUiTuning('type.valuePx'), 'px'); uiVar('--ui-body', getUiTuning('type.bodyPx'), 'px'); uiVar('--ui-meta', getUiTuning('type.metaPx'), 'px')
+		uiVar('--ui-slot', getUiTuning('skills.slotPx'), 'px'); uiVar('--ui-skill-icon', getUiTuning('skills.iconCellPx'), 'px'); uiVar('--ui-skill-gap', getUiTuning('skills.gapPx'), 'px'); uiVar('--ui-badge', getUiTuning('skills.badgePx'), 'px')
+		uiVar('--ui-combo-icon', getUiTuning('combo.iconCellPx'), 'px'); uiVar('--ui-combo-font', getUiTuning('combo.fontPx'), 'px'); uiVar('--ui-combo-item-gap', getUiTuning('combo.itemGapPx'), 'px'); uiVar('--ui-combo-inner-gap', getUiTuning('combo.innerGapPx'), 'px'); uiVar('--ui-combo-pad-x', getUiTuning('combo.padX'), 'px'); uiVar('--ui-combo-pad-y', getUiTuning('combo.padY'), 'px')
+		uiVar('--ui-boss-width', getUiTuning('bossBar.widthPct') * 100, 'vw'); uiVar('--ui-boss-max', getUiTuning('bossBar.maxWidthPx'), 'px'); uiVar('--ui-boss-height', getUiTuning('bossBar.heightPx'), 'px'); uiVar('--ui-boss-offset-y', getUiTuning('bossBar.offsetY'), 'px'); uiVar('--ui-boss-label', getUiTuning('bossBar.labelPx'), 'px')
+		uiVar('--ui-system-gap', getUiTuning('system.gapPx'), 'px')
+		uiVar('--ui-panel-primary', hexA(STYLE.panel, getUiTuning('surface.primaryAlpha'))); uiVar('--ui-panel-secondary', hexA(STYLE.panel, getUiTuning('surface.secondaryAlpha'))); uiVar('--ui-border', hexA(STYLE.ui, getUiTuning('surface.borderAlpha'))); uiVar('--ui-glow', hexA(STYLE.ui, getUiTuning('surface.glowAlpha'))); uiVar('--ui-shadow', hexA(STYLE.bg, 0.6)); uiVar('--ui-text', STYLE.textMain); uiVar('--ui-text-dim', STYLE.textDim); uiVar('--ui-accent', STYLE.ui); uiVar('--ui-track', hexA(STYLE.ui, 0.18)); uiVar('--ui-slot-empty', hexA(STYLE.panel, 0.45)); uiVar('--ui-boss', STYLE.boss); uiVar('--ui-boss-border', hexA(STYLE.boss, 0.62)); uiVar('--ui-boss-glow', hexA(STYLE.boss, getUiTuning('surface.glowAlpha'))); uiVar('--ui-boss-track', hexA(STYLE.boss, 0.18)); uiVar('--ui-system-panel', hexA(STYLE.panel, getUiTuning('system.alpha'))); uiVar('--ui-icon-pad', UI_ICONS.paddingPx != null ? UI_ICONS.paddingPx : 2, 'px')
+		_lastUiScale = -1
+	}
 function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain；统一柔发光(§四 P1-8)
     return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 11px;line-height:1.2;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';box-shadow:0 0 10px ' + hexA(STYLE.ui, 0.22) + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
 }
@@ -57,7 +103,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		root = stageRoot || document.body   // 角落 HUD 层（贴 canvas 显示区）
 		froot = fullRoot || document.body   // 全屏遮罩层（升级/结算/暂停/请横屏）
 		// —— HUD 容器(inset:0 覆盖, pointer-events:none) + 四组胶囊(§8.4：生命框/数据框/波次条/技能栏) ——
-		hud = mk('div', 'position:absolute;inset:0;pointer-events:none;z-index:10', root)
+		ensureHudStyle()
+		hud = mk('div', '', root); hud.className = 'ui-v1-hud'
 		isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)   // 触屏设备：走移动端重排布局；桌面保持原右上三联布局
 		hudStatus = mk('div', 'position:absolute;left:calc(16px + env(safe-area-inset-left));top:calc(16px + env(safe-area-inset-top));display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:10', hud)   // 左上：角色状态簇(两行一组,16px 安全边距)
 		hudLife = capsuleEl('position:relative;left:auto;top:auto;width:fit-content;max-width:calc(100vw - 32px);white-space:nowrap;padding:6px 12px')   // ①生命(×coreHp 实心/空心)，fit-content 自然撑开、禁裁切；左右内边距≥12px
@@ -79,14 +126,20 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			hudSys = mk('div', 'position:absolute;right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px;pointer-events:auto;z-index:12', root)   // 桌面：系统按钮右上顶部横排
 		}
 		// 濒死整框红脉冲 keyframes（STYLE.enemy 真源，无新 hex）
+		// Normalize the legacy branches into one semantic HUD tree after creation.
+		hudStatus.style.cssText = ''; hudStatus.className = 'ui-v1-status'
+		hudLife.style.cssText = ''; hudLife.className = 'ui-v1-panel ui-v1-life'
+		hudData.style.cssText = ''; hudData.className = 'ui-v1-panel ui-v1-data'
+		hudCenter = mk('div', '', hud); hudCenter.className = 'ui-v1-center'
+		hudWave.style.cssText = ''; hudWave.className = 'ui-v1-stage'; hudCenter.appendChild(hudWave)
+		hudBoss = mk('div', '', hudCenter); hudBoss.className = 'ui-v1-boss'
+		hudBuild = mk('div', '', hud); hudBuild.className = 'ui-v1-build'
+		hudSkills.style.cssText = ''; hudSkills.className = 'ui-v1-skills'; hudBuild.appendChild(hudSkills)
+		hudCombo.style.cssText = ''; hudCombo.className = 'ui-v1-combo'; hudBuild.appendChild(hudCombo)
+		hudSys.style.cssText = ''; hudSys.className = 'ui-v1-system'; hud.appendChild(hudSys)
+		applyUiTuning()
 		var _nf = document.createElement('style')
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
-		if (!isTouch && hudSys) {
-			hudSys.style.left = 'calc(12px + env(safe-area-inset-left))'
-			hudSys.style.right = 'auto'
-			hudSys.style.top = 'auto'
-			hudSys.style.bottom = 'calc(16px + env(safe-area-inset-bottom))'
-		}
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
@@ -106,6 +159,9 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			gmBtn.textContent = '⚙ GM'
 			gmBtn.onclick = function () { Bus.emit('editor:toggle') }
 		}
+		pauseBtn.style.cssText = ''; pauseBtn.className = 'ui-v1-system-btn'
+		fullscreenBtn.style.cssText = ''; fullscreenBtn.className = 'ui-v1-system-btn'
+		if (gmBtn) { gmBtn.style.cssText = ''; gmBtn.className = 'ui-v1-system-btn' }
 		pauseOverlay = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:' + hexA(STYLE.bg, 0.55) + ';z-index:25;color:' + STYLE.textMain + ';font:700 22px system-ui;cursor:pointer;pointer-events:auto', froot)
 		pauseOverlay.innerHTML = '<div>⏸ 已暂停</div><div style="font:500 14px system-ui;opacity:.8">点此 / 按 P 或 Esc 继续</div>'
 		pauseOverlay.onclick = function () { Bus.emit('game:toggle_pause') }
@@ -490,6 +546,65 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		}
 		return html
 	}
+	function v1IconMarkup(id, fallback, kind) {
+		var spec = UI_ICON_ASSETS[id] || {}, scaleByKind = UI_ICONS.scaleByKind || {}
+		var scale = (spec.scale != null ? spec.scale : (UI_ICONS.scale != null ? UI_ICONS.scale : 1)) * (scaleByKind[kind] != null ? scaleByKind[kind] : 1)
+		var text = iconText(fallback)
+		if (!spec.src) { return '<span class="ui-v1-icon-cell" style="font:800 15px system-ui">' + text + '</span>' }
+		var src = iconText(spec.src)
+		return '<span class="ui-v1-icon-cell"><img src="' + src + '" alt="" style="transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
+	}
+	function renderV1ComboBadges() {
+		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, html = '', keys = CO2 ? Object.keys(CO2) : []
+		for (var i = 0; i < keys.length; i++) {
+			var key = keys[i], c = CO2[key]
+			if (!c || !c.parts || c.parts.length < 2) { continue }
+			var a = c.parts[0], b = c.parts[1], aOwn = lv[a] > 0, bOwn = lv[b] > 0
+			if (!aOwn && !bOwn) { continue }
+			var active = aOwn && bOwn, col = COMBO_COLOR[key] || STYLE.ui, name = COMBO_LABEL[key] || key
+			var title = active ? ('已激活：' + (SKILL_LABEL[a] || a) + ' + ' + (SKILL_LABEL[b] || b) + ' → ' + name) : ('再获得 ' + (aOwn ? (SKILL_LABEL[b] || b) : (SKILL_LABEL[a] || a)) + ' 可激活')
+			var fallback = (SKILL_GLYPH[a] || '?') + '+' + (SKILL_GLYPH[b] || '?')
+			html += '<span class="ui-v1-combo-item' + (active ? ' is-active' : '') + '" title="' + iconText(title) + '" style="--combo-color:' + col + '">' + v1IconMarkup(key, fallback, 'combo') + '<span class="ui-v1-combo-name">' + (active ? name : '未激活') + '</span></span>'
+		}
+		return html
+	}
+	function renderV1Wave() {
+		var segs = STAGE.segments, t = GS.timeSec, cur = segs[0], next = null
+		for (var k = 0; k < segs.length; k++) { if (t >= segs[k].startSec) { cur = segs[k]; next = segs[k + 1] || null } }
+		var bossId = NARR.classify.deathCause.bossStageId, bossStage = null
+		for (var b = 0; b < segs.length; b++) { if (segs[b].id === bossId) { bossStage = segs[b]; break } }
+		if (bossStage && t >= bossStage.startSec - CONFIG.STAGE.bossWarnLeadSec && t < bossStage.startSec) { return { boss: true, html: '<strong>⚠ BOSS INCOMING</strong>' } }
+		if (cur.id >= bossId) { return { boss: true, html: '<strong>☾ ' + cur.name + '</strong><span>' + fmtTime(t) + '</span>' } }
+		var prog = next ? (t - cur.startSec) / (next.startSec - cur.startSec) : 1
+		prog = Math.max(0, Math.min(1, prog))
+		return { boss: false, html: '<strong>' + cur.name + '</strong><span>' + fmtTime(t) + '</span><span class="ui-v1-stage-track"><span class="ui-v1-stage-fill" style="width:' + Math.round(prog * 100) + '%"></span></span>' }
+	}
+	function renderV1Skills() {
+		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = ''
+		for (var s = 0; s < list.length; s++) {
+			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
+			if (lvl > 0) {
+				html += '<span class="ui-v1-skill" title="' + id + '" style="--skill-color:' + col + '">' + v1IconMarkup(id, g, 'hud') + '<sub class="ui-v1-level">' + lvl + '</sub></span>'
+			} else {
+				html += '<span class="ui-v1-skill is-empty" title="' + id + '" style="--skill-color:' + col + '">·</span>'
+			}
+		}
+		return html
+	}
+	function findActiveBoss() {
+		var En = Registry.get('enemy'), list = En && En.list
+		if (!list) { return null }
+		for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type === 'boss') { return list[i] } }
+		return null
+	}
+	function refreshV1Boss() {
+		if (!hudBoss) { return }
+		var boss = findActiveBoss()
+		if (!boss || !boss.maxHp) { hudBoss.className = 'ui-v1-boss'; hudBoss.innerHTML = ''; return }
+		var ratio = Math.max(0, Math.min(1, boss.hp / boss.maxHp)), inv = boss.invuln > 0
+		hudBoss.className = 'ui-v1-boss is-active' + (inv ? ' is-invuln' : '')
+		hudBoss.innerHTML = '<div class="ui-v1-boss-label"><span>冠夜鸮</span><span>Phase ' + boss.phase + (inv ? ' · 无敌' : '') + '</span><span>' + Math.ceil(boss.hp) + ' / ' + boss.maxHp + '</span></div><div class="ui-v1-boss-track"><span class="ui-v1-boss-fill" style="width:' + (ratio * 100).toFixed(2) + '%"></span></div>'
+	}
 	function refreshHUD() {
 		if (!hud) { return }
 		var hearts = ''
@@ -500,7 +615,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			else if (breaking && i === lostHeartIndex) { hearts += '💥' }   // 扣心瞬间：对应心碎裂闪烁
 			else { hearts += '🖤' }
 		}
-		hudLife.innerHTML = hearts
+		hudLife.innerHTML = '<span aria-label="health">' + hearts + '</span>'
 		var near = GS.coreHp <= 1   // 濒死(≤1 血)整框红脉冲
 		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
 		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
@@ -509,14 +624,16 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			+ '<span style="white-space:nowrap">　💀 击杀 ' + GS.kills + '</span>'
 			+ '<span style="white-space:nowrap">　⭐ 得分 ' + (GS.score + GS.comboScore) + '</span>'
 			+ '<span style="white-space:nowrap">　🔥 连杀 ×' + GS.killStreak + '</span>'   // 还原图标(美观)；每指标 nowrap 成块，超宽时 flex-wrap 自动换行(绝不裁字)
-		if (hudCombo) { hudCombo.innerHTML = renderComboBadges() }   // Combo 图标化徽标(右上，不再压进数据框)
-		hudWave.innerHTML = renderWave()
-		hudSkills.innerHTML = renderSkills()
+		if (hudCombo) { hudCombo.innerHTML = renderV1ComboBadges() }
+		var wave = renderV1Wave(); hudWave.innerHTML = wave.html; hudWave.className = 'ui-v1-stage' + (wave.boss ? ' is-boss' : '')
+		hudSkills.innerHTML = renderV1Skills()
+		refreshV1Boss()
 		// CB 自检：HUD 状态簇零溢出(scrollWidth ≤ clientWidth)，破版即告警(供截图核验)
 		if (hudLife && hudLife.scrollWidth > hudLife.clientWidth + 1) { Log.warn('[ui][CB] hudLife 溢出', hudLife.scrollWidth, hudLife.clientWidth) }
 		if (hudData && hudData.scrollWidth > hudData.clientWidth + 1) { Log.warn('[ui][CB] hudData 溢出', hudData.scrollWidth, hudData.clientWidth) }
 	}
 
+	Bus.on('ui:tuning_changed', function () { applyUiTuning(); applyUiScale(); refreshHUD() })
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })
 	Bus.on('skill:gained', function (d) {
 		if (!d) { return }
@@ -553,10 +670,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (h === _lastRootH && _lastUiScale >= 0) { return _lastUiScale }   // 仅在画布显示高变化时重算，避免每帧样式抖动
 		_lastRootH = h
 		var designH = (CONFIG.GAME && CONFIG.GAME.logicalHeight) || 540   // 真实设计高度(画布逻辑分辨率)；HUD 与画布同缩放基准，非硬编码 900
-		var clamp = (CONFIG.UI && CONFIG.UI.mobileScaleClamp) || { min: 0.55, max: 1.15 }
+		var clamp = { min: getUiTuning('layout.mobileScaleMin'), max: getUiTuning('layout.mobileScaleMax') }
 		var s = (h > 0) ? h / designH : 1
 		if (s < clamp.min) { s = clamp.min }   // 矮屏(高375→~0.69)压到 0.55 防溢出
 		if (s > clamp.max) { s = clamp.max }
+		s *= getUiTuning('layout.hudScale')
 		_lastUiScale = s
 		return s
 	}
@@ -566,11 +684,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (hudStatus) { hudStatus.style.transformOrigin = 'top left'; hudStatus.style.transform = 'scale(' + s + ')' }
 		// 右上簇（系统按钮/技能栏/Combo）：top-right 缩放，保持贴右
 		// 右上簇（系统按钮/技能栏/Combo）：桌面 top-right 缩放；移动端系统按钮已移左下(bottom-left)、combo 入右簇(row2)→top-right
-		if (hudSys) { hudSys.style.transformOrigin = 'bottom left'; hudSys.style.transform = 'scale(' + s + ')' }
-		if (hudSkills) { hudSkills.style.transformOrigin = 'top right'; hudSkills.style.transform = 'scale(' + s + ')' }
-		if (hudCombo) { hudCombo.style.transformOrigin = 'top right'; hudCombo.style.transform = 'scale(' + s + ')' }
+		if (hudSys) { hudSys.style.transformOrigin = 'bottom left'; hudSys.style.transform = 'scale(' + (s * getUiTuning('system.buttonScale')) + ')' }
+		if (hudBuild) { hudBuild.style.transformOrigin = 'top right'; hudBuild.style.transform = 'scale(' + s + ')' }
 		// 顶部居中簇：中心缩放 + 保留 translateX(-50%) 居中
-		if (hudWave) { hudWave.style.transformOrigin = 'top center'; hudWave.style.transform = 'translateX(-50%) scale(' + s + ')' }
+		if (hudCenter) { hudCenter.style.transformOrigin = 'top center'; hudCenter.style.transform = 'translateX(-50%) scale(' + s + ')' }
 		if (comboBanner) { comboBanner.style.transformOrigin = 'top center'; comboBanner.style.transform = 'translateX(-50%) scale(' + s + ')' }
 		// 底部居中抉择盒：bottom-center 缩放，保留居中并上移避让右下摇杆区
 		if (choiceBox) { choiceBox.style.transformOrigin = 'bottom center'; choiceBox.style.transform = 'translateX(-50%) scale(' + s + ')' }
@@ -588,6 +705,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			if (hudLife) { hudLife.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudData) { hudData.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudWave) { hudWave.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudBoss && GS.status !== 'playing') { hudBoss.className = 'ui-v1-boss'; hudBoss.innerHTML = '' }
 			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudCombo) { hudCombo.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
 			if (hudSys) { hudSys.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'flex' : 'none' }   // 系统按钮：游戏中/暂停可见（暂停时覆盖层在上方，暂停键仍可用）

@@ -404,6 +404,20 @@
 				burningBarrage: { src: 'assets/combo_burningBarrage_v1.png', scale: 1.06 }
 			}
 		},
+		// HUD V1 表现参数真源：仅控制界面几何与质感，不参与玩法或碰撞。
+		tuning: {
+			layout: {
+				hudScale: 1, edgePad: 16, topPad: 12, clusterGap: 8,
+				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0,
+				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
+			},
+			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
+			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
+			skills: { slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },
+			combo: { iconCellPx: 26, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3 },
+			bossBar: { widthPct: 0.58, maxWidthPx: 560, heightPx: 14, offsetY: 4, labelPx: 12 },
+			system: { buttonScale: 1, gapPx: 8, alpha: 0.82 }
+		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
 	},
 

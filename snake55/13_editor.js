@@ -16,6 +16,11 @@
 		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
+	var UI_RANGE = {
+		scale: [0.65, 1.35, 0.01], px: [0, 64, 1], offset: [-80, 80, 1], alpha: [0, 1, 0.02],
+		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
+		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
+	}
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
 	var ENEMY_STATS = [
 		{ key: 'hp', label: 'HP', rng: 'enemyHp' },
@@ -90,6 +95,51 @@
 		{ path: 'ENEMIES.wanderer.aggroRangeByStage.3', label: '游荡aggro·割草+高潮(段③④)px', rng: 'aggroRange', def: 450, dec: 0, extraPaths: ['ENEMIES.wanderer.aggroRangeByStage.4'] }   // 割草/高潮共用一滑条→同时写段③+段④；default 450（不推猛，沿用原割草值）；min200=基线/关闭
 	]
 	var TUNING_SCALAR_SLIDERS = []
+	var UI_TUNING = [
+		{ group: '布局', path: 'UI.tuning.layout.hudScale', label: 'HUD 总倍率', rng: 'scale' },
+		{ group: '布局', path: 'UI.tuning.layout.edgePad', label: '安全边距', rng: 'px' },
+		{ group: '布局', path: 'UI.tuning.layout.topPad', label: '顶部边距', rng: 'px' },
+		{ group: '布局', path: 'UI.tuning.layout.clusterGap', label: '分组间距', rng: 'px' },
+		{ group: '布局', path: 'UI.tuning.layout.statusOffsetY', label: '状态 Y 偏移', rng: 'offset' },
+		{ group: '布局', path: 'UI.tuning.layout.buildOffsetY', label: '构筑区 Y 偏移', rng: 'offset' },
+		{ group: '布局', path: 'UI.tuning.layout.systemOffsetY', label: '系统按钮 Y 偏移', rng: 'offset' },
+		{ group: '表面', path: 'UI.tuning.surface.primaryAlpha', label: '一级面板透明度', rng: 'alpha' },
+		{ group: '表面', path: 'UI.tuning.surface.secondaryAlpha', label: '二级容器透明度', rng: 'alpha' },
+		{ group: '表面', path: 'UI.tuning.surface.borderAlpha', label: '边框强度', rng: 'alpha' },
+		{ group: '表面', path: 'UI.tuning.surface.cornerPx', label: '圆角', rng: 'px' },
+		{ group: '表面', path: 'UI.tuning.surface.glowAlpha', label: 'Glow 强度', rng: 'alpha' },
+		{ group: '表面', path: 'UI.tuning.surface.glowBlurPx', label: 'Glow 范围', rng: 'px' },
+		{ group: '字号', path: 'UI.tuning.type.valuePx', label: '主要数值字号', rng: 'font' },
+		{ group: '字号', path: 'UI.tuning.type.titlePx', label: '标题字号', rng: 'font' },
+		{ group: '字号', path: 'UI.tuning.type.bodyPx', label: '正文字号', rng: 'font' },
+		{ group: '字号', path: 'UI.tuning.type.metaPx', label: '次级字号', rng: 'font' },
+		{ group: '技能槽', path: 'UI.tuning.skills.slotPx', label: '技能槽尺寸', rng: 'slot' },
+		{ group: '技能槽', path: 'UI.tuning.skills.iconCellPx', label: '技能图标区', rng: 'icon' },
+		{ group: '技能槽', path: 'UI.tuning.skills.gapPx', label: '技能间距', rng: 'px' },
+		{ group: '技能槽', path: 'UI.tuning.skills.badgePx', label: '等级角标', rng: 'badge' },
+		{ group: 'Combo', path: 'UI.tuning.combo.iconCellPx', label: 'Combo 图标区', rng: 'icon' },
+		{ group: 'Combo', path: 'UI.tuning.combo.fontPx', label: 'Combo 字号', rng: 'font' },
+		{ group: 'Combo', path: 'UI.tuning.combo.itemGapPx', label: 'Combo 间距', rng: 'px' },
+		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.widthPct', label: 'Boss 血条宽度', rng: 'bossWidth' },
+		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.maxWidthPx', label: 'Boss 最大宽度', rng: 'bossMax' },
+		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.heightPx', label: 'Boss 血条高度', rng: 'px' },
+		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.offsetY', label: 'Boss 血条偏移', rng: 'offset' },
+		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.labelPx', label: 'Boss 标签字号', rng: 'font' },
+		{ group: '系统按钮', path: 'UI.tuning.system.buttonScale', label: '按钮倍率', rng: 'system' },
+		{ group: '系统按钮', path: 'UI.tuning.system.gapPx', label: '按钮间距', rng: 'px' },
+		{ group: '系统按钮', path: 'UI.tuning.system.alpha', label: '按钮透明度', rng: 'alpha' }
+	]
+	var UI_TUNING_SLIDERS = []
+	function uiTuningRow(id, label, value, def, rng) {
+		var range = UI_RANGE[rng]
+		return '<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;font:600 12px system-ui"><span>' + label + '</span><span id="uiv_' + id + '">' + value + ' <span style="opacity:.5;font-weight:400">/ ' + def + '</span></span></div><input type="range" id="ui_' + id + '" min="' + range[0] + '" max="' + range[1] + '" step="' + range[2] + '" value="' + value + '" style="width:100%"></div>'
+	}
+	function resetUiTuning() { for (var i = 0; i < UI_TUNING.length; i++) { rtSet(UI_TUNING[i].path, null) } Bus.emit('ui:tuning_changed', { reset: true }) }
+	function currentUiTuningSummary() {
+		var out = { UI: { tuning: {} } }
+		for (var i = 0; i < UI_TUNING.length; i++) { var d = UI_TUNING[i], value = rtGet(d.path); if (value === undefined) { value = getPath(d.path) }; setPath(out, d.path, value) }
+		return JSON.stringify(out, null, 2)
+	}
 
 	function sliderRow(id, label, path, v, r) {
 		var mn = RANGE[r][0], mx = RANGE[r][1], st = RANGE[r][2]
@@ -123,7 +173,7 @@
 		}
 	}
 	function buildSections() {
-		SLIDERS.length = 0; TUNING_SLIDERS.length = 0   // 每次重建清空，render() 可重入（复位/沙盒刷新面板）
+		SLIDERS.length = 0; TUNING_SLIDERS.length = 0; UI_TUNING_SLIDERS.length = 0   // 每次重建清空，render() 可重入（复位/沙盒刷新面板）
 		var secs = []
 		// —— 怪物 ——
 		var h = ''
@@ -286,6 +336,18 @@
 			'<button id="mi_apply" style="width:100%;padding:8px;margin-top:4px;border:0;border-radius:6px;background:#2de1a8;color:#063;font:700 12px system-ui;cursor:pointer">应用</button>' +
 			'<div id="mi_msg" style="font:600 11px system-ui;opacity:.8;margin-top:6px"></div>'
 		secs.push({ title: '手动输入（路径→数值）', body: mi, open: false })
+		var ui = '<div style="font:600 11px system-ui;opacity:.72;margin-bottom:6px">仅本次运行有效；拖动立即作用于真实 HUD。</div>', group = ''
+		for (var u = 0; u < UI_TUNING.length; u++) {
+			var item = UI_TUNING[u], base = getPath(item.path), current = rtGet(item.path)
+			if (!isNum(base)) { continue }
+			if (current === undefined) { current = base }
+			if (group !== item.group) { group = item.group; ui += '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #2a3358;color:#8becff;font:800 11px system-ui">' + group + '</div>' }
+			var uid = UI_TUNING_SLIDERS.length; UI_TUNING_SLIDERS.push({ id: uid, path: item.path, def: base, rng: item.rng })
+			ui += uiTuningRow(uid, item.label, current, base, item.rng)
+		}
+		ui += '<button id="ui_tune_reset" style="width:100%;padding:8px;margin-top:7px;border:1px solid #8becff;border-radius:6px;background:transparent;color:#8becff;cursor:pointer;font:700 12px system-ui">复位 HUD 视觉参数</button>'
+		ui += '<button id="ui_tune_copy" style="width:100%;padding:8px;margin-top:6px;border:1px solid #8becff;border-radius:6px;background:transparent;color:#8becff;cursor:pointer;font:700 12px system-ui">复制当前 HUD 参数</button><div id="ui_tune_msg" style="min-height:16px;margin-top:4px;font:600 11px system-ui;opacity:.75"></div>'
+		secs.push({ title: 'UI 视觉调参台（运行时）', body: ui, open: false })
 		return secs
 	}
 
@@ -367,6 +429,21 @@
 		if (tvl) { tvl.innerHTML = fmtTune(t.path, val, t.dec) + ' <span style="opacity:.5;font-weight:400">/ 默认 ' + t.def + '</span>' }
 		}
 		}
+		for (var ui = 0; ui < UI_TUNING_SLIDERS.length; ui++) {
+			var uiInput = panel.querySelector('#ui_' + UI_TUNING_SLIDERS[ui].id)
+			if (!uiInput) { continue }
+			uiInput.oninput = function () {
+				var d = UI_TUNING_SLIDERS[+this.id.split('_')[1]], val = parseFloat(this.value)
+				if (!d) { return }
+				rtSet(d.path, val)
+				var label = document.getElementById('uiv_' + d.id); if (label) { label.innerHTML = val + ' <span style="opacity:.5;font-weight:400">/ ' + d.def + '</span>' }
+				Bus.emit('ui:tuning_changed', { path: d.path, value: val })
+			}
+		}
+		var uiReset = panel.querySelector('#ui_tune_reset')
+		if (uiReset) { uiReset.onclick = function () { resetUiTuning(); render() } }
+		var uiCopy = panel.querySelector('#ui_tune_copy')
+		if (uiCopy) { uiCopy.onclick = function () { var text = currentUiTuningSummary(), msg = panel.querySelector('#ui_tune_msg'); if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) { global.navigator.clipboard.writeText(text).then(function () { if (msg) { msg.textContent = '已复制当前运行时参数' } }, function () { if (msg) { msg.textContent = '复制失败：请从控制台读取' } }) } else { if (msg) { msg.textContent = 'Clipboard 不可用：请从控制台读取' }; Log.info(text) } } }
 		panel.querySelector('#tune_reset').onclick = function () { rtResetGroup(); render() }   // 复位本组：仅清实时覆盖，不动其他 override
 		panel.querySelector('#tune_sandbox').onclick = function () {
 			GS.tuningSandbox = !GS.tuningSandbox
