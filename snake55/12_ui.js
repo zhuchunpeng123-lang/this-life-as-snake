@@ -88,6 +88,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 			+ '.ui-v1-system-btn{display:flex;align-items:center;justify-content:center;background-color:transparent}.ui-v1-system-label{position:absolute;left:var(--system-left);right:var(--system-right);top:var(--system-top);bottom:var(--system-bottom);display:flex;align-items:center;justify-content:center;pointer-events:none;white-space:nowrap}'
 			+ '.ui-v1-boss{background-color:transparent}.ui-v1-boss-name,.ui-v1-boss-time,.ui-v1-boss-phase,.ui-v1-boss-status{position:absolute;left:0;top:0;transform:translate(-50%,-50%);white-space:nowrap}.ui-v1-boss-name{left:var(--boss-name-x);top:var(--boss-name-y);font-size:var(--boss-name-size);font-weight:800;color:var(--ui-text)}.ui-v1-boss-time{left:var(--boss-time-x);top:var(--boss-time-y);font-size:var(--boss-time-size);color:var(--ui-text-dim)}.ui-v1-boss-phase{left:var(--boss-phase-x);top:var(--boss-phase-y);font-size:var(--boss-phase-size);color:var(--ui-text-dim)}.ui-v1-boss-status{left:var(--boss-status-x);top:var(--boss-status-y);font-size:var(--boss-status-size);color:var(--ui-boss)}.ui-v1-boss-track{left:calc(var(--boss-hp-x) - var(--boss-hp-width) / 2);right:auto;top:calc(var(--boss-hp-y) - var(--boss-hp-height) / 2);bottom:auto;width:var(--boss-hp-width);height:var(--boss-hp-height);background:transparent}'
 			+ '.ui-v1-skill,.ui-v1-combo-item{pointer-events:auto;cursor:pointer}.ui-v1-build-info-layer{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;background:' + hexA(STYLE.bg, 0.72) + ';z-index:22;pointer-events:auto}.ui-v1-build-info{width:min(92vw,440px);max-height:82vh;overflow:auto;padding:18px;border:2px solid ' + STYLE.ui + ';border-radius:14px;background:' + hexA(STYLE.panel, 0.96) + ';color:var(--ui-text);box-shadow:0 0 18px ' + hexA(STYLE.ui, 0.28) + ';font:600 14px/1.5 system-ui}.ui-v1-build-info h3{margin:0 0 12px;font-size:20px;color:var(--ui-text)}.ui-v1-build-info-card{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;border:1px solid ' + hexA(STYLE.ui, 0.45) + ';border-radius:10px;background:' + hexA(STYLE.bg, 0.34) + '}.ui-v1-info-icon{width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex:0 0 48px}.ui-v1-info-icon .ui-v1-icon-cell{width:100%;height:100%}.ui-v1-build-info-detail{color:var(--ui-text-dim);white-space:pre-line}.ui-v1-build-info-close{display:block;width:100%;margin-top:14px;padding:8px 12px;border:1px solid ' + STYLE.ui + ';border-radius:8px;background:transparent;color:var(--ui-text);font:700 14px system-ui;cursor:pointer}'
+			+ '.ui-v1-build-info,.ui-v1-build-info h3,.ui-v1-build-info-close{color:' + STYLE.textMain + '}.ui-v1-build-info-detail{color:' + STYLE.textDim + '}.ui-v1-build-info-close{touch-action:manipulation}'
 			+ '@media (max-width:620px){.ui-v1-status{max-width:39vw}.ui-v1-build{max-width:43vw}.ui-v1-data{gap:2px 5px}.ui-v1-system-btn{min-width:86px}.ui-v1-boss{max-width:52vw}}'
 		document.head.appendChild(style)
 	}
@@ -190,7 +191,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
 		buildInfoLayer = mk('div', '', froot); buildInfoLayer.className = 'ui-v1-build-info-layer'
 		buildInfoBox = mk('div', '', buildInfoLayer); buildInfoBox.className = 'ui-v1-build-info'
-		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { hideBuildInfo() } }
+		buildInfoLayer.setAttribute('aria-hidden', 'true')
+		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { e.preventDefault(); hideBuildInfo() } }
+		buildInfoBox.onclick = function (e) { e.stopPropagation() }
+		global.addEventListener('keydown', function (e) { if (e.key === 'Escape' && buildInfoLayer && buildInfoLayer.style.display !== 'none') { hideBuildInfo() } })
 		hudSkills.addEventListener('click', function (e) { var target = findBuildInfoTarget(e.target, hudSkills, 'data-skill'); if (target) { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_status' }); showBuildInfo('skill', target.getAttribute('data-skill')) } })
 		hudCombo.addEventListener('click', function (e) { var target = findBuildInfoTarget(e.target, hudCombo, 'data-combo'); if (target) { Bus.emit('ui:feedback', { kind: 'press', id: 'combo_status' }); showBuildInfo('combo', target.getAttribute('data-combo')) } })
 		hudSkills.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var target = findBuildInfoTarget(e.target, hudSkills, 'data-skill'); if (target) { e.preventDefault(); showBuildInfo('skill', target.getAttribute('data-skill')) } } })
@@ -477,7 +481,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		renderChooseCards(choices)
 	}
 	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } hideRotateChoice() }
-	function hideBuildInfo() { if (buildInfoLayer) { buildInfoLayer.style.display = 'none' } }
+	function hideBuildInfo() {
+		if (!buildInfoLayer) { return }
+		buildInfoLayer.style.display = 'none'
+		buildInfoLayer.setAttribute('aria-hidden', 'true')
+	}
 	function showBuildInfo(kind, id) {
 		if (!buildInfoLayer || !buildInfoBox) { return }
 		var owned = GS.ownedSkills || {}, title = '', icon = '', detail = ''
@@ -497,7 +505,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		}
 		buildInfoBox.innerHTML = '<h3>' + iconText(title) + '</h3><div class="ui-v1-build-info-card"><div class="ui-v1-info-icon">' + icon + '</div><div class="ui-v1-build-info-detail">' + iconText(detail) + '</div></div><button type="button" class="ui-v1-build-info-close">关闭</button>'
 		var close = buildInfoBox.querySelector('.ui-v1-build-info-close')
-		if (close) { close.onclick = hideBuildInfo }
+		if (close) {
+			close.onclick = function (e) { e.preventDefault(); e.stopPropagation(); hideBuildInfo() }
+		}
+		buildInfoLayer.setAttribute('aria-hidden', 'false')
 		buildInfoLayer.style.display = 'flex'
 	}
 	function findBuildInfoTarget(node, rootNode, attr) {
