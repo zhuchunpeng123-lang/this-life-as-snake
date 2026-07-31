@@ -428,8 +428,8 @@
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { overallScale: 1, widthVw: 34, offsetX: 0, offsetY: 0, slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },
 			combo: { overallScale: 1, widthVw: 24, offsetX: 0, offsetY: 0, iconCellPx: 26, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3 },
-			bossBar: { widthPct: 0.58, maxWidthPx: 560, heightPx: 14, offsetY: 4, labelPx: 12 },
-			system: { buttonScale: 1, offsetX: 0, offsetY: 0, gapPx: 8, alpha: 0.82 }
+			bossBar: { widthPct: 0.58, maxWidthPx: 560, heightPx: 14, offsetY: 4, labelPx: 12, nameX: 0.50, nameY: 0.36, nameSize: 16, timeX: 0.50, timeY: 0.46, timeSize: 12, phaseX: 0.24, phaseY: 0.78, phaseSize: 11, statusX: 0.76, statusY: 0.78, statusSize: 11, hpX: 0.50, hpY: 0.64, hpWidth: 0.72, hpHeight: 0.11, hpTextSize: 12 },
+			system: { buttonScale: 0.7, offsetX: -8, offsetY: -35, gapPx: 0, alpha: 0 }
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
 	},
