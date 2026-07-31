@@ -174,6 +174,7 @@
 			list: ['fire', 'ice', 'bolt', 'shield', 'lightning'],
 			attackSkills: ['fire', 'bolt', 'lightning'],
 			survivalSkills: ['ice', 'shield'],
+			starterEligible: { fire: true, ice: false, bolt: true, shield: true, lightning: true },
 		fire: { dotPerSec: [6, 9, 13, 18, 24], radius: [60, 75, 90, 108, 128], segStep: 1, lv5: 'spreadBurn' },  // B-2：半径放大×1.5初值，沿蛇身铺开（真理源 §4.1，待实测回填）
 		ice: { slowPct: [0.20, 0.30, 0.40, 0.50, 0.60], lv5FreezeSec: 1.0, freezeCd: 3.0, poolLingerSec: [4, 5, 6, 7, 8], maxActivePools: 2, poolRadius: [90, 110, 130, 150, 170], seekRange: [100, 140, 180, 220, 260] },  // ⑥ 系统性调整（大范围·持续控制场）：poolLingerSec 改按等级[4,5,6,7,8](冰池存续拉长·供敌群聚拢+火墙多次扫爆)·新增 maxActivePools=2(并发冰池上限·2片稳定大控制场)·poolRadius[5]=[90,110,130,150,170](全等级≥蒸汽90px·冰圈≥爆圈)·freezeCd=3.0不动·slowPct/Lv5冻结1s不动；蒸汽COMBO.steamExplosion.radius=90不动(选A·仅e.inIce防冰圈外凭空引爆)；真理源§4.2回写，③校验DPS/密度
 		bolt: { damage: [10, 13, 16, 20, 25], nodes: [1, 2, 3, 4, 5], fireRate: [2.0, 2.2, 2.5, 2.8, 3.2], maxRange: [100, 140, 180, 220, 260], lv5: 'pierce+1' },  // P1-1 射程门控（px）

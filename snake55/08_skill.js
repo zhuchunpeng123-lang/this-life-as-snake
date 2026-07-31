@@ -314,11 +314,11 @@ function tickCombos(dt) {
 
 	// —— 3 选 1（保底 guaranteeAttack 攻 + guaranteeSurvival 生）——
 	function isAttack(id) { return SK.attackSkills.indexOf(id) >= 0 }
-	function candidates() {
+	function candidates(starterOnly) {
 		var out = [], k = SK.list, maxed = []
 		for (var i = 0; i < k.length; i++) {
 			var id = k[i], L = lvl(id)
-			if (L === 0) { out.push({ id: id, level: 1, isNew: true }) }
+			if (L === 0 && (!starterOnly || SK.starterEligible[id])) { out.push({ id: id, level: 1, isNew: true }) }
 			else if (L < SK.maxLevel) { out.push({ id: id, level: L + 1, isNew: false }) }
 			else { maxed.push(id) }   // L>=maxLevel 不进候选 → 不会出现「选了还是满级」
 		}
@@ -326,7 +326,8 @@ function tickCombos(dt) {
 		return out
 	}
 	function buildOffer() {
-		var cand = candidates(); if (cand.length === 0) { return [] }
+		var firstOffer = (GS.upgradesThisRun || 0) === 0
+		var cand = candidates(firstOffer); if (cand.length === 0) { return [] }
 		var atk = [], sur = [], i
 		for (i = 0; i < cand.length; i++) { (isAttack(cand[i].id) ? atk : sur).push(cand[i]) }
 		var picks = [], used = {}
@@ -350,7 +351,7 @@ function tickCombos(dt) {
 		Bus.emit('skill:offer', { choices: picks })
 	}
 	function pick(id) {
-		var c = candidates(), ok = null
+		var c = candidates((GS.upgradesThisRun || 0) === 0), ok = null
 		for (var i = 0; i < c.length; i++) { if (c[i].id === id) { ok = c[i]; break } }
 		if (!ok) { Log.warn('技能选择非法：' + id); return }
 		GS.ownedSkills[id] = ok.level
