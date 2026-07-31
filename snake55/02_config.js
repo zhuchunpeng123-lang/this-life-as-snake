@@ -395,7 +395,7 @@
 			stage: { src: 'assets/ui_hud_v1_extracted/ui_stage_frame.png', ratio: 1.74, content: { left: 0.12, right: 0.12, top: 0.17, bottom: 0.35 }, progress: { left: 0.18, right: 0.18, bottom: 0.17, height: 0.08 } },
 			boss: { src: 'assets/ui_hud_v1_extracted/ui_boss_frame.png', ratio: 2.19, content: { left: 0.16, right: 0.16, top: 0.17, bottom: 0.35 }, hp: { left: 0.16, right: 0.16, bottom: 0.27, height: 0.11 } },
 			skills: { src: 'assets/ui_hud_v1_extracted/ui_skill_bar_frame.png', ratio: 2.83, slots: [{ x: 0.18, y: 0.51 }, { x: 0.34, y: 0.51 }, { x: 0.50, y: 0.51 }, { x: 0.66, y: 0.51 }, { x: 0.82, y: 0.51 }], slotWidth: 0.14, slotHeight: 0.54 },
-			combo: { src: 'assets/ui_hud_v1_extracted/ui_combo_frame.png', ratio: 1.83, title: { left: 0.24, right: 0.24, top: 0.08, height: 0.22 }, slots: [{ x: 0.22, y: 0.64 }, { x: 0.50, y: 0.64 }, { x: 0.78, y: 0.64 }], slotWidth: 0.22, slotHeight: 0.42 },
+			combo: { src: 'assets/ui_hud_v1_extracted/ui_combo_frame.png', ratio: 1.83, title: { left: 0.24, right: 0.24, top: 0.08, height: 0.22 }, slots: [{ x: 0.22, y: 0.56 }, { x: 0.50, y: 0.56 }, { x: 0.78, y: 0.56 }], slotWidth: 0.22, slotHeight: 0.42 },
 			system: { src: 'assets/ui_hud_v1_extracted/ui_system_button_wide.png', ratio: 1.69, content: { left: 0.18, right: 0.18, top: 0.24, bottom: 0.22 } }
 		},
 		icons: {
@@ -421,14 +421,14 @@
 				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0,
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
-			playerLife: { overallScale: 0.68, widthVw: 24, offsetX: 1, offsetY: 7, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 6, numberSize: 23, numberGap: 6, statsGap: 0 },
-			stage: { overallScale: 1.1, widthVw: 22, offsetX: 0, offsetY: 0, contentScale: 0.73, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0.1, timerSize: 13, timerOffsetY: 0, progressWidth: 0.63, progressHeight: 0.09, progressOffsetX: -0.02, progressOffsetY: -0.08 },
+			playerLife: { overallScale: 0.65, widthVw: 24, offsetX: 1, offsetY: 13, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 6, numberSize: 23, numberGap: 6, statsGap: 0 },
+			stage: { overallScale: 1, widthVw: 22, offsetX: 0, offsetY: 0, contentScale: 0.73, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0.1, timerSize: 13, timerOffsetY: 0, progressWidth: 0.63, progressHeight: 0.09, progressOffsetX: -0.02, progressOffsetY: -0.08 },
 			playerStats: { overallScale: 0.95, widthVw: 27, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, fontSize: 13 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { overallScale: 1, widthVw: 34, offsetX: 6, offsetY: 21, slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 17 },
 			combo: { overallScale: 0.85, widthVw: 24, offsetX: 2, offsetY: 3, iconCellPx: 26, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3 },
-			bossBar: { widthPct: 0.58, maxWidthPx: 430, heightPx: 14, offsetY: -1, labelPx: 12, nameX: 0.50, nameY: 0.36, nameSize: 20, timeX: 0.50, timeY: 0.49, timeSize: 14, phaseX: 0.24, phaseY: 0.78, phaseSize: 13, statusX: 0.76, statusY: 0.78, statusSize: 13, hpX: 0.50, hpY: 0.66, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 15 },
+			bossBar: { widthPct: 0.58, maxWidthPx: 400, heightPx: 14, offsetY: -1, labelPx: 12, nameX: 0.50, nameY: 0.36, nameSize: 20, timeX: 0.50, timeY: 0.49, timeSize: 14, phaseX: 0.24, phaseY: 0.78, phaseSize: 13, statusX: 0.76, statusY: 0.78, statusSize: 13, hpX: 0.50, hpY: 0.66, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 15 },
 			system: { buttonScale: 0.7, offsetX: -8, offsetY: -35, gapPx: 0, alpha: 0 }
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
