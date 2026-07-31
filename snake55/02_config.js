@@ -422,6 +422,7 @@
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
 			playerLife: { overallScale: 0.68, widthVw: 24, offsetX: 0, offsetY: 32, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 6, numberSize: 23, numberGap: 6, statsGap: 0 },
+			stage: { overallScale: 1, widthVw: 22, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, titleSize: 13, titleOffsetY: 0, timerSize: 11, timerOffsetY: 0, progressWidth: 0.64, progressHeight: 0.08, progressOffsetX: 0, progressOffsetY: 0 },
 			playerStats: { overallScale: 1, widthVw: 27, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, fontSize: 13 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },

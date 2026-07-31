@@ -17,7 +17,7 @@
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
-		scale: [0.65, 1.35, 0.01], width: [16, 32, 1], px: [0, 64, 1], offset: [-80, 80, 1], alpha: [0, 1, 0.02],
+		scale: [0.65, 1.35, 0.01], width: [16, 32, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.15, 0.01], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
 	}
@@ -122,6 +122,21 @@
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.contentOffsetX', label: 'Stats content X', rng: 'offset' },
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.contentOffsetY', label: 'Stats content Y', rng: 'offset' },
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.fontSize', label: 'Stats font size', rng: 'font' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.overallScale', label: 'Stage overall scale', rng: 'scale' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.widthVw', label: 'Stage width', rng: 'width' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.offsetX', label: 'Stage offset X', rng: 'offset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.offsetY', label: 'Stage offset Y', rng: 'offset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.contentScale', label: 'Stage content scale', rng: 'scale' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.contentOffsetX', label: 'Stage content X', rng: 'normOffset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.contentOffsetY', label: 'Stage content Y', rng: 'normOffset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.titleSize', label: 'Stage title size', rng: 'font' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.titleOffsetY', label: 'Stage title Y', rng: 'normOffset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.timerSize', label: 'Stage timer size', rng: 'font' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.timerOffsetY', label: 'Stage timer Y', rng: 'normOffset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.progressWidth', label: 'Stage progress width', rng: 'progressWidth' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.progressHeight', label: 'Stage progress height', rng: 'progressHeight' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.progressOffsetX', label: 'Stage progress X', rng: 'normOffset' },
+		{ group: '03 Stage', path: 'UI.tuning.stage.progressOffsetY', label: 'Stage progress Y', rng: 'normOffset' },
 		{ group: '表面', path: 'UI.tuning.surface.primaryAlpha', label: '一级面板透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.secondaryAlpha', label: '二级容器透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.borderAlpha', label: '边框强度', rng: 'alpha' },
