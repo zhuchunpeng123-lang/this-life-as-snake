@@ -17,7 +17,7 @@
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
-		scale: [0.65, 1.35, 0.01], px: [0, 64, 1], offset: [-80, 80, 1], alpha: [0, 1, 0.02],
+		scale: [0.65, 1.35, 0.01], width: [16, 32, 1], px: [0, 64, 1], offset: [-80, 80, 1], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
 	}
@@ -103,6 +103,18 @@
 		{ group: '布局', path: 'UI.tuning.layout.statusOffsetY', label: '状态 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.buildOffsetY', label: '构筑区 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.systemOffsetY', label: '系统按钮 Y 偏移', rng: 'offset' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.overallScale', label: 'Life overall scale', rng: 'scale' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.widthVw', label: 'Life width', rng: 'width' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.offsetX', label: 'Life offset X', rng: 'offset' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.offsetY', label: 'Life offset Y', rng: 'offset' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentScale', label: 'Life content scale', rng: 'scale' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentOffsetX', label: 'Life content X', rng: 'offset' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentOffsetY', label: 'Life content Y', rng: 'offset' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.heartSize', label: 'Heart size', rng: 'font' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.heartGap', label: 'Heart gap', rng: 'px' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.numberSize', label: 'Life number size', rng: 'font' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.numberGap', label: 'Number gap', rng: 'px' },
+		{ group: 'Player Life', path: 'UI.tuning.playerLife.statsGap', label: 'Life/stats gap', rng: 'px' },
 		{ group: '表面', path: 'UI.tuning.surface.primaryAlpha', label: '一级面板透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.secondaryAlpha', label: '二级容器透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.borderAlpha', label: '边框强度', rng: 'alpha' },

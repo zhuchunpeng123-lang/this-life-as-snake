@@ -418,9 +418,10 @@
 		tuning: {
 			layout: {
 				hudScale: 1, edgePad: 16, topPad: 12, clusterGap: 8,
-				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0, lifeStatsGapPx: 5,
+				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0,
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
+			playerLife: { overallScale: 1, widthVw: 24, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, heartSize: 23, heartGap: 1, numberSize: 16, numberGap: 4, statsGap: 5 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },
