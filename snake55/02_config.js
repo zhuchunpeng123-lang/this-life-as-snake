@@ -389,6 +389,15 @@
 	// —— UI（仅移动端表现值 · 非 §9 平衡真源） ——
 	// 仅控制 HUD/摇杆在手机上的缩放与下限，不牵动任何玩法强度/平衡。
 	UI: {
+		hudSkin: {
+			life: { src: 'assets/ui_hud_v1_extracted/ui_player_life_frame.png', ratio: 3.13 },
+			stats: { src: 'assets/ui_hud_v1_extracted/ui_player_stats_frame.png', ratio: 3.22 },
+			stage: { src: 'assets/ui_hud_v1_extracted/ui_stage_frame.png', ratio: 1.74 },
+			boss: { src: 'assets/ui_hud_v1_extracted/ui_boss_frame.png', ratio: 2.19 },
+			skills: { src: 'assets/ui_hud_v1_extracted/ui_skill_bar_frame.png', ratio: 2.83 },
+			combo: { src: 'assets/ui_hud_v1_extracted/ui_combo_frame.png', ratio: 1.83 },
+			system: { src: 'assets/ui_hud_v1_extracted/ui_system_button_wide.png', ratio: 1.69 }
+		},
 		icons: {
 			paddingPx: 2,
 			scale: 1,
