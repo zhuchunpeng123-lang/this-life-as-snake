@@ -421,7 +421,8 @@
 				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0,
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
-			playerLife: { overallScale: 1, widthVw: 24, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, heartSize: 23, heartGap: 1, numberSize: 16, numberGap: 4, statsGap: 5 },
+			playerLife: { overallScale: 0.68, widthVw: 24, offsetX: 0, offsetY: 32, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 6, numberSize: 23, numberGap: 6, statsGap: 0 },
+			playerStats: { overallScale: 1, widthVw: 27, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, fontSize: 13 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },

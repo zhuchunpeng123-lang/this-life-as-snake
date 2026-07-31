@@ -103,18 +103,25 @@
 		{ group: '布局', path: 'UI.tuning.layout.statusOffsetY', label: '状态 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.buildOffsetY', label: '构筑区 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.systemOffsetY', label: '系统按钮 Y 偏移', rng: 'offset' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.overallScale', label: 'Life overall scale', rng: 'scale' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.widthVw', label: 'Life width', rng: 'width' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.offsetX', label: 'Life offset X', rng: 'offset' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.offsetY', label: 'Life offset Y', rng: 'offset' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentScale', label: 'Life content scale', rng: 'scale' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentOffsetX', label: 'Life content X', rng: 'offset' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.contentOffsetY', label: 'Life content Y', rng: 'offset' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.heartSize', label: 'Heart size', rng: 'font' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.heartGap', label: 'Heart gap', rng: 'px' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.numberSize', label: 'Life number size', rng: 'font' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.numberGap', label: 'Number gap', rng: 'px' },
-		{ group: 'Player Life', path: 'UI.tuning.playerLife.statsGap', label: 'Life/stats gap', rng: 'px' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.overallScale', label: 'Life overall scale', rng: 'scale' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.widthVw', label: 'Life width', rng: 'width' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.offsetX', label: 'Life offset X', rng: 'offset' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.offsetY', label: 'Life offset Y', rng: 'offset' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.contentScale', label: 'Life content scale', rng: 'scale' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.contentOffsetX', label: 'Life content X', rng: 'offset' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.contentOffsetY', label: 'Life content Y', rng: 'offset' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.heartSize', label: 'Heart size', rng: 'font' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.heartGap', label: 'Heart gap', rng: 'px' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.numberSize', label: 'Life number size', rng: 'font' },
+		{ group: '01 Player Life', path: 'UI.tuning.playerLife.numberGap', label: 'Number gap', rng: 'px' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.overallScale', label: 'Stats overall scale', rng: 'scale' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.widthVw', label: 'Stats width', rng: 'width' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.offsetX', label: 'Stats offset X', rng: 'offset' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.offsetY', label: 'Stats offset Y', rng: 'offset' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.contentScale', label: 'Stats content scale', rng: 'scale' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.contentOffsetX', label: 'Stats content X', rng: 'offset' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.contentOffsetY', label: 'Stats content Y', rng: 'offset' },
+		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.fontSize', label: 'Stats font size', rng: 'font' },
 		{ group: '表面', path: 'UI.tuning.surface.primaryAlpha', label: '一级面板透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.secondaryAlpha', label: '二级容器透明度', rng: 'alpha' },
 		{ group: '表面', path: 'UI.tuning.surface.borderAlpha', label: '边框强度', rng: 'alpha' },
@@ -348,7 +355,7 @@
 			'<button id="mi_apply" style="width:100%;padding:8px;margin-top:4px;border:0;border-radius:6px;background:#2de1a8;color:#063;font:700 12px system-ui;cursor:pointer">应用</button>' +
 			'<div id="mi_msg" style="font:600 11px system-ui;opacity:.8;margin-top:6px"></div>'
 		secs.push({ title: '手动输入（路径→数值）', body: mi, open: false })
-		var ui = '<div style="font:600 11px system-ui;opacity:.72;margin-bottom:6px">仅本次运行有效；拖动立即作用于真实 HUD。</div>', group = ''
+		var ui = '<div style="font:800 12px system-ui;color:#8becff;margin-bottom:6px">HUD V1 Skin Debug</div><div style="font:600 11px system-ui;opacity:.72;margin-bottom:6px">仅本次运行有效；拖动立即作用于真实 HUD。</div>', group = ''
 		for (var u = 0; u < UI_TUNING.length; u++) {
 			var item = UI_TUNING[u], base = getPath(item.path), current = rtGet(item.path)
 			if (!isNum(base)) { continue }
