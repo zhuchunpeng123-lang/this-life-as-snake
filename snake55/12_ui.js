@@ -68,16 +68,17 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 			+ '.ui-v1-build{right:calc(env(safe-area-inset-right) + var(--ui-edge) + var(--ui-build-x));top:calc(env(safe-area-inset-top) + var(--ui-top) + var(--ui-build-y));display:flex;flex-direction:column;align-items:flex-end;gap:var(--ui-cluster-gap);max-width:44vw}'
 			+ '.ui-v1-system{left:calc(env(safe-area-inset-left) + var(--ui-edge) + var(--ui-system-x));bottom:calc(env(safe-area-inset-bottom) + var(--ui-edge) + var(--ui-system-y));display:flex;flex-direction:column;gap:var(--ui-system-gap);align-items:flex-start;pointer-events:auto;z-index:12}'
 			+ '.ui-v1-panel{position:relative;box-sizing:border-box;background:var(--ui-panel-primary);border:0;border-radius:0;box-shadow:none;text-shadow:0 1px 2px var(--ui-shadow);background-repeat:no-repeat;background-position:center;background-size:100% 100%;overflow:visible}'
-			+ '.ui-v1-life{width:min(27vw,330px);aspect-ratio:var(--ui-life-ratio);padding:18% 12%;font-size:var(--ui-value);letter-spacing:1px;white-space:nowrap}'
-			+ '.ui-v1-data{width:min(24vw,300px);aspect-ratio:var(--ui-stats-ratio);display:flex;flex-wrap:wrap;gap:3px 8px;max-width:100%;padding:17% 12%;font-size:var(--ui-body);line-height:1.35;color:var(--ui-text-dim)}'
+			+ '.ui-v1-life{width:min(27vw,330px);aspect-ratio:var(--ui-life-ratio);display:flex;align-items:center;justify-content:center;gap:8px;padding:var(--skin-top) var(--skin-right) var(--skin-bottom) var(--skin-left);font-size:var(--ui-value);letter-spacing:1px;white-space:nowrap}'
+			+ '.ui-v1-life-count{font-size:var(--ui-value);font-weight:800;color:var(--ui-text)}.ui-v1-life-hearts{font-size:clamp(17px,2vw,24px);letter-spacing:2px;line-height:1}'
+			+ '.ui-v1-data{position:relative;width:min(27vw,300px);aspect-ratio:var(--ui-stats-ratio);display:block;max-width:100%;padding:0;font-size:var(--ui-body);line-height:1;color:var(--ui-text-dim)}.ui-v1-stat-cell{position:absolute;left:var(--stat-x);top:var(--stat-y);width:25%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;white-space:nowrap;font-size:clamp(9px,1.35vw,13px);text-align:center}'
 			+ '.ui-v1-data strong{color:var(--ui-text);font-size:var(--ui-value);font-weight:800}'
-			+ '.ui-v1-stage{width:min(22vw,240px);aspect-ratio:var(--ui-stage-ratio);display:flex;align-items:center;justify-content:center;gap:7px;min-height:22px;padding:17% 12%;background:var(--ui-panel-secondary);font-size:var(--ui-meta);color:var(--ui-text-dim);white-space:nowrap}.ui-v1-stage strong{font-size:var(--ui-title);color:var(--ui-text)}'
+			+ '.ui-v1-stage{position:relative;width:min(22vw,240px);aspect-ratio:var(--ui-stage-ratio);display:block;min-height:22px;padding:0;background:var(--ui-panel-secondary);font-size:var(--ui-meta);color:var(--ui-text-dim);white-space:nowrap}.ui-v1-stage-main{position:absolute;left:var(--stage-left);right:var(--stage-right);top:var(--stage-top);bottom:var(--stage-bottom);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}.ui-v1-stage-main strong{font-size:var(--ui-title);color:var(--ui-text)}.ui-v1-stage-time{font-size:var(--ui-meta);color:var(--ui-text-dim)}'
 			+ '.ui-v1-stage.is-boss{color:var(--ui-text)}'
-			+ '.ui-v1-stage-track{width:76px;height:4px;border-radius:999px;overflow:hidden;background:var(--ui-track)}.ui-v1-stage-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-accent)}'
-			+ '.ui-v1-boss{display:none;width:min(var(--ui-boss-width),var(--ui-boss-max));aspect-ratio:var(--ui-boss-ratio);margin-top:var(--ui-boss-offset-y);padding:18% 12% 13%;background:var(--ui-panel-secondary);text-align:center}.ui-v1-boss.is-active{display:block}.ui-v1-boss-label{display:flex;justify-content:center;gap:7px;margin-bottom:4px;font-size:var(--ui-boss-label);font-weight:800;color:var(--ui-text)}.ui-v1-boss.is-invuln .ui-v1-boss-label{color:var(--ui-boss)}.ui-v1-boss-track{height:var(--ui-boss-height);overflow:hidden;border-radius:999px;background:var(--ui-boss-track)}.ui-v1-boss-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-boss);transition:width .12s linear}'
-			+ '.ui-v1-skills{width:max(220px,min(44vw,330px));aspect-ratio:var(--ui-skills-ratio);display:flex;align-items:center;gap:var(--ui-skill-gap);padding:6% 9%;background:var(--ui-panel-secondary)}.ui-v1-skill{position:relative;display:flex;align-items:center;justify-content:center;width:var(--ui-slot);height:var(--ui-slot);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--skill-color) 55%,transparent);border-radius:calc(var(--ui-radius) * .72);background:color-mix(in srgb,var(--skill-color) 13%,var(--ui-panel-secondary));color:var(--skill-color)}.ui-v1-skill.is-empty{border-color:var(--ui-border);background:var(--ui-slot-empty);color:var(--ui-text-dim)}.ui-v1-icon-cell{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:var(--ui-skill-icon);height:var(--ui-skill-icon);padding:var(--ui-icon-pad);overflow:hidden;line-height:1;text-align:center;flex:0 0 auto}.ui-v1-combo .ui-v1-icon-cell{width:var(--ui-combo-icon);height:var(--ui-combo-icon)}.ui-v1-icon-cell img{display:block;max-width:100%;max-height:100%;object-fit:contain}.ui-v1-level{position:absolute;right:-3px;bottom:-3px;z-index:1;min-width:var(--ui-badge);height:var(--ui-badge);padding:0 2px;box-sizing:border-box;border-radius:999px;background:var(--ui-panel-primary);border:1px solid var(--skill-color);color:var(--skill-color);font:800 calc(var(--ui-badge) * .7)/calc(var(--ui-badge) - 1px) system-ui;text-align:center}'
-			+ '.ui-v1-combo{width:min(31vw,230px);aspect-ratio:var(--ui-combo-ratio);display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:var(--ui-combo-item-gap);max-width:100%;padding:12% 10%;background:var(--ui-panel-secondary)}.ui-v1-combo-item{display:inline-flex;align-items:center;gap:var(--ui-combo-inner-gap);min-height:var(--ui-combo-icon);padding:var(--ui-combo-pad-y) var(--ui-combo-pad-x);border-radius:var(--ui-radius);border:0;background:transparent;font-size:var(--ui-combo-font);line-height:1;white-space:nowrap}.ui-v1-combo-item.is-active{box-shadow:none}.ui-v1-combo-name{color:var(--combo-color);font-weight:800}.ui-v1-combo-item:not(.is-active) .ui-v1-combo-name{color:var(--ui-text-dim)}'
-			+ '.ui-v1-system-btn{width:132px;min-width:86px;aspect-ratio:var(--ui-system-ratio);box-sizing:border-box;padding:20% 12%;border:0;border-radius:0;background:var(--ui-system-panel);color:var(--ui-text);font:700 var(--ui-body)/1 system-ui;text-align:center;cursor:pointer;pointer-events:auto}.ui-v1-system-btn:active{transform:translateY(1px);background:var(--ui-panel-secondary)}'
+			+ '.ui-v1-stage-track{position:absolute;left:var(--stage-progress-left);right:var(--stage-progress-right);bottom:var(--stage-progress-bottom);height:var(--stage-progress-height);border-radius:999px;overflow:hidden;background:var(--ui-track)}.ui-v1-stage-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-accent)}'
+			+ '.ui-v1-boss{position:relative;display:none;width:min(var(--ui-boss-width),var(--ui-boss-max));aspect-ratio:var(--ui-boss-ratio);margin-top:var(--ui-boss-offset-y);padding:0;background:var(--ui-panel-secondary);text-align:center}.ui-v1-boss.is-active{display:block}.ui-v1-boss-label{position:absolute;left:var(--boss-left);right:var(--boss-right);top:var(--boss-top);bottom:var(--boss-bottom);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;margin:0;font-size:var(--ui-boss-label);font-weight:800;color:var(--ui-text)}.ui-v1-boss-name{font-size:var(--ui-title);color:var(--ui-text)}.ui-v1-boss-phase{font-size:var(--ui-meta);color:var(--ui-text-dim)}.ui-v1-boss.is-invuln .ui-v1-boss-label{color:var(--ui-boss)}.ui-v1-boss-track{position:absolute;left:var(--boss-hp-left);right:var(--boss-hp-right);bottom:var(--boss-hp-bottom);height:var(--boss-hp-height);overflow:hidden;border-radius:999px;background:var(--ui-boss-track)}.ui-v1-boss-fill{display:block;height:100%;border-radius:inherit;background:var(--ui-boss);transition:width .12s linear}.ui-v1-boss-hp-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:var(--ui-meta);font-weight:800;color:var(--ui-text)}'
+			+ '.ui-v1-skills{position:relative;width:max(220px,min(44vw,330px));aspect-ratio:var(--ui-skills-ratio);display:block;padding:0;background:var(--ui-panel-secondary)}.ui-v1-skill{position:absolute;left:var(--slot-x);top:var(--slot-y);width:var(--slot-width);height:var(--slot-height);transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:0;border-radius:0;background:transparent;color:var(--skill-color)}.ui-v1-skill.is-empty{border:0;background:transparent;color:transparent}.ui-v1-icon-cell{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;height:100%;padding:var(--ui-icon-pad);overflow:visible;line-height:1;text-align:center;flex:0 0 auto}.ui-v1-icon-cell img{display:block;max-width:100%;max-height:100%;object-fit:contain}.ui-v1-level{position:absolute;right:0;bottom:0;z-index:1;min-width:var(--ui-badge);height:var(--ui-badge);padding:0 2px;box-sizing:border-box;border-radius:999px;background:var(--ui-panel-primary);border:1px solid var(--skill-color);color:var(--skill-color);font:800 calc(var(--ui-badge) * .7)/calc(var(--ui-badge) - 1px) system-ui;text-align:center}'
+			+ '.ui-v1-combo{position:relative;width:min(31vw,230px);aspect-ratio:var(--ui-combo-ratio);display:block;max-width:100%;padding:0;background:var(--ui-panel-secondary)}.ui-v1-combo-title{position:absolute;left:var(--combo-title-left);right:var(--combo-title-right);top:var(--combo-title-top);height:var(--combo-title-height);display:flex;align-items:center;justify-content:center;font-size:var(--ui-meta);font-weight:800;color:var(--ui-text-dim);white-space:nowrap}.ui-v1-combo-item{position:absolute;left:var(--slot-x);top:var(--slot-y);width:var(--slot-width);height:var(--slot-height);transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:0;background:transparent;font-size:0;line-height:1;white-space:nowrap}.ui-v1-combo-item.is-active{box-shadow:none}.ui-v1-combo-item .ui-v1-icon-cell{width:100%;height:100%;padding:var(--ui-icon-pad)}.ui-v1-combo-name{display:none}.ui-v1-combo-item:not(.is-active){opacity:.48}'
+			+ '.ui-v1-system-btn{width:132px;min-width:86px;aspect-ratio:var(--ui-system-ratio);box-sizing:border-box;padding:var(--system-top) var(--system-right) var(--system-bottom) var(--system-left);border:0;border-radius:0;background:var(--ui-system-panel);color:var(--ui-text);font:700 var(--ui-body)/1 system-ui;text-align:center;cursor:pointer;pointer-events:auto;white-space:nowrap}.ui-v1-system-btn:active{transform:translateY(1px);background:var(--ui-panel-secondary)}'
 			+ '@media (max-width:620px){.ui-v1-status{max-width:39vw}.ui-v1-build{max-width:43vw}.ui-v1-data{gap:2px 5px}.ui-v1-system-btn{min-width:86px}.ui-v1-boss{max-width:52vw}}'
 		document.head.appendChild(style)
 	}
@@ -100,8 +101,21 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	function applyHudSkin() {
 		var map = { life: hudLife, stats: hudData, stage: hudWave, boss: hudBoss, skills: hudSkills, combo: hudCombo, system: null }
 		var systemNodes = [pauseBtn, fullscreenBtn, gmBtn]
-		for (var key in map) { if (!map.hasOwnProperty(key) || !map[key]) { continue } var skin = UI_HUD_SKIN[key]; if (skin && skin.src) { map[key].style.backgroundImage = 'url("' + skin.src.replace(/"/g, '') + '")' } }
-		for (var i = 0; i < systemNodes.length; i++) { if (systemNodes[i] && UI_HUD_SKIN.system && UI_HUD_SKIN.system.src) { systemNodes[i].style.backgroundImage = 'url("' + UI_HUD_SKIN.system.src.replace(/"/g, '') + '")' } }
+		function setVars(el, spec) {
+			if (!el || !spec) { return }
+			if (spec.content) {
+				el.style.setProperty('--skin-left', (spec.content.left * 100) + '%'); el.style.setProperty('--skin-right', (spec.content.right * 100) + '%')
+				el.style.setProperty('--skin-top', (spec.content.top * 100) + '%'); el.style.setProperty('--skin-bottom', (spec.content.bottom * 100) + '%')
+				if (el === hudWave) { el.style.setProperty('--stage-left', (spec.content.left * 100) + '%'); el.style.setProperty('--stage-right', (spec.content.right * 100) + '%'); el.style.setProperty('--stage-top', (spec.content.top * 100) + '%'); el.style.setProperty('--stage-bottom', (spec.content.bottom * 100) + '%') }
+				if (el === hudBoss) { el.style.setProperty('--boss-left', (spec.content.left * 100) + '%'); el.style.setProperty('--boss-right', (spec.content.right * 100) + '%'); el.style.setProperty('--boss-top', (spec.content.top * 100) + '%'); el.style.setProperty('--boss-bottom', (spec.content.bottom * 100) + '%') }
+			}
+			if (spec.columns) { el.style.setProperty('--stat-y', ((spec.centerY || 0.5) * 100) + '%') }
+			if (spec.progress) { el.style.setProperty('--stage-progress-left', (spec.progress.left * 100) + '%'); el.style.setProperty('--stage-progress-right', (spec.progress.right * 100) + '%'); el.style.setProperty('--stage-progress-bottom', (spec.progress.bottom * 100) + '%'); el.style.setProperty('--stage-progress-height', (spec.progress.height * 100) + '%') }
+			if (spec.hp) { el.style.setProperty('--boss-hp-left', (spec.hp.left * 100) + '%'); el.style.setProperty('--boss-hp-right', (spec.hp.right * 100) + '%'); el.style.setProperty('--boss-hp-bottom', (spec.hp.bottom * 100) + '%'); el.style.setProperty('--boss-hp-height', (spec.hp.height * 100) + '%') }
+			if (spec.title) { el.style.setProperty('--combo-title-left', (spec.title.left * 100) + '%'); el.style.setProperty('--combo-title-right', (spec.title.right * 100) + '%'); el.style.setProperty('--combo-title-top', (spec.title.top * 100) + '%'); el.style.setProperty('--combo-title-height', (spec.title.height * 100) + '%') }
+		}
+		for (var key in map) { if (!map.hasOwnProperty(key) || !map[key]) { continue } var skin = UI_HUD_SKIN[key]; if (skin && skin.src) { map[key].style.backgroundImage = 'url("' + skin.src.replace(/"/g, '') + '")'; setVars(map[key], skin) } }
+		for (var i = 0; i < systemNodes.length; i++) { if (systemNodes[i] && UI_HUD_SKIN.system && UI_HUD_SKIN.system.src) { systemNodes[i].style.backgroundImage = 'url("' + UI_HUD_SKIN.system.src.replace(/"/g, '') + '")'; setVars(systemNodes[i], UI_HUD_SKIN.system) } }
 	}
 function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha 派生，chipBorder=ui 1px，字=textMain；统一柔发光(§四 P1-8)
     return mk('div', 'position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 11px;line-height:1.2;border-radius:999px;background:' + hexA(STYLE.panel, STYLE.panelAlpha) + ';border:1px solid ' + STYLE.ui + ';box-shadow:0 0 10px ' + hexA(STYLE.ui, 0.22) + ';color:' + STYLE.textMain + ';font:600 clamp(12px,3.4vw,14px) system-ui;text-shadow:0 1px 2px ' + hexA(STYLE.bg, 0.6) + ';white-space:nowrap;' + extra, hud)
@@ -566,16 +580,16 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		return '<span class="ui-v1-icon-cell"><img src="' + src + '" alt="" style="transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
 	}
 	function renderV1ComboBadges() {
-		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, html = '', keys = CO2 ? Object.keys(CO2) : []
+		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, html = '<span class="ui-v1-combo-title">COMBO</span>', keys = CO2 ? Object.keys(CO2) : [], skin = UI_HUD_SKIN.combo || {}, slots = skin.slots || []
 		for (var i = 0; i < keys.length; i++) {
 			var key = keys[i], c = CO2[key]
 			if (!c || !c.parts || c.parts.length < 2) { continue }
 			var a = c.parts[0], b = c.parts[1], aOwn = lv[a] > 0, bOwn = lv[b] > 0
-			if (!aOwn && !bOwn) { continue }
 			var active = aOwn && bOwn, col = COMBO_COLOR[key] || STYLE.ui, name = COMBO_LABEL[key] || key
 			var title = active ? ('已激活：' + (SKILL_LABEL[a] || a) + ' + ' + (SKILL_LABEL[b] || b) + ' → ' + name) : ('再获得 ' + (aOwn ? (SKILL_LABEL[b] || b) : (SKILL_LABEL[a] || a)) + ' 可激活')
 			var fallback = (SKILL_GLYPH[a] || '?') + '+' + (SKILL_GLYPH[b] || '?')
-			html += '<span class="ui-v1-combo-item' + (active ? ' is-active' : '') + '" title="' + iconText(title) + '" style="--combo-color:' + col + '">' + v1IconMarkup(key, fallback, 'combo') + '<span class="ui-v1-combo-name">' + (active ? name : '未激活') + '</span></span>'
+			var pos = slots[i] || { x: (i + 1) / (keys.length + 1), y: 0.64 }, sw = skin.slotWidth || 0.22, sh = skin.slotHeight || 0.42
+			html += '<span class="ui-v1-combo-item' + (active ? ' is-active' : '') + '" title="' + iconText(title) + '" style="--combo-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(key, fallback, 'combo') + '<span class="ui-v1-combo-name">' + name + '</span></span>'
 		}
 		return html
 	}
@@ -584,20 +598,21 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		for (var k = 0; k < segs.length; k++) { if (t >= segs[k].startSec) { cur = segs[k]; next = segs[k + 1] || null } }
 		var bossId = NARR.classify.deathCause.bossStageId, bossStage = null
 		for (var b = 0; b < segs.length; b++) { if (segs[b].id === bossId) { bossStage = segs[b]; break } }
-		if (bossStage && t >= bossStage.startSec - CONFIG.STAGE.bossWarnLeadSec && t < bossStage.startSec) { return { boss: true, html: '<strong>⚠ BOSS INCOMING</strong>' } }
-		if (cur.id >= bossId) { return { boss: true, html: '<strong>☾ ' + cur.name + '</strong><span>' + fmtTime(t) + '</span>' } }
+		if (bossStage && t >= bossStage.startSec - CONFIG.STAGE.bossWarnLeadSec && t < bossStage.startSec) { return { boss: true, html: '<div class="ui-v1-stage-main"><strong>⚠ BOSS INCOMING</strong></div>' } }
+		if (cur.id >= bossId) { return { boss: true, html: '<div class="ui-v1-stage-main"><strong>☾ ' + cur.name + '</strong><span class="ui-v1-stage-time">' + fmtTime(t) + '</span></div>' } }
 		var prog = next ? (t - cur.startSec) / (next.startSec - cur.startSec) : 1
 		prog = Math.max(0, Math.min(1, prog))
-		return { boss: false, html: '<strong>' + cur.name + '</strong><span>' + fmtTime(t) + '</span><span class="ui-v1-stage-track"><span class="ui-v1-stage-fill" style="width:' + Math.round(prog * 100) + '%"></span></span>' }
+		return { boss: false, html: '<div class="ui-v1-stage-main"><strong>' + cur.name + '</strong><span class="ui-v1-stage-time">' + fmtTime(t) + '</span></div><span class="ui-v1-stage-track"><span class="ui-v1-stage-fill" style="width:' + Math.round(prog * 100) + '%"></span></span>' }
 	}
 	function renderV1Skills() {
-		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = ''
+		var list = CONFIG.SKILL.list, owned = GS.ownedSkills || {}, html = '', skin = UI_HUD_SKIN.skills || {}, slots = skin.slots || []
 		for (var s = 0; s < list.length; s++) {
 			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
+			var pos = slots[s] || { x: (s + 1) / (list.length + 1), y: 0.51 }, sw = skin.slotWidth || 0.14, sh = skin.slotHeight || 0.54
 			if (lvl > 0) {
-				html += '<span class="ui-v1-skill" title="' + id + '" style="--skill-color:' + col + '">' + v1IconMarkup(id, g, 'hud') + '<sub class="ui-v1-level">' + lvl + '</sub></span>'
+				html += '<span class="ui-v1-skill" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(id, g, 'hud') + '<sub class="ui-v1-level">' + lvl + '</sub></span>'
 			} else {
-				html += '<span class="ui-v1-skill is-empty" title="' + id + '" style="--skill-color:' + col + '">·</span>'
+				html += '<span class="ui-v1-skill is-empty" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%"></span>'
 			}
 		}
 		return html
@@ -614,7 +629,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (!boss || !boss.maxHp) { hudBoss.className = 'ui-v1-boss'; hudBoss.innerHTML = ''; return }
 		var ratio = Math.max(0, Math.min(1, boss.hp / boss.maxHp)), inv = boss.invuln > 0
 		hudBoss.className = 'ui-v1-boss is-active' + (inv ? ' is-invuln' : '')
-		hudBoss.innerHTML = '<div class="ui-v1-boss-label"><span>冠夜鸮</span><span>Phase ' + boss.phase + (inv ? ' · 无敌' : '') + '</span><span>' + Math.ceil(boss.hp) + ' / ' + boss.maxHp + '</span></div><div class="ui-v1-boss-track"><span class="ui-v1-boss-fill" style="width:' + (ratio * 100).toFixed(2) + '%"></span></div>'
+		hudBoss.innerHTML = '<div class="ui-v1-boss-label"><span class="ui-v1-boss-name">冠夜鸮</span><span class="ui-v1-boss-phase">Phase ' + boss.phase + (inv ? ' · 无敌' : '') + '</span></div><div class="ui-v1-boss-track"><span class="ui-v1-boss-fill" style="width:' + (ratio * 100).toFixed(2) + '%"></span><span class="ui-v1-boss-hp-text">' + Math.ceil(boss.hp) + ' / ' + boss.maxHp + '</span></div>'
 	}
 	function refreshHUD() {
 		if (!hud) { return }
@@ -626,15 +641,16 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			else if (breaking && i === lostHeartIndex) { hearts += '💥' }   // 扣心瞬间：对应心碎裂闪烁
 			else { hearts += '🖤' }
 		}
-		hudLife.innerHTML = '<span aria-label="health">' + hearts + '</span>'
+		hudLife.innerHTML = '<span class="ui-v1-life-hearts" aria-label="health">' + hearts + '</span><span class="ui-v1-life-count">' + GS.coreHp + '/' + PLAYER.coreHp + '</span>'
 		var near = GS.coreHp <= 1   // 濒死(≤1 血)整框红脉冲
 		if (near && !hudLife.classList.contains('ui-near-death')) { hudLife.classList.add('ui-near-death') }
 		else if (!near && hudLife.classList.contains('ui-near-death')) { hudLife.classList.remove('ui-near-death') }
+		var statSpec = UI_HUD_SKIN.stats || {}, statCols = statSpec.columns || [0.125, 0.375, 0.625, 0.875], statY = ((statSpec.centerY || 0.52) * 100) + '%'
 		hudData.innerHTML =
-			'<span style="white-space:nowrap">🐍 长度 ' + GS.segments + '</span>'
-			+ '<span style="white-space:nowrap">　💀 击杀 ' + GS.kills + '</span>'
-			+ '<span style="white-space:nowrap">　⭐ 得分 ' + (GS.score + GS.comboScore) + '</span>'
-			+ '<span style="white-space:nowrap">　🔥 连杀 ×' + GS.killStreak + '</span>'   // 还原图标(美观)；每指标 nowrap 成块，超宽时 flex-wrap 自动换行(绝不裁字)
+			'<span class="ui-v1-stat-cell" style="--stat-x:' + (statCols[0] * 100) + '%;--stat-y:' + statY + '">长度 ' + GS.segments + '</span>'
+			+ '<span class="ui-v1-stat-cell" style="--stat-x:' + (statCols[1] * 100) + '%;--stat-y:' + statY + '">击杀 ' + GS.kills + '</span>'
+			+ '<span class="ui-v1-stat-cell" style="--stat-x:' + (statCols[2] * 100) + '%;--stat-y:' + statY + '">得分 ' + (GS.score + GS.comboScore) + '</span>'
+			+ '<span class="ui-v1-stat-cell" style="--stat-x:' + (statCols[3] * 100) + '%;--stat-y:' + statY + '">连杀 ×' + GS.killStreak + '</span>'
 		if (hudCombo) { hudCombo.innerHTML = renderV1ComboBadges() }
 		var wave = renderV1Wave(); hudWave.innerHTML = wave.html; hudWave.className = 'ui-v1-stage' + (wave.boss ? ' is-boss' : '')
 		hudSkills.innerHTML = renderV1Skills()
@@ -713,12 +729,12 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			if (pauseBtn) { pauseBtn.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'block' : 'none' }
 			if (pauseOverlay) { pauseOverlay.style.display = (GS.status === 'paused') ? 'flex' : 'none' }
 			// 四组胶囊仅 playing 时显示（暂停/死亡由遮罩层覆盖）
-			if (hudLife) { hudLife.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
-			if (hudData) { hudData.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
-			if (hudWave) { hudWave.style.display = (GS.status === 'playing' && !(hudBoss && hudBoss.classList.contains('is-active'))) ? 'inline-flex' : 'none' }
+			if (hudLife) { hudLife.style.display = (GS.status === 'playing') ? 'flex' : 'none' }
+			if (hudData) { hudData.style.display = (GS.status === 'playing') ? 'block' : 'none' }
+			if (hudWave) { hudWave.style.display = (GS.status === 'playing' && !(hudBoss && hudBoss.classList.contains('is-active'))) ? 'block' : 'none' }
 			if (hudBoss && GS.status !== 'playing') { hudBoss.className = 'ui-v1-boss'; hudBoss.innerHTML = '' }
-			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
-			if (hudCombo) { hudCombo.style.display = (GS.status === 'playing') ? 'inline-flex' : 'none' }
+			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'block' : 'none' }
+			if (hudCombo) { hudCombo.style.display = (GS.status === 'playing') ? 'block' : 'none' }
 			if (hudSys) { hudSys.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'flex' : 'none' }   // 系统按钮：游戏中/暂停可见（暂停时覆盖层在上方，暂停键仍可用）
 			if (GS.status === 'playing') {
 				if (GS.segments > GS.maxSegments) { GS.maxSegments = GS.segments }

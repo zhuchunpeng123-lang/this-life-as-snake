@@ -390,13 +390,13 @@
 	// 仅控制 HUD/摇杆在手机上的缩放与下限，不牵动任何玩法强度/平衡。
 	UI: {
 		hudSkin: {
-			life: { src: 'assets/ui_hud_v1_extracted/ui_player_life_frame.png', ratio: 3.13 },
-			stats: { src: 'assets/ui_hud_v1_extracted/ui_player_stats_frame.png', ratio: 3.22 },
-			stage: { src: 'assets/ui_hud_v1_extracted/ui_stage_frame.png', ratio: 1.74 },
-			boss: { src: 'assets/ui_hud_v1_extracted/ui_boss_frame.png', ratio: 2.19 },
-			skills: { src: 'assets/ui_hud_v1_extracted/ui_skill_bar_frame.png', ratio: 2.83 },
-			combo: { src: 'assets/ui_hud_v1_extracted/ui_combo_frame.png', ratio: 1.83 },
-			system: { src: 'assets/ui_hud_v1_extracted/ui_system_button_wide.png', ratio: 1.69 }
+			life: { src: 'assets/ui_hud_v1_extracted/ui_player_life_frame.png', ratio: 3.13, content: { left: 0.22, right: 0.22, top: 0.27, bottom: 0.20 } },
+			stats: { src: 'assets/ui_hud_v1_extracted/ui_player_stats_frame.png', ratio: 3.22, columns: [0.125, 0.375, 0.625, 0.875], centerY: 0.52 },
+			stage: { src: 'assets/ui_hud_v1_extracted/ui_stage_frame.png', ratio: 1.74, content: { left: 0.12, right: 0.12, top: 0.17, bottom: 0.35 }, progress: { left: 0.18, right: 0.18, bottom: 0.17, height: 0.08 } },
+			boss: { src: 'assets/ui_hud_v1_extracted/ui_boss_frame.png', ratio: 2.19, content: { left: 0.16, right: 0.16, top: 0.17, bottom: 0.35 }, hp: { left: 0.16, right: 0.16, bottom: 0.27, height: 0.11 } },
+			skills: { src: 'assets/ui_hud_v1_extracted/ui_skill_bar_frame.png', ratio: 2.83, slots: [{ x: 0.18, y: 0.51 }, { x: 0.34, y: 0.51 }, { x: 0.50, y: 0.51 }, { x: 0.66, y: 0.51 }, { x: 0.82, y: 0.51 }], slotWidth: 0.14, slotHeight: 0.54 },
+			combo: { src: 'assets/ui_hud_v1_extracted/ui_combo_frame.png', ratio: 1.83, title: { left: 0.24, right: 0.24, top: 0.08, height: 0.22 }, slots: [{ x: 0.22, y: 0.64 }, { x: 0.50, y: 0.64 }, { x: 0.78, y: 0.64 }], slotWidth: 0.22, slotHeight: 0.42 },
+			system: { src: 'assets/ui_hud_v1_extracted/ui_system_button_wide.png', ratio: 1.69, content: { left: 0.18, right: 0.18, top: 0.24, bottom: 0.22 } }
 		},
 		icons: {
 			paddingPx: 2,
