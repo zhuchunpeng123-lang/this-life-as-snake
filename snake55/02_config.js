@@ -422,14 +422,14 @@
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
 			playerLife: { overallScale: 0.68, widthVw: 24, offsetX: 0, offsetY: 32, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 6, numberSize: 23, numberGap: 6, statsGap: 0 },
-			stage: { overallScale: 1, widthVw: 22, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, titleSize: 13, titleOffsetY: 0, timerSize: 11, timerOffsetY: 0, progressWidth: 0.64, progressHeight: 0.08, progressOffsetX: 0, progressOffsetY: 0 },
-			playerStats: { overallScale: 1, widthVw: 27, offsetX: 0, offsetY: 0, contentScale: 1, contentOffsetX: 0, contentOffsetY: 0, fontSize: 13 },
+			stage: { overallScale: 1.2, widthVw: 22, offsetX: 0, offsetY: 0, contentScale: 0.73, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0.1, timerSize: 13, timerOffsetY: 0, progressWidth: 0.63, progressHeight: 0.09, progressOffsetX: -0.02, progressOffsetY: -0.08 },
+			playerStats: { overallScale: 1.35, widthVw: 27, offsetX: -10, offsetY: -41, contentScale: 0.84, contentOffsetX: 4, contentOffsetY: 3, fontSize: 13 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
-			skills: { slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },
-			combo: { iconCellPx: 26, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3 },
+			skills: { overallScale: 1, widthVw: 34, offsetX: 0, offsetY: 0, slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 13 },
+			combo: { overallScale: 1, widthVw: 24, offsetX: 0, offsetY: 0, iconCellPx: 26, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3 },
 			bossBar: { widthPct: 0.58, maxWidthPx: 560, heightPx: 14, offsetY: 4, labelPx: 12 },
-			system: { buttonScale: 1, gapPx: 8, alpha: 0.82 }
+			system: { buttonScale: 1, offsetX: 0, offsetY: 0, gapPx: 8, alpha: 0.82 }
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
 	},

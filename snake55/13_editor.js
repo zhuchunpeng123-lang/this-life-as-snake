@@ -17,7 +17,7 @@
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
-		scale: [0.65, 1.35, 0.01], width: [16, 32, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.15, 0.01], alpha: [0, 1, 0.02],
+		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.15, 0.01], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
 	}
@@ -147,21 +147,31 @@
 		{ group: '字号', path: 'UI.tuning.type.titlePx', label: '标题字号', rng: 'font' },
 		{ group: '字号', path: 'UI.tuning.type.bodyPx', label: '正文字号', rng: 'font' },
 		{ group: '字号', path: 'UI.tuning.type.metaPx', label: '次级字号', rng: 'font' },
-		{ group: '技能槽', path: 'UI.tuning.skills.slotPx', label: '技能槽尺寸', rng: 'slot' },
-		{ group: '技能槽', path: 'UI.tuning.skills.iconCellPx', label: '技能图标区', rng: 'icon' },
-		{ group: '技能槽', path: 'UI.tuning.skills.gapPx', label: '技能间距', rng: 'px' },
-		{ group: '技能槽', path: 'UI.tuning.skills.badgePx', label: '等级角标', rng: 'badge' },
-		{ group: 'Combo', path: 'UI.tuning.combo.iconCellPx', label: 'Combo 图标区', rng: 'icon' },
-		{ group: 'Combo', path: 'UI.tuning.combo.fontPx', label: 'Combo 字号', rng: 'font' },
-		{ group: 'Combo', path: 'UI.tuning.combo.itemGapPx', label: 'Combo 间距', rng: 'px' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.overallScale', label: 'Skill bar scale', rng: 'scale' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.widthVw', label: 'Skill bar width', rng: 'width' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.offsetX', label: 'Skill bar offset X', rng: 'offset' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.offsetY', label: 'Skill bar offset Y', rng: 'offset' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.slotPx', label: '技能槽尺寸', rng: 'slot' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.iconCellPx', label: '技能图标区', rng: 'icon' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.gapPx', label: '技能间距', rng: 'px' },
+		{ group: '04 Skill Bar', path: 'UI.tuning.skills.badgePx', label: '等级角标', rng: 'badge' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.overallScale', label: 'Combo scale', rng: 'scale' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.widthVw', label: 'Combo width', rng: 'width' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.offsetX', label: 'Combo offset X', rng: 'offset' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.offsetY', label: 'Combo offset Y', rng: 'offset' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.iconCellPx', label: 'Combo 图标区', rng: 'icon' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.fontPx', label: 'Combo 字号', rng: 'font' },
+		{ group: '05 Combo', path: 'UI.tuning.combo.itemGapPx', label: 'Combo 间距', rng: 'px' },
 		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.widthPct', label: 'Boss 血条宽度', rng: 'bossWidth' },
 		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.maxWidthPx', label: 'Boss 最大宽度', rng: 'bossMax' },
 		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.heightPx', label: 'Boss 血条高度', rng: 'px' },
 		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.offsetY', label: 'Boss 血条偏移', rng: 'offset' },
 		{ group: 'Boss 血条', path: 'UI.tuning.bossBar.labelPx', label: 'Boss 标签字号', rng: 'font' },
-		{ group: '系统按钮', path: 'UI.tuning.system.buttonScale', label: '按钮倍率', rng: 'system' },
-		{ group: '系统按钮', path: 'UI.tuning.system.gapPx', label: '按钮间距', rng: 'px' },
-		{ group: '系统按钮', path: 'UI.tuning.system.alpha', label: '按钮透明度', rng: 'alpha' }
+		{ group: '07 System Buttons', path: 'UI.tuning.system.buttonScale', label: 'Button scale', rng: 'system' },
+		{ group: '07 System Buttons', path: 'UI.tuning.system.offsetX', label: 'Button group offset X', rng: 'offset' },
+		{ group: '07 System Buttons', path: 'UI.tuning.system.offsetY', label: 'Button group offset Y', rng: 'offset' },
+		{ group: '07 System Buttons', path: 'UI.tuning.system.gapPx', label: '按钮间距', rng: 'px' },
+		{ group: '07 System Buttons', path: 'UI.tuning.system.alpha', label: '按钮透明度', rng: 'alpha' }
 	]
 	var UI_TUNING_SLIDERS = []
 	function uiTuningRow(id, label, value, def, rng) {
@@ -387,7 +397,7 @@
 
 	function render() {
 		var secs = buildSections()
-		var html = '<div style="font:700 16px system-ui;margin-bottom:6px;display:flex;justify-content:space-between"><span>GM 测试面板</span><span id="ed_close" style="opacity:.7;font:700 20px system-ui;cursor:pointer;padding:0 6px">×</span></div>'
+		var html = '<div id="gm_drag_handle" style="font:700 16px system-ui;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:move;touch-action:none;user-select:none"><span>GM 测试面板 · 可拖动</span><span id="ed_close" style="opacity:.7;font:700 20px system-ui;cursor:pointer;padding:0 6px">×</span></div>'
 		html += '<div id="ed_dirty" style="display:' + (dirty ? 'block' : 'none') + ';color:#fd6;margin-bottom:6px;font:600 12px system-ui">有未生效覆盖，保存后重载</div>'
 		for (var i = 0; i < secs.length; i++) {
 			var sec = secs[i]
@@ -404,6 +414,18 @@
 		// 关闭按钮（移动端无 ~ 键也能关 GM 面板）
 		var closeBtn = panel.querySelector('#ed_close')
 		if (closeBtn) { closeBtn.onclick = function () { Bus.emit('editor:toggle') } }   // ×按钮同样走 Bus（不再直接 toggle），与 ~键统一，避免 _gmOpen 错位卡死
+		var dragHandle = panel.querySelector('#gm_drag_handle')
+		if (dragHandle) {
+			var dragging = false, dragStartX = 0, dragStartY = 0, panelStartX = 0, panelStartY = 0
+			dragHandle.onpointerdown = function (ev) {
+				var rect = panel.getBoundingClientRect()
+				dragging = true; dragStartX = ev.clientX; dragStartY = ev.clientY; panelStartX = rect.left; panelStartY = rect.top
+				panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.left = panelStartX + 'px'; panel.style.top = panelStartY + 'px'
+				if (dragHandle.setPointerCapture) { dragHandle.setPointerCapture(ev.pointerId) }
+			}
+			dragHandle.onpointermove = function (ev) { if (!dragging) { return }; panel.style.left = (panelStartX + ev.clientX - dragStartX) + 'px'; panel.style.top = (panelStartY + ev.clientY - dragStartY) + 'px' }
+			dragHandle.onpointerup = dragHandle.onpointercancel = function () { dragging = false }
+		}
 
 
 		// 折叠
@@ -757,7 +779,7 @@
 	function build() {
 		panel = document.createElement('div')
 		panel.id = 'gm_editor_panel'   // 暴露 id 供 14_main 摇杆在 GM 面板内拖拽时排除误触（GM 开着也能操控摇杆）
-		panel.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:320px;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:60;box-shadow:-4px 0 18px #000'
+		panel.style.cssText = 'position:fixed;right:0;top:0;bottom:0;width:320px;max-height:100vh;box-sizing:border-box;display:none;overflow:auto;background:rgba(6,8,16,0.96);color:#fff;font:13px system-ui;padding:14px;z-index:60;box-shadow:-4px 0 18px #000'
 		document.body.appendChild(panel)
 		GS.tuningSandbox = GS.tuningSandbox || false   // B-GM 沙盒标志（dev，默认关）
 		render()
