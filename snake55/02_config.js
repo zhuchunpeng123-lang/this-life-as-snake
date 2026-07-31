@@ -410,8 +410,8 @@
 				shield: { src: 'assets/skill_shield_v1.png' },
 				lightning: { src: 'assets/skill_lightning_v1.png', scale: 1.06 },
 				steamExplosion: { src: 'assets/combo_steamExplosion_v1.png', scale: 0.97 },
-				electroTurret: { src: 'assets/combo_electroTurret_v1.png', scale: 0.97 },
-				burningBarrage: { src: 'assets/combo_burningBarrage_v1.png', scale: 1.06 }
+				electroTurret: { src: 'assets/combo_electroTurret_v1.png', scale: 0.97, offsetByKind: { combo: { x: 0, y: -0.05 } } },
+				burningBarrage: { src: 'assets/combo_burningBarrage_v1.png', scale: 1.06, offsetByKind: { combo: { x: 0.04, y: 0 } } }
 			}
 		},
 		// HUD V1 表现参数真源：仅控制界面几何与质感，不参与玩法或碰撞。

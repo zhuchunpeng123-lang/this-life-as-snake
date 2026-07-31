@@ -15,7 +15,7 @@
 var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
 var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
-var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, stageName = '—'
+var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, buildInfoLayer = null, buildInfoBox = null, stageName = '—'
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
 var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
@@ -87,6 +87,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 			+ '.ui-v1-combo{width:min(calc(var(--ui-combo-width-vw) * 1vw),230px);transform:translate(var(--ui-combo-x),var(--ui-combo-y)) scale(var(--ui-combo-scale));transform-origin:top right}'
 			+ '.ui-v1-system-btn{display:flex;align-items:center;justify-content:center;background-color:transparent}.ui-v1-system-label{position:absolute;left:var(--system-left);right:var(--system-right);top:var(--system-top);bottom:var(--system-bottom);display:flex;align-items:center;justify-content:center;pointer-events:none;white-space:nowrap}'
 			+ '.ui-v1-boss{background-color:transparent}.ui-v1-boss-name,.ui-v1-boss-time,.ui-v1-boss-phase,.ui-v1-boss-status{position:absolute;left:0;top:0;transform:translate(-50%,-50%);white-space:nowrap}.ui-v1-boss-name{left:var(--boss-name-x);top:var(--boss-name-y);font-size:var(--boss-name-size);font-weight:800;color:var(--ui-text)}.ui-v1-boss-time{left:var(--boss-time-x);top:var(--boss-time-y);font-size:var(--boss-time-size);color:var(--ui-text-dim)}.ui-v1-boss-phase{left:var(--boss-phase-x);top:var(--boss-phase-y);font-size:var(--boss-phase-size);color:var(--ui-text-dim)}.ui-v1-boss-status{left:var(--boss-status-x);top:var(--boss-status-y);font-size:var(--boss-status-size);color:var(--ui-boss)}.ui-v1-boss-track{left:calc(var(--boss-hp-x) - var(--boss-hp-width) / 2);right:auto;top:calc(var(--boss-hp-y) - var(--boss-hp-height) / 2);bottom:auto;width:var(--boss-hp-width);height:var(--boss-hp-height);background:transparent}'
+			+ '.ui-v1-skill,.ui-v1-combo-item{pointer-events:auto;cursor:pointer}.ui-v1-build-info-layer{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;background:' + hexA(STYLE.bg, 0.72) + ';z-index:22;pointer-events:auto}.ui-v1-build-info{width:min(92vw,440px);max-height:82vh;overflow:auto;padding:18px;border:2px solid ' + STYLE.ui + ';border-radius:14px;background:' + hexA(STYLE.panel, 0.96) + ';color:var(--ui-text);box-shadow:0 0 18px ' + hexA(STYLE.ui, 0.28) + ';font:600 14px/1.5 system-ui}.ui-v1-build-info h3{margin:0 0 12px;font-size:20px;color:var(--ui-text)}.ui-v1-build-info-card{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;border:1px solid ' + hexA(STYLE.ui, 0.45) + ';border-radius:10px;background:' + hexA(STYLE.bg, 0.34) + '}.ui-v1-info-icon{width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex:0 0 48px}.ui-v1-info-icon .ui-v1-icon-cell{width:100%;height:100%}.ui-v1-build-info-detail{color:var(--ui-text-dim);white-space:pre-line}.ui-v1-build-info-close{display:block;width:100%;margin-top:14px;padding:8px 12px;border:1px solid ' + STYLE.ui + ';border-radius:8px;background:transparent;color:var(--ui-text);font:700 14px system-ui;cursor:pointer}'
 			+ '@media (max-width:620px){.ui-v1-status{max-width:39vw}.ui-v1-build{max-width:43vw}.ui-v1-data{gap:2px 5px}.ui-v1-system-btn{min-width:86px}.ui-v1-boss{max-width:52vw}}'
 		document.head.appendChild(style)
 	}
@@ -187,6 +188,13 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
+		buildInfoLayer = mk('div', '', froot); buildInfoLayer.className = 'ui-v1-build-info-layer'
+		buildInfoBox = mk('div', '', buildInfoLayer); buildInfoBox.className = 'ui-v1-build-info'
+		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { hideBuildInfo() } }
+		hudSkills.addEventListener('click', function (e) { var target = findBuildInfoTarget(e.target, hudSkills, 'data-skill'); if (target) { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_status' }); showBuildInfo('skill', target.getAttribute('data-skill')) } })
+		hudCombo.addEventListener('click', function (e) { var target = findBuildInfoTarget(e.target, hudCombo, 'data-combo'); if (target) { Bus.emit('ui:feedback', { kind: 'press', id: 'combo_status' }); showBuildInfo('combo', target.getAttribute('data-combo')) } })
+		hudSkills.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var target = findBuildInfoTarget(e.target, hudSkills, 'data-skill'); if (target) { e.preventDefault(); showBuildInfo('skill', target.getAttribute('data-skill')) } } })
+		hudCombo.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var target = findBuildInfoTarget(e.target, hudCombo, 'data-combo'); if (target) { e.preventDefault(); showBuildInfo('combo', target.getAttribute('data-combo')) } } })
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
 		// 系统按钮：移动端带完整文字(⏸ 暂停 / ⛶ 全屏 / ⚙ GM)并等宽居中对齐；桌面保留原横排文字（hudSys 已在上方按 isTouch 定位）
@@ -469,6 +477,33 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		renderChooseCards(choices)
 	}
 	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } hideRotateChoice() }
+	function hideBuildInfo() { if (buildInfoLayer) { buildInfoLayer.style.display = 'none' } }
+	function showBuildInfo(kind, id) {
+		if (!buildInfoLayer || !buildInfoBox) { return }
+		var owned = GS.ownedSkills || {}, title = '', icon = '', detail = ''
+		if (kind === 'skill') {
+			var level = owned[id] || 0, label = SKILL_LABEL[id] || id
+			title = label
+			icon = v1IconMarkup(id, SKILL_GLYPH[id] || '?', 'card')
+			detail = level > 0 ? ('当前等级：Lv' + level + '\n状态：已获得') : '状态：尚未获得'
+			if (SKILL_DESC[id]) { detail += '\n' + SKILL_DESC[id] }
+		} else {
+			var combo = CONFIG.COMBO && CONFIG.COMBO[id], parts = combo && combo.parts ? combo.parts : [], active = parts.length >= 2 && (owned[parts[0]] || 0) > 0 && (owned[parts[1]] || 0) > 0
+			var comboName = COMBO_LABEL[id] || id, fallback = (SKILL_GLYPH[parts[0]] || '?') + '+' + (SKILL_GLYPH[parts[1]] || '?')
+			title = comboName
+			icon = v1IconMarkup(id, fallback, 'card')
+			detail = active ? '状态：已激活' : '状态：未激活'
+			if (parts.length >= 2) { detail += '\n构成：' + (SKILL_LABEL[parts[0]] || parts[0]) + ' + ' + (SKILL_LABEL[parts[1]] || parts[1]) }
+		}
+		buildInfoBox.innerHTML = '<h3>' + iconText(title) + '</h3><div class="ui-v1-build-info-card"><div class="ui-v1-info-icon">' + icon + '</div><div class="ui-v1-build-info-detail">' + iconText(detail) + '</div></div><button type="button" class="ui-v1-build-info-close">关闭</button>'
+		var close = buildInfoBox.querySelector('.ui-v1-build-info-close')
+		if (close) { close.onclick = hideBuildInfo }
+		buildInfoLayer.style.display = 'flex'
+	}
+	function findBuildInfoTarget(node, rootNode, attr) {
+		while (node && node !== rootNode) { if (node.getAttribute && node.getAttribute(attr)) { return node } node = node.parentNode }
+		return null
+	}
 
 	function offerChoice(ev) {
 		if (choiceActive || GS.status !== 'playing' || choicesUsed >= NARR.choicePerRunMax) { return }
@@ -595,12 +630,12 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		return html
 	}
 	function v1IconMarkup(id, fallback, kind) {
-		var spec = UI_ICON_ASSETS[id] || {}, scaleByKind = UI_ICONS.scaleByKind || {}
+		var spec = UI_ICON_ASSETS[id] || {}, scaleByKind = UI_ICONS.scaleByKind || {}, offset = (spec.offsetByKind && spec.offsetByKind[kind]) || {}
 		var scale = (spec.scale != null ? spec.scale : (UI_ICONS.scale != null ? UI_ICONS.scale : 1)) * (scaleByKind[kind] != null ? scaleByKind[kind] : 1)
 		var text = iconText(fallback)
 		if (!spec.src) { return '<span class="ui-v1-icon-cell" style="font:800 15px system-ui">' + text + '</span>' }
 		var src = iconText(spec.src)
-		return '<span class="ui-v1-icon-cell"><img src="' + src + '" alt="" style="transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
+		return '<span class="ui-v1-icon-cell"><img src="' + src + '" alt="" style="position:relative;left:' + ((offset.x || 0) * 100) + '%;top:' + ((offset.y || 0) * 100) + '%;transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
 	}
 	function renderV1ComboBadges() {
 		var CO2 = CONFIG.COMBO, lv = GS.ownedSkills || {}, html = '<span class="ui-v1-combo-title">COMBO</span>', keys = CO2 ? Object.keys(CO2) : [], skin = UI_HUD_SKIN.combo || {}, slots = skin.slots || []
@@ -612,7 +647,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var title = active ? ('已激活：' + (SKILL_LABEL[a] || a) + ' + ' + (SKILL_LABEL[b] || b) + ' → ' + name) : ('再获得 ' + (aOwn ? (SKILL_LABEL[b] || b) : (SKILL_LABEL[a] || a)) + ' 可激活')
 			var fallback = (SKILL_GLYPH[a] || '?') + '+' + (SKILL_GLYPH[b] || '?')
 			var pos = slots[i] || { x: (i + 1) / (keys.length + 1), y: 0.64 }, sw = skin.slotWidth || 0.22, sh = skin.slotHeight || 0.42
-			html += '<span class="ui-v1-combo-item' + (active ? ' is-active' : '') + '" title="' + iconText(title) + '" style="--combo-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(key, fallback, 'combo') + '<span class="ui-v1-combo-name">' + name + '</span></span>'
+			html += '<span class="ui-v1-combo-item' + (active ? ' is-active' : '') + '" data-combo="' + key + '" role="button" tabindex="0" title="' + iconText(title) + '" style="--combo-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(key, fallback, 'combo') + '<span class="ui-v1-combo-name">' + name + '</span></span>'
 		}
 		return html
 	}
@@ -633,9 +668,9 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var id = list[s], lvl = owned[id] || 0, g = SKILL_GLYPH[id] || '?', col = (STYLE.skillFx && STYLE.skillFx[id]) || STYLE.ui
 			var pos = slots[s] || { x: (s + 1) / (list.length + 1), y: 0.51 }, sw = skin.slotWidth || 0.14, sh = skin.slotHeight || 0.54
 			if (lvl > 0) {
-				html += '<span class="ui-v1-skill" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(id, g, 'hud') + '<sub class="ui-v1-level">' + lvl + '</sub></span>'
+				html += '<span class="ui-v1-skill" data-skill="' + id + '" role="button" tabindex="0" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%">' + v1IconMarkup(id, g, 'hud') + '<sub class="ui-v1-level">' + lvl + '</sub></span>'
 			} else {
-				html += '<span class="ui-v1-skill is-empty" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%"></span>'
+				html += '<span class="ui-v1-skill is-empty" data-skill="' + id + '" role="button" tabindex="0" title="' + id + '" style="--skill-color:' + col + ';--slot-x:' + (pos.x * 100) + '%;--slot-y:' + (pos.y * 100) + '%;--slot-width:' + (sw * 100) + '%;--slot-height:' + (sh * 100) + '%"></span>'
 			}
 		}
 		return html
@@ -710,7 +745,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		seqId++; clearTimers()
 		stageName = '—'; bossTagged = false; firstUpgradeTagged = false; choicesUsed = 0; choiceActive = false; usedChoiceIds = {}
 		ownedSkillIds = {}
-		hideChoose(); if (choiceBox) { choiceBox.style.display = 'none' } if (result) { result.style.display = 'none'; result.innerHTML = '' }
+		hideChoose(); hideBuildInfo(); if (choiceBox) { choiceBox.style.display = 'none' } if (result) { result.style.display = 'none'; result.innerHTML = '' }
 		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' }
 	})
 
