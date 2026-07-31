@@ -418,7 +418,7 @@
 		tuning: {
 			layout: {
 				hudScale: 1, edgePad: 16, topPad: 12, clusterGap: 8,
-				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0,
+				statusOffsetX: 0, statusOffsetY: 0, buildOffsetX: 0, buildOffsetY: 0, lifeStatsGapPx: 5,
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0
 			},
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
