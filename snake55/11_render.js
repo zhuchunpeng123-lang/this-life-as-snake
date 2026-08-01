@@ -1014,7 +1014,7 @@ function drawSnake() {
 		if (!drawSprite(ctx, 'snake_head', 0, 0, hAngQ + ART_FORWARD_OFFSET_RAD)) {
 			circle(0, 0, headR, lowHp ? STYLE.enemy : SNAKE_HEAD)
 		}
-		// 眼睛延后到火墙(drawSkillAura)之后绘制：火焰用 lighter 加色会盖住眼白→眼睛看不见；存位姿，drawSnakeEyesLate 在火墙之上重绘（纯视觉层序修正，零 gameplay）
+		// 眼睛延后到技能表现之后绘制，保持眼白清晰；存位姿，drawSnakeEyesLate 在技能层之上重绘（纯视觉层序修正，零 gameplay）
 		_snakeEyeX = hx; _snakeEyeY = hy; _snakeEyeAng = hAngQ; _snakeEyeR = headR
 		// 蛇头受击红闪（复用 hurtVignetteUntil：与全屏红闪 + T3 轻震屏同步，头部叠一层红→受击更明确，非仅接色）
 		if (GS.timeSec < hurtVignetteUntil) {
@@ -1027,42 +1027,44 @@ function drawSnake() {
 			ctx.globalAlpha = ha; ctx.beginPath(); ctx.arc(hx, hy, headR + 6, 0, M.PI2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1
 		}
 	}
-	function drawSnakeEyesLate() {   // 眼睛画在火墙(drawSkillAura)之后：避免 lighter 火焰盖住眼白（纯视觉层序修正，零 gameplay）
+	function drawSnakeEyesLate() {   // 眼睛画在技能表现之后，保持眼白清晰（纯视觉层序修正，零 gameplay）
 		if (!(_snakeEyeR > 0)) { return }
 		ctx.save(); ctx.translate(_snakeEyeX, _snakeEyeY)
 		drawSnakeEyes(ctx, _snakeEyeR, _snakeEyeAng)
 		ctx.restore()
+	}
+	function drawFireFieldBelowEntities() {
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var s = Registry.get('snake'); if (!s || !s.head) { return }
+		var owned = sk.owned(), segs = s.segments || [], SKC = CONFIG.SKILL
+		if (!(owned.fire > 0) || segs.length === 0) { return }
+		var ed = Registry.get('editor')
+		function tune(path, fallback) { var v = ed && typeof ed.rtGet === 'function' ? ed.rtGet(path) : undefined; return v !== undefined && v !== null ? v : fallback }
+		var fi = owned.fire - 1, field = CONFIG.RENDER && CONFIG.RENDER.fireField ? CONFIG.RENDER.fireField : { alpha: 0, width: 1 }
+		var fr = tune('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
+		var alpha = M.clamp(tune('RENDER.fireField.alpha', field.alpha), 0, 0.18)
+		var width = M.clamp(tune('RENDER.fireField.width', field.width), 0.9, 1.05)
+		var snap = DIR1_SNAP(), ctxField = ctx
+		ctxField.save(); ctxField.globalCompositeOperation = 'source-over'; ctxField.beginPath()
+		for (var sf = 0; sf < segs.length; sf += stepF) {
+			var sg = segs[sf], x = sg.px != null ? M.lerp(sg.px, sg.x, _ra) : sg.x, y = sg.py != null ? M.lerp(sg.py, sg.y, _ra) : sg.y
+			if (snap) { x = snapWX(x); y = snapWY(y) }
+			if (sf === 0) { ctxField.moveTo(x, y) } else { ctxField.lineTo(x, y) }
+		}
+		ctxField.lineCap = 'round'; ctxField.lineJoin = 'round'; ctxField.lineWidth = fr * 2 * width; ctxField.strokeStyle = 'rgba(255,95,30,' + alpha + ')'; ctxField.stroke(); ctxField.restore()
 	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var T4 = RT('PERF.suppressIceFill', perfFB('suppressIceFill', false) ? 1 : 0) > 0   // 自适应分级：POTATO 档冰池只描边；GM 经 editor.rtSet 仍优先
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
-	var _ihA = interpHead() || h   // 护盾光球绕「插值头」公转（与所画蛇头同源），消 165Hz 光球相对头错位跳
+		var _ihA = interpHead() || h   // 护盾光球绕「插值头」公转（与所画蛇头同源），消 165Hz 光球相对头错位跳
 	var _snapA = DIR1_SNAP()   // 调试开关：true=吸附光球/火墙到整数设备像素(消亚像素 AA 摇摆)；false=方向1 浮点(复现卡顿)
 	var _iax = _ihA.x, _iay = _ihA.y   // 方向1：护盾/火墙基底浮点(残差补偿后随蛇一起连续投影)
 	if (_snapA) { _iax = snapWX(_iax); _iay = snapWY(_iay) }
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		ctx.save()
 		// —— 火墙：用户验收反馈 v2——保留"范围火墙"软光带(可见火墙范围) + 去掉沿身亮热边/flick 跳变(原被用户判为"蛇身细线/一闪一闪")；火焰反馈同时由 05_particle spawnFireEmbers 沿身余烬承担（零 gameplay，伤害判定在 08_skill 不动）——
-		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉（含蛇身火墙）；GM 经 editor.rtSet 仍优先
-		var segs = s.segments || []
-		if (owned.fire > 0) {   // 范围火墙：软光带(连续火场)+无亮热边/无 flick(用户验收：不要蛇身细线、不要蛇闪)；火墙=廉价 2-stroke path，始终显示(关火仅压余烬粒子，不关火墙)
-			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
-			ctx.save()
-			ctx.globalCompositeOperation = 'lighter'   // 加色辉光：火墙=连续软光带(非蛇身细线)
-			ctx.beginPath()
-			for (var sf = 0; sf < segs.length; sf += stepF) {
-				var sg = segs[sf]
-				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y   // 方向1：火墙贴插值蛇身浮点(残差补偿后连续投影)
-				if (_snapA) { sgx = snapWX(sgx); sgy = snapWY(sgy) }
-				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
-			}
-			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-			ctx.lineWidth = fr * 2; ctx.strokeStyle = 'rgba(255,95,30,0.22)'; ctx.stroke()   // 软火范围带：宽 fr*2(=火墙半径)/alpha 0.22 柔光，无亮热边、无 flick
-			ctx.restore()
-		}
-
 		// —— 护盾：球绕蛇头公转，半径/周期读 config（与 tickShield 同 orbitRadius/orbitSec，消双份真相源）——
 		if (owned.shield > 0) {
 			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = RTA('SKILL.shield.orbitRadius.' + si, SKC.shield.orbitRadius[si])
@@ -1160,7 +1162,7 @@ function drawSnake() {
 	ctx.translate(-rcxS, -rcyS)
 	drawBounds()
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
-	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
+	drawFireFieldBelowEntities(); drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
 	drawDebugHitboxes()
 	ctx.restore()

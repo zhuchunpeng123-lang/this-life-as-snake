@@ -18,7 +18,7 @@
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
 		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.15, 0.01], alpha: [0, 1, 0.02],
-		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
+		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1], fireWidth: [0.9, 1.05, 0.01],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
 	}
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
@@ -92,7 +92,9 @@
 		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
 		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 },   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
 		{ path: 'ENEMIES.wanderer.aggroRangeByStage.2', label: '游荡aggro·成长期(段②)px', rng: 'aggroRange', def: 800, dec: 0 },   // 段≥② 游荡型 aggro 圈（段-scaled）：成长期默认800覆盖刷怪环520-760，距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；min200=基线/关闭
-		{ path: 'ENEMIES.wanderer.aggroRangeByStage.3', label: '游荡aggro·割草+高潮(段③④)px', rng: 'aggroRange', def: 450, dec: 0, extraPaths: ['ENEMIES.wanderer.aggroRangeByStage.4'] }   // 割草/高潮共用一滑条→同时写段③+段④；default 450（不推猛，沿用原割草值）；min200=基线/关闭
+		{ path: 'ENEMIES.wanderer.aggroRangeByStage.3', label: '游荡aggro·割草+高潮(段③④)px', rng: 'aggroRange', def: 450, dec: 0, extraPaths: ['ENEMIES.wanderer.aggroRangeByStage.4'] },   // 割草/高潮共用一滑条→同时写段③+段④；default 450（不推猛，沿用原割草值）；min200=基线/关闭
+		{ path: 'RENDER.fireField.alpha', label: 'Fire field alpha', rng: 'alpha', dec: 2, group: '战斗表现 / 火焰领域' },
+		{ path: 'RENDER.fireField.width', label: 'Fire field width', rng: 'fireWidth', dec: 2, group: '战斗表现 / 火焰领域' }
 	]
 	var TUNING_SCALAR_SLIDERS = []
 	var UI_TUNING = [
@@ -381,9 +383,11 @@
 			}
 		}
 		// ❄ 冰系手感·标量（运行时 rtSet）：减速跟随窗（离开冰区后减速残留时长）；与「技能数值」持久版 slowLingerSec 区分——此处为运行时即时
-		tb += '<div style="font:700 11px system-ui;opacity:.85;margin:10px 0 2px;color:#2ad4ff">❄ 冰系手感（标量 · 运行时）</div>'
+		var scalarGroup = ''
 		for (var tsa = 0; tsa < TUNING_SCALAR.length; tsa++) {
 		var tsar = TUNING_SCALAR[tsa], tsbase = getPath(tsar.path)
+		var tsGroup = tsar.group || '❄ 冰系手感（标量 · 运行时）'
+		if (scalarGroup !== tsGroup) { tb += '<div style="font:700 11px system-ui;opacity:.85;margin:10px 0 2px;color:' + (tsar.group ? '#ff9a3c' : '#2ad4ff') + '">' + tsGroup + '</div>'; scalarGroup = tsGroup }
 		var tsdef = (tsar.def !== undefined) ? tsar.def : (isNum(tsbase) ? tsbase : 0)   // 优先用条目自带 def，再回退 getPath
 		var tscur = (rtGet(tsar.path) !== undefined) ? rtGet(tsar.path) : tsdef
 		var tsid = TUNING_SCALAR_SLIDERS.length; TUNING_SCALAR_SLIDERS.push({ id: tsid, path: tsar.path, def: tsdef, dec: tsar.dec })
