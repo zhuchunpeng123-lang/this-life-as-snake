@@ -511,7 +511,7 @@
 			if (joy.active) { return }                  // 6② 已锁定首指，多指忽略（不重置锚点）
 			if (isTouch && isPortrait()) { return }    // 竖屏遮罩激活时不接管摇杆（避免误触藏在遮罩下的操作区）
 			// HUD 按钮(暂停/全屏/GM，均在 #ui-stage 内且 pointer-events:auto)点击不误触摇杆；游戏画布/开始/结算遮罩不在 #ui-stage → 正常激活
-			if (GS.status === 'playing' && e.target && e.target.closest && e.target.closest('#ui-stage')) { return }
+			if (GS.status === 'playing' && e.target && e.target.closest && e.target.closest('#ui-stage, #ui-full')) { return }
 			if (e.target && e.target.closest && e.target.closest('#gm_editor_panel')) { return }   // GM 面板(右侧320px)内拖拽不误触摇杆（GM 开着也能操控摇杆→只在面板外激活）
 			var g = ensureJoyGeometry(); if (!g) { return }
 			var p = toLogical(e, g), b = g.baseLogical
