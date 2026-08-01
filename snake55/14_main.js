@@ -90,7 +90,8 @@
 		seedTier: function () {   // 设备初判：手机中/低档起步，弱集显笔记本 MED 起步，不从高档起步
 			var ua = (global.navigator && global.navigator.userAgent) || ''
 			var isMobile = /Android|iPhone|iPod|iPad|Mobile|Windows Phone|HarmonyOS/i.test(ua)
-			var shortSide = Math.min(global.innerWidth || 9999, global.innerHeight || 9999)
+			var rv = Registry.get('render'), vp = rv && rv.getViewport ? rv.getViewport() : null
+			var shortSide = Math.min(vp ? vp.cssWidth : (global.innerWidth || 9999), vp ? vp.cssHeight : (global.innerHeight || 9999))
 			var dpr = global.devicePixelRatio || 1
 			var ds = PERF.deviceSeed
 			if (isMobile) { return (shortSide <= ds.mobileShortSide) ? 'POTATO' : ds.mobileTier }
@@ -122,7 +123,10 @@
 	function inputBlocked() { return GS.status !== 'playing' }
 	// —— 移动端「强制横屏」拦截（仅触屏设备；桌面 PC 竖窗不触发）——
 	var isTouch = ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0)
-	function isPortrait() { return (global.innerHeight || 0) > (global.innerWidth || 0) }
+	function isPortrait() {
+		var r = Registry.get('render'), vp = r && r.getViewport ? r.getViewport() : null
+		return vp ? vp.cssHeight > vp.cssWidth : (global.innerHeight || 0) > (global.innerWidth || 0)
+	}
 	var pausedByGate = false   // 仅当「因横屏遮罩暂停」时为真；旋回横屏才恢复 playing（手动暂停/三选一/结算绝不自动恢复、不顶掉这些界面）
 	var preGateWasPlaying = false   // 进入竖屏前是否本就在 playing：决定旋回横屏是否恢复
 	var _gateShown = false
@@ -143,7 +147,13 @@
 			document.body.appendChild(_safeProbe)
 		}
 		var r = _safeProbe.getBoundingClientRect()
-		return { left: r.left, top: r.top, right: (global.innerWidth || 0) - r.right, bottom: (global.innerHeight || 0) - r.bottom }
+		var base = canvas ? canvas.getBoundingClientRect() : null
+		if (!base || !(base.width > 0) || !(base.height > 0)) {
+			var stage = document.getElementById('stage')
+			base = stage ? stage.getBoundingClientRect() : null
+		}
+		if (!base) { return { left: 0, top: 0, right: 0, bottom: 0 } }
+		return { left: Math.max(0, r.left - base.left), top: Math.max(0, r.top - base.top), right: Math.max(0, base.right - r.right), bottom: Math.max(0, base.bottom - r.bottom) }
 	}
 	function invalidateJoyGeometry() { joyGeomDirty = true }
 	function applyJoyGeometry(g) {
@@ -158,7 +168,9 @@
 		var r = canvas.getBoundingClientRect()
 		if (!(r.width > 0) || !(r.height > 0)) { return null }
 		var jc = (CONFIG.INPUT && CONFIG.INPUT.touch) || {}
-		var logicalW = CONFIG.GAME.logicalWidth || 960, logicalH = CONFIG.GAME.logicalHeight
+		var render = Registry.get('render'), vp = render && render.getViewport ? render.getViewport() : null
+		var logicalW = vp && vp.logicalWidth ? vp.logicalWidth : (CONFIG.GAME.logicalWidth || 960)
+		var logicalH = vp && vp.logicalHeight ? vp.logicalHeight : (CONFIG.GAME.logicalHeight || 540)
 		var scale = r.width / logicalW
 		var baseR = (jc.baseRadius || 72) * scale
 		var minR = (jc.minScreenRadius != null ? jc.minScreenRadius : 64)
@@ -490,20 +502,33 @@
 			var g = ensureJoyGeometry()
 			if (g) { updateJoyVisual(g.baseScreen.x, g.baseScreen.y, g) }   // 推钮初始居中（未拖动）
 		}
+		var viewportResizeFrame = 0
+		function scheduleViewportResize() {
+			if (viewportResizeFrame) { return }
+			var raf = global.requestAnimationFrame || function (fn) { return global.setTimeout(fn, 16) }
+			viewportResizeFrame = raf(function () {
+				viewportResizeFrame = 0
+				invalidateJoyGeometry()
+				var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() }
+			})
+		}
 		buildJoy()
 		if (global.ResizeObserver) {
-			var joyResizeObserver = new global.ResizeObserver(function () { invalidateJoyGeometry() })
+			var joyResizeObserver = new global.ResizeObserver(scheduleViewportResize)
 			joyResizeObserver.observe(canvas)
 		}
 		if (global.visualViewport && global.visualViewport.addEventListener) {
-			global.visualViewport.addEventListener('resize', invalidateJoyGeometry)
+			global.visualViewport.addEventListener('resize', scheduleViewportResize)
 		}
 
 		// 固定锚点摇杆：方向 = 指针相对「固定锚点(左下角安全区)」向量；touch/鼠标/pen 均走摇杆；桌面鼠标 hover 转向已移除（仅摇杆+键盘）
 		function toLogical(e, g) {
 			g = g || ensureJoyGeometry()
 			if (!g) { return { x: 0, y: 0 } }
-			return { x: (e.clientX - g.rect.left) * g.sx, y: (e.clientY - g.rect.top) * g.sy }
+			var render = Registry.get('render'), vp = render && render.getViewport ? render.getViewport() : null
+			var logicalW = vp && vp.logicalWidth ? vp.logicalWidth : (CONFIG.GAME.logicalWidth || 960)
+			var logicalH = vp && vp.logicalHeight ? vp.logicalHeight : (CONFIG.GAME.logicalHeight || 540)
+			return { x: (e.clientX - g.rect.left) * logicalW / g.rect.width, y: (e.clientY - g.rect.top) * logicalH / g.rect.height }
 		}
 		function joyDown(e) {
 			startIfMenu()                                // 点「开始/再来一局」先翻 playing，使本次按压的余下拖动即可转向（修开始遮罩吞 pointerdown→首手势摇杆不激活/蛇不转向）
@@ -547,7 +572,7 @@
 		})
 		global.addEventListener('pointerup', function (e) { cursor.on = false; joyUp(e) })       // 松手保持最后方向（蛇按末向续行，不丢输入）
 		global.addEventListener('pointercancel', function (e) { cursor.on = false; joyUp(e) })
-		global.addEventListener('orientationchange', function () { invalidateJoyGeometry(); var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })   // 手机旋屏重算 backing/CSS 尺寸
+		global.addEventListener('orientationchange', scheduleViewportResize)   // 手机旋屏重算 backing/CSS 尺寸
 		global.addEventListener('keydown', function (e) {
 			keys[e.key] = true
 			// 调试：像素吸附开关（2026-07-24 FPS 回归 A/B；实测已证伪=对卡顿无影响，保留仅作对照）按 B
@@ -577,7 +602,7 @@
 			}
 		}
 		global.addEventListener('keyup', function (e) { keys[e.key] = false })
-		global.addEventListener('resize', function () { invalidateJoyGeometry(); var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() } })
+		global.addEventListener('resize', scheduleViewportResize)
 
 		Log.info('main 就绪：循环启动（固定 STEP 累加器 ' + STEP.toFixed(4) + 's · 锁 60Hz 仿真 + 渲染插值 · 不封顶跑满刷新率）')
 		global.requestAnimationFrame(frame)

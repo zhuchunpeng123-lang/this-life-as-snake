@@ -29,6 +29,48 @@
 	var canvas = null, ctx = null, dpr = 1, _snapGrid = 0   // _snapGrid：设备像素吸附网格(_snap=ws*dpr)；每帧在 draw() 写入，供 _ix/_iy/snapW 把移动实体也吸附到整数设备像素(相机只吸静态世界→移动实体仍亚像素闪，本次补齐)
 	var worldScale = 1          // round6：视图缩放(0.8)已移除，还原 commit 无缩放原画面；worldScale 恒 1，碰撞/世界坐标不变，相机 1:1 跟随蛇身
 	var cam = { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 }
+	var viewport = {
+		cssWidth: GAME.logicalWidth, cssHeight: GAME.logicalHeight,
+		logicalWidth: GAME.logicalWidth, logicalHeight: GAME.logicalHeight,
+		backingWidth: GAME.logicalWidth, backingHeight: GAME.logicalHeight,
+		logicalToBackingScale: 1, aspect: GAME.logicalWidth / GAME.logicalHeight
+	}
+	function readViewportSize() {
+		var vv = global.visualViewport
+		var candidates = [
+			vv && { width: vv.width, height: vv.height },
+			global.document && global.document.documentElement && { width: global.document.documentElement.clientWidth, height: global.document.documentElement.clientHeight },
+			{ width: global.innerWidth, height: global.innerHeight }
+		]
+		for (var i = 0; i < candidates.length; i++) {
+			var c = candidates[i]
+			if (c && isFinite(c.width) && isFinite(c.height) && c.width > 0 && c.height > 0) { return c }
+		}
+		return null
+	}
+	function updateViewport() {
+		var size = readViewportSize(); if (!size) { return false }
+		var baseW = GAME.logicalWidth, baseH = GAME.logicalHeight, aspect = size.width / size.height
+		var wide = aspect >= baseW / baseH
+		var logicalW = wide ? baseH * aspect : baseW
+		var logicalH = wide ? baseH : baseW / aspect
+		var dprMon = Math.min(global.devicePixelRatio || 1, 3)
+		var maxBackW = RT('RENDER.maxBackW', perfFB('maxBackW', 2560))
+		var logicalToBackingScale = Math.min(dprMon, maxBackW / logicalW)
+		if (!(logicalToBackingScale > 0)) { return false }
+		var next = {
+			cssWidth: size.width, cssHeight: size.height,
+			logicalWidth: logicalW, logicalHeight: logicalH,
+			backingWidth: Math.round(logicalW * logicalToBackingScale),
+			backingHeight: Math.round(logicalH * logicalToBackingScale),
+			logicalToBackingScale: logicalToBackingScale, aspect: aspect
+		}
+		var changed = next.cssWidth !== viewport.cssWidth || next.cssHeight !== viewport.cssHeight || next.logicalWidth !== viewport.logicalWidth || next.logicalHeight !== viewport.logicalHeight || next.logicalToBackingScale !== viewport.logicalToBackingScale
+		viewport = next
+		dpr = logicalToBackingScale
+		if (changed) { _vignetteGrad = null; _haloCache = {} }
+		return true
+	}
 	var camPrev = { x: cam.x, y: cam.y }   // 相机上一模拟步位姿：每模拟步(GS.frame 变化)推进一次(updateCamera 用模拟头 h.x)，渲染按 _ra 在 camPrev→cam 间线性插值 → 与蛇头(lerp(px,x,_ra))共用同一 _ra、同匀速 → 相对静止、零抖；2026-07-23e 误改"每帧追 interpHead"使相机 followLerp 指数追每帧因 _ra 变化的插值头→相对滑动=移动糊，已回退
 	var shakeMag = 0, shakeFrames = 0
 	var trauma = 0   // ④-B 蒸汽引爆 trauma 通道（0..1）：与 impulse 通道叠加取大，封顶 maxComposite；时间窗内多次引爆不线性叠加
@@ -69,8 +111,8 @@
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var ih = interpHead(); if (!ih) { return }
 		var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0)
-		var sx = (ih.x - rcx) * ws + GAME.logicalWidth / 2
-		var sy = (ih.y - rcy) * ws + GAME.logicalHeight / 2
+		var sx = (ih.x - rcx) * ws + viewport.logicalWidth / 2
+		var sy = (ih.y - rcy) * ws + viewport.logicalHeight / 2
 		if (!_diagHead.init) { _diagHead.x = sx; _diagHead.y = sy; _diagHead.init = true; return }
 		var dx = sx - _diagHead.x, dy = sy - _diagHead.y, d = Math.sqrt(dx * dx + dy * dy)
 		var b = d < 0.01 ? '0' : (d < 0.5 ? '<0.5' : (d < 1 ? '0.5-1' : (d < 2 ? '1-2' : '>=2')))
@@ -93,7 +135,7 @@
 	function diagFlickerTick(rcx, rcy, rcxS, rcyS) {
 		if (GS.status !== 'playing' || !_snakeMtx || !_flkHead.has || !_flkBody.has) { return }
 		var S = worldScale * dpr
-		var CDX = dpr * GAME.logicalWidth / 2, CDY = dpr * GAME.logicalHeight / 2   // 屏幕中心(设备px)
+		var CDX = dpr * viewport.logicalWidth / 2, CDY = dpr * viewport.logicalHeight / 2   // 屏幕中心(设备px)
 		var SX = dpr * _shakeOx, SY = dpr * _shakeOy   // 屏震(设备px)常量:disp 须扣,否则随机 shake 污染台阶
 		function setSample(o, wx, wy) {   // disp=实际矩阵作用到绘制点−中心/屏震常量=蛇真实设备偏移(与 true 同基准);true=理想连续
 			o.dispX = _snakeMtx.a * wx + _snakeMtx.c * wy + _snakeMtx.e - CDX - SX
@@ -323,6 +365,15 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize(); preloadSprites() }   // b9+diag：包装 ctx 计数绘制调用；#M0 一次性预载精灵（每帧不 new/decode，空 assets→全 404→永远走 fallback）
 	function resize() {
 		if (!canvas) { return }
+		if (!updateViewport()) { return }
+		canvas.width = viewport.backingWidth
+		canvas.height = viewport.backingHeight
+		canvas.style.width = viewport.cssWidth + 'px'
+		canvas.style.height = viewport.cssHeight + 'px'
+		var st = global.document && global.document.getElementById('stage')
+		if (st) { st.style.width = viewport.cssWidth + 'px'; st.style.height = viewport.cssHeight + 'px' }
+		return
+		/* legacy fixed-design resize path intentionally unreachable
 		var dprMon = Math.min(global.devicePixelRatio || 1, 3)   // 设备像素比上限 3（retina 手机 dpr=3：用足原生像素→文字/画面清晰；桌面 dpr 通常≤2 不受此影响；填充率上升由 PerfTier 看门狗兜底）
 		var scale = Math.min(global.innerWidth / GAME.logicalWidth, global.innerHeight / GAME.logicalHeight)   // contain 等比：窗口内最大化、16:9 不裁切、比例不符留 letterbox（#game-wrap flex 居中）；禁用 cover 裁切边缘 HUD
 		if (!(scale > 0)) { return }   // 窗口极小/最小化瞬间 scale 可能为 0 → 跳过，避免 backing 0 尺寸退化（恢复后真实 resize 重算；治"缩小再打开"偶发 0 尺寸帧）
@@ -337,6 +388,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		// 同步 #stage 尺寸 = canvas 显示尺寸（contain 居中后的实际区域），使 #ui-stage 角标精确贴游戏框（治暂停按钮掉黑边外）
 		var st = global.document && global.document.getElementById('stage')
 		if (st) { st.style.width = canvas.style.width; st.style.height = canvas.style.height }
+	*/
 	}
 
 	function interpHead() {   // 渲染插值后的蛇头位姿（与 drawSnake 同源）：相机跟随此基准 → 相机与所画蛇头用同一位置，直行时头相对相机恒定、无逐帧 bob（根因：旧相机跟模拟头 h.x、蛇头画插值位姿，两基准差随 _ra 周期振荡≈followLerp*(lookAhead+步长)≈7px → 直行抖、绕圈顺）
@@ -353,9 +405,9 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		var _fdt = (global.__FRAME_DT) || (1 / GAME.fps)
 		var _ck = 1 - Math.pow(1 - CAM.followLerp, _fdt * 60); cam.x += dx * _ck; cam.y += dy * _ck   // 2026-07-23·相机封板: 删 deadZone 闸门(原 if(d>deadZone) 在常速下冻结相机→30世界px冻-扑锯齿=中心顿, 实测 __CAM_DZ=0 消顿坐实), 改每帧帧率无关缓动连续跟随(followLerp=60Hz 步语义→任意步率手感一致)
 		var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0)
-		var halfW = GAME.logicalWidth / 2 / ws, halfH = GAME.logicalHeight / 2 / ws   // 缩放后可见半幅=半宽/worldScale（ws<1 时看得更广→clamp 边界更宽，避免视图越出世界）；ws=1 退化为原值
-		cam.x = M.clamp(cam.x, halfW, GAME.worldWidth - halfW)
-		cam.y = M.clamp(cam.y, halfH, GAME.worldHeight - halfH)
+		var halfW = viewport.logicalWidth / 2 / ws, halfH = viewport.logicalHeight / 2 / ws
+		if (halfW * 2 >= GAME.worldWidth) { cam.x = GAME.worldWidth / 2 } else { cam.x = M.clamp(cam.x, halfW, GAME.worldWidth - halfW) }
+		if (halfH * 2 >= GAME.worldHeight) { cam.y = GAME.worldHeight / 2 } else { cam.y = M.clamp(cam.y, halfH, GAME.worldHeight - halfH) }
 	}
 
 	function circle(x, y, r, color) { ctx.beginPath(); ctx.arc(x, y, r, 0, M.PI2); ctx.fillStyle = color; ctx.fill() }
@@ -806,8 +858,13 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		}
 	}
 	function inView(x, y, r) {                                        // 世界点是否在镜头视口内（含半径余量；worldScale 缩放后真实可见半幅=半宽/worldScale）
+		var halfW = viewport.logicalWidth / 2 / worldScale, halfH = viewport.logicalHeight / 2 / worldScale, m = (r || 0) + 20
+		return x > cam.x - halfW - m && x < cam.x + halfW + m && y > cam.y - halfH - m && y < cam.y + halfH + m
+		/* legacy fixed-design calculation retained below only as historical context */
+		/*
 		var hw = GAME.logicalWidth / 2 / worldScale, hh = GAME.logicalHeight / 2 / worldScale, m = (r || 0) + 20
 		return x > cam.x - hw - m && x < cam.x + hw + m && y > cam.y - hh - m && y < cam.y + hh + m
+		*/
 	}
 	function drawHpBar(e, ix, iy) {                                    // 小怪世界血条（插值版 ix/iy；剔除仍读真实 e.x/e.y）
 		if (ix == null) { ix = e.x } if (iy == null) { iy = e.y }
@@ -1067,7 +1124,7 @@ function drawSnake() {
 	_fpsLast = tnow
 	if (_fpsAcc >= 0.5) { _fps = Math.round(_fpsFrames / _fpsAcc); _fpsAcc = 0; _fpsFrames = 0 }
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-	ctx.fillStyle = '#0d0f1a'; ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+	ctx.fillStyle = '#0d0f1a'; ctx.fillRect(0, 0, viewport.logicalWidth, viewport.logicalHeight)
 	// 相机(原生帧时间步进·2026-07-23t)：模拟按真实帧时间推进→蛇头/相机均渲染当前真实位姿(_ra=1)，运动=面板刷新率→零 judder。相机每帧按 __FRAME_DT 做帧率无关缓动(updateCamera 内部)，不再用 camPrev/_ra 二次插值
 	var ws = M.clamp(RT('RENDER.worldScale', perfFB('worldScale', 0.8)), 0.5, 1.0); worldScale = ws   // ws 提到此处：供下方锁定模式 clamp 与像素吸附共用（单一真相源）
 	var rcx, rcy
@@ -1090,7 +1147,7 @@ function drawSnake() {
 	if (mag > 0) { ox = M.rand(-mag, mag); oy = M.rand(-mag, mag) }
 	_shakeOx = ox; _shakeOy = oy   // 暴露本帧屏震偏移(设备px)给诊断:disp 须扣,否则随机 shake 污染台阶
 	ctx.save()
-	ctx.translate(GAME.logicalWidth / 2 + ox, GAME.logicalHeight / 2 + oy)   // 屏幕中心为锚（shake 在屏幕空间，不随缩放变）
+	ctx.translate(viewport.logicalWidth / 2 + ox, viewport.logicalHeight / 2 + oy)   // 屏幕中心为锚（shake 在屏幕空间，不随缩放变）
 	ctx.scale(ws, ws)                       // ① 先缩放（围绕屏幕中心）：ws 已在相机块计算（worldScale 仅改显示尺寸，不掺入相机平移）
 	// ② 用插值相机(rcx/rcy)按世界坐标平移→整片视图随蛇头一起平滑，消 60Hz 咔咔（根因：相机未插值使整片世界每 2~3 帧突跳）
 	// ②-B 像素吸附(2026-07-23i)：dpr·ws·rcx 常为非整数→整片世界(边界/拾取/敌人/粒子硬边)逐帧在设备像素网格上亚像素重采样=shimmer，
@@ -1129,7 +1186,7 @@ function drawSnake() {
 	var _vignetteGrad = null   // 受击 vignette 径向渐变缓存：几何仅依赖逻辑分辨率(恒定)，建一次复用，免每帧 createRadialGradient 分配
 	function getVignetteGrad() {
 		if (_vignetteGrad) { return _vignetteGrad }
-		var iw = GAME.logicalWidth, ih = GAME.logicalHeight
+		var iw = viewport.logicalWidth, ih = viewport.logicalHeight
 		var g = ctx.createRadialGradient(iw / 2, ih / 2, Math.min(iw, ih) * 0.3, iw / 2, ih / 2, Math.max(iw, ih) * 0.65)
 		g.addColorStop(0, 'rgba(255,30,60,0)')
 		g.addColorStop(1, 'rgba(255,30,60,1)')   // 边缘全不透明，运行时经 globalAlpha 调制峰值(≤0.5)
@@ -1143,11 +1200,11 @@ function drawSnake() {
 		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 		if (global.PerfTier && global.PerfTier.simpleVignette) {    // 自适应分级 POTATO：纯色块替代每帧 createRadialGradient，省分配（零 gameplay）
 			ctx.fillStyle = 'rgba(255,30,60,' + (a * 0.6).toFixed(2) + ')'
-			ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+			ctx.fillRect(0, 0, viewport.logicalWidth, viewport.logicalHeight)
 		} else {
 			ctx.globalAlpha = a   // 复用缓存渐变，经 globalAlpha 调制峰值透明度(≤0.5)，免每帧分配
 			ctx.fillStyle = getVignetteGrad()
-			ctx.fillRect(0, 0, GAME.logicalWidth, GAME.logicalHeight)
+			ctx.fillRect(0, 0, viewport.logicalWidth, viewport.logicalHeight)
 			ctx.globalAlpha = 1
 		}
 		ctx.restore()
@@ -1159,7 +1216,7 @@ function drawSnake() {
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 		ctx.strokeStyle = hexToRgba(STYLE.boss, +pulse.toFixed(2))   // §5.5 品红预警边（STYLE.boss）
 		ctx.lineWidth = BOSS_WARN_BORDER_PX
-		ctx.strokeRect(BOSS_WARN_BORDER_PX / 2, BOSS_WARN_BORDER_PX / 2, GAME.logicalWidth - BOSS_WARN_BORDER_PX, GAME.logicalHeight - BOSS_WARN_BORDER_PX)
+		ctx.strokeRect(BOSS_WARN_BORDER_PX / 2, BOSS_WARN_BORDER_PX / 2, viewport.logicalWidth - BOSS_WARN_BORDER_PX, viewport.logicalHeight - BOSS_WARN_BORDER_PX)
 		ctx.restore()
 	}
 	function drawDebugHitboxes() {                         // B-GM：GM 面板「显示碰撞盒」实时绘制碰撞半径（世界坐标系内调用）
@@ -1182,7 +1239,7 @@ function drawDebugHud() {
 	ctx.font = '700 13px monospace'
 	ctx.textAlign = 'left'
 	ctx.fillStyle = _fps >= 55 ? '#7CFC00' : (_fps >= 40 ? '#ffd166' : '#ff6b6b')
-	ctx.fillText('FPS ' + Math.round(_fps) + '  CPU ' + _cpuMs.toFixed(1) + 'ms  GPU ' + gap.toFixed(1) + 'ms', 8, GAME.logicalHeight - 10)   // 左下角单行，避开左上血量/长度 HUD、右上 L 面板、右下画质角标
+	ctx.fillText('FPS ' + Math.round(_fps) + '  CPU ' + _cpuMs.toFixed(1) + 'ms  GPU ' + gap.toFixed(1) + 'ms', 8, viewport.logicalHeight - 10)   // 左下角单行，避开左上血量/长度 HUD、右上 L 面板、右下画质角标
 	ctx.restore()
 }
 
@@ -1195,10 +1252,10 @@ function drawDebugHud() {
 		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 		ctx.font = '600 11px monospace'; ctx.textAlign = 'right'
 		ctx.fillStyle = 'rgba(159,223,255,0.7)'
-		ctx.fillText('画质 ' + _tierName, GAME.logicalWidth - 8, GAME.logicalHeight - 8)
+		ctx.fillText('画质 ' + _tierName, viewport.logicalWidth - 8, viewport.logicalHeight - 8)
 		if (GS.timeSec < _tierFlashUntil && _tierReason) {
 			ctx.fillStyle = 'rgba(255,209,102,0.9)'
-			ctx.fillText('→ ' + _tierName + '（' + _tierReason + '）', GAME.logicalWidth - 8, GAME.logicalHeight - 22)
+			ctx.fillText('→ ' + _tierName + '（' + _tierReason + '）', viewport.logicalWidth - 8, viewport.logicalHeight - 22)
 		}
 		ctx.restore()
 	}
@@ -1219,6 +1276,13 @@ function drawDebugHud() {
 	var Render = { init: init, resize: resize, draw: draw, camera: cam, getFlickerSample: function () { return { head: _flkHead, body: _flkBody } }, getWorldScale: function () { return worldScale }, setCpuMs: function (v) { _cpuMs = v }, resetFpsMin: function () { _fpsMin = Infinity }, diag: function () { return { fps: _fps, fpsMin: (_fpsMin === Infinity ? 0 : Math.round(_fpsMin)), cpuMs: _cpuMs, frameMs: _frameMs, overlay: (hurtVignetteUntil > GS.timeSec) ? 1 : 0, dc: _lastDc, overdraw: _lastOv } } }   // setCpuMs：main 每帧写入整帧主线程耗时；resetFpsMin：profiler 每 2s 采样后清零窗口，使 fpsMin=窗口内瞬时最低；diag：暴露采样值供 15_profiler 环形日志（零 gameplay；fpsMin=窗口内瞬时最低 FPS，防短暂掉帧漏采；overlay=受击全屏红 vignette 本帧激活；dc=本帧绘制调用数，供坐实绘制调用数归因；overdraw=叠加层填充率估算(px²)唯一真相源）；getWorldScale：main 指针反算还原视图缩放
 	drawBossBody = drawBossBodyV2
 	Bus.on('core:run_reset', function () { _bossVisualStateV2 = {} })
+	function getViewport() { return { cssWidth: viewport.cssWidth, cssHeight: viewport.cssHeight, logicalWidth: viewport.logicalWidth, logicalHeight: viewport.logicalHeight, backingWidth: viewport.backingWidth, backingHeight: viewport.backingHeight, logicalToBackingScale: viewport.logicalToBackingScale, aspect: viewport.aspect } }
+	function getVisibleWorldRect() {
+		var halfW = viewport.logicalWidth / 2 / worldScale, halfH = viewport.logicalHeight / 2 / worldScale
+		return { left: cam.x - halfW, top: cam.y - halfH, right: cam.x + halfW, bottom: cam.y + halfH, width: halfW * 2, height: halfH * 2 }
+	}
+	Render.getViewport = getViewport
+	Render.getVisibleWorldRect = getVisibleWorldRect
 	Registry.register('render', Render)
 	Log.info('render 就绪：镜头跟随 + 世界绘制 + 四档屏震')
 

@@ -413,7 +413,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		try { if (stage.scrollTo) { stage.scrollTo({ top: Math.max(0, rbadge.offsetTop - 10), behavior: 'smooth' }) } else { stage.scrollTop = Math.max(0, rbadge.offsetTop - 10) } } catch (e) {}
 	}
 
-	function isPortrait() { var w = global.innerWidth || 0, h = global.innerHeight || 0; return h > w }   // 用视口宽高比判定，iOS standalone/横竖屏滞后更可靠（比 matchMedia 稳）
+	function isPortrait() {
+		var r = Registry.get('render'), vp = r && r.getViewport ? r.getViewport() : null
+		return vp ? vp.cssHeight > vp.cssWidth : (global.innerHeight || 0) > (global.innerWidth || 0)
+	}   // 使用统一 Render viewport，避免各模块在旋屏瞬间读到不同尺寸
 	// 竖屏选卡：先盖「请横屏」遮罩，监听 orientationchange + resize，转横屏后自动渲染真实选项；并提供「竖屏继续」兜底避免卡死
 	function showRotateChoice(thenRender) {
 		if (!rotateChoiceEl) { thenRender(); return }
@@ -798,6 +801,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (s < clamp.min) { s = clamp.min }   // 矮屏(高375→~0.69)压到 0.55 防溢出
 		if (s > clamp.max) { s = clamp.max }
 		s *= getUiTuning('layout.hudScale')
+		if (isTouch) { s *= getUiTuning('layout.mobileHudScale') }
 		_lastUiScale = s
 		return s
 	}

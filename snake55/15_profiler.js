@@ -33,9 +33,9 @@
 		var flameOn = rtVal('PERF.suppressFireVisual', fireSupp ? 1 : 0) > 0 ? 'off(T3)' : 'on'
 		// 可见敌数（镜头视口内，含 20px 余量；与 render.inView 同口径）：掉帧归因此值可判断是否"同屏实体过多"
 		var vis = 0
-		if (r && r.camera && en && en.list) {
-			var cam = r.camera, _ws = (r.getWorldScale ? r.getWorldScale() : 1), hw = global.CONFIG.GAME.logicalWidth / 2 / _ws, hh = global.CONFIG.GAME.logicalHeight / 2 / _ws, m = 20   // worldScale 缩放后真实可见半幅=半宽/ws（与 render.inView 同口径，否则 0.8 下少算 1.25× 可见敌→掉帧归因失真）
-			for (var i = 0; i < en.list.length; i++) { var e = en.list[i]; if (!e.active) { continue }; if (e.x > cam.x - hw - m && e.x < cam.x + hw + m && e.y > cam.y - hh - m && e.y < cam.y + hh + m) { vis++ } }
+		if (r && r.getVisibleWorldRect && en && en.list) {
+			var view = r.getVisibleWorldRect(), m = 20
+			for (var i = 0; i < en.list.length; i++) { var e = en.list[i]; if (!e.active) { continue }; if (e.x > view.left - m && e.x < view.right + m && e.y > view.top - m && e.y < view.bottom + m) { vis++ } }
 		}
 		return {
 			fps: d.fps, fpsMin: (d && typeof d.fpsMin === 'number') ? d.fpsMin : 0, cpuMs: d.cpuMs, frameMs: d.frameMs,

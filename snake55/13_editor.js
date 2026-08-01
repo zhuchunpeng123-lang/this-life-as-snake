@@ -97,6 +97,7 @@
 	var TUNING_SCALAR_SLIDERS = []
 	var UI_TUNING = [
 		{ group: '布局', path: 'UI.tuning.layout.hudScale', label: 'HUD 总倍率', rng: 'scale' },
+		{ group: '布局', path: 'UI.tuning.layout.mobileHudScale', label: '移动端 HUD 总倍率', rng: 'scale' },
 		{ group: '布局', path: 'UI.tuning.layout.edgePad', label: '安全边距', rng: 'px' },
 		{ group: '布局', path: 'UI.tuning.layout.topPad', label: '顶部边距', rng: 'px' },
 		{ group: '布局', path: 'UI.tuning.layout.clusterGap', label: '分组间距', rng: 'px' },

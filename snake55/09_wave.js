@@ -16,15 +16,23 @@
 
 	function head() { var s = Registry.get('snake'); return s && s.head ? s.head : { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 } }
 	function activeKind(kind) { var c = 0; for (var i = 0; i < foods.length; i++) { if (foods[i].active && foods[i].kind === kind) { c++ } } return c }
+	function visibleWorldRect() {
+		var r = Registry.get('render')
+		if (r && r.getVisibleWorldRect) { return r.getVisibleWorldRect() }
+		var h = head(), halfW = GAME.logicalWidth / 2, halfH = GAME.logicalHeight / 2
+		return { left: h.x - halfW, top: h.y - halfH, right: h.x + halfW, bottom: h.y + halfH, width: halfW * 2, height: halfH * 2 }
+	}
 
 	// 视野内 + 离蛇头 safeDistance 外 + 彼此 minSpacing 外 采样（割草节奏：食物始终在可见可达范围）
 	function sampleViewPos(out) {
-		var h = head(), r = PK.food.radius
-		var halfW = GAME.logicalWidth / 2 - 30, halfH = GAME.logicalHeight / 2 - 30
+		var h = head(), r = PK.food.radius, view = visibleWorldRect()
+		var minX = Math.max(r, view.left + r + 30), maxX = Math.min(GAME.worldWidth - r, view.right - r - 30)
+		var minY = Math.max(r, view.top + r + 30), maxY = Math.min(GAME.worldHeight - r, view.bottom - r - 30)
+		if (minX > maxX || minY > maxY) { minX = r; maxX = GAME.worldWidth - r; minY = r; maxY = GAME.worldHeight - r }
 		var safe2 = PK.food.safeDistance * PK.food.safeDistance, min2 = PK.food.minSpacing * PK.food.minSpacing
 		for (var i = 0; i < 30; i++) {
-			var x = M.clamp(h.x + M.rand(-halfW, halfW), r, GAME.worldWidth - r)
-			var y = M.clamp(h.y + M.rand(-halfH, halfH), r, GAME.worldHeight - r)
+			var x = M.rand(minX, maxX)
+			var y = M.rand(minY, maxY)
 			if (M.distSq(x, y, h.x, h.y) < safe2) { continue }
 			var ok = true
 			for (var f = 0; f < foods.length; f++) { var o = foods[f]; if (o.active && M.distSq(x, y, o.x, o.y) < min2) { ok = false; break } }
@@ -44,14 +52,16 @@
 				cand.push(e)
 			}
 			if (cand.length) {
-				var src = cand[(Math.random() * cand.length) | 0], h = head(), r = PK.food.radius
-				var halfW = GAME.logicalWidth / 2 - 30, halfH = GAME.logicalHeight / 2 - 30
+				var src = cand[(Math.random() * cand.length) | 0], h = head(), r = PK.food.radius, view = visibleWorldRect()
+				var minX = Math.max(r, view.left + r), maxX = Math.min(GAME.worldWidth - r, view.right - r)
+				var minY = Math.max(r, view.top + r), maxY = Math.min(GAME.worldHeight - r, view.bottom - r)
+				if (minX > maxX || minY > maxY) { minX = r; maxX = GAME.worldWidth - r; minY = r; maxY = GAME.worldHeight - r }
 				var safe2 = PK.food.safeDistance * PK.food.safeDistance, min2 = PK.food.minSpacing * PK.food.minSpacing
 				var rb = PK.dangerBias
 				for (var t = 0; t < 30; t++) {
 					var ang = Math.random() * M.PI2, off = M.rand(rb.ringMin, rb.ringMax)
-					var x = M.clamp(src.x + Math.cos(ang) * off, h.x - halfW + r, h.x + halfW - r)
-					var y = M.clamp(src.y + Math.sin(ang) * off, h.y - halfH + r, h.y + halfH - r)
+					var x = M.clamp(src.x + Math.cos(ang) * off, minX, maxX)
+					var y = M.clamp(src.y + Math.sin(ang) * off, minY, maxY)
 					if (M.distSq(x, y, h.x, h.y) < safe2) { continue }
 					var ok = true
 					for (var f = 0; f < foods.length; f++) { var o = foods[f]; if (o.active && M.distSq(x, y, o.x, o.y) < min2) { ok = false; break } }
