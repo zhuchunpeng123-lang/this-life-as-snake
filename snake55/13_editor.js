@@ -113,8 +113,6 @@
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.contentOffsetY', label: 'Life content Y', rng: 'offset' },
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.heartSize', label: 'Heart size', rng: 'font' },
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.heartGap', label: 'Heart gap', rng: 'px' },
-		{ group: '01 Player Life', path: 'UI.tuning.playerLife.numberSize', label: 'Life number size', rng: 'font' },
-		{ group: '01 Player Life', path: 'UI.tuning.playerLife.numberGap', label: 'Number gap', rng: 'px' },
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.overallScale', label: 'Stats overall scale', rng: 'scale' },
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.widthVw', label: 'Stats width', rng: 'width' },
 		{ group: '02 Player Stats', path: 'UI.tuning.playerStats.offsetX', label: 'Stats offset X', rng: 'offset' },
