@@ -15,7 +15,7 @@
 var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
 var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
-var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, buildInfoLayer = null, buildInfoBox = null, stageName = '—', lastBuildInfoPointerAt = 0
+var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, buildInfoLayer = null, buildInfoBox = null, stageName = '—', buildInfoPointer = null
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
 var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
@@ -195,10 +195,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { e.preventDefault(); hideBuildInfo() } }
 		buildInfoBox.onclick = function (e) { e.stopPropagation() }
 		global.addEventListener('keydown', function (e) { if (e.key === 'Escape' && buildInfoLayer && buildInfoLayer.style.display !== 'none') { hideBuildInfo() } })
-		hudSkills.addEventListener('pointerup', function (e) { if (e.pointerType && e.pointerType !== 'mouse') { openBuildInfoFromEvent(e, hudSkills, 'data-skill', 'skill', 'skill_status') } })
-		hudCombo.addEventListener('pointerup', function (e) { if (e.pointerType && e.pointerType !== 'mouse') { openBuildInfoFromEvent(e, hudCombo, 'data-combo', 'combo', 'combo_status') } })
-		hudSkills.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudSkills, 'data-skill', 'skill', 'skill_status') })
-		hudCombo.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudCombo, 'data-combo', 'combo', 'combo_status') })
+		hudSkills.addEventListener('pointerdown', function (e) { beginBuildInfoPointer(e, hudSkills, 'data-skill', 'skill', 'skill_status') })
+		hudCombo.addEventListener('pointerdown', function (e) { beginBuildInfoPointer(e, hudCombo, 'data-combo', 'combo', 'combo_status') })
+		hudSkills.addEventListener('pointerup', finishBuildInfoPointer)
+		hudCombo.addEventListener('pointerup', finishBuildInfoPointer)
+		hudSkills.addEventListener('pointercancel', cancelBuildInfoPointer)
+		hudCombo.addEventListener('pointercancel', cancelBuildInfoPointer)
+		hudSkills.addEventListener('click', function (e) { if (e.detail === 0) { openBuildInfoFromEvent(e, hudSkills, 'data-skill', 'skill', 'skill_status') } })
+		hudCombo.addEventListener('click', function (e) { if (e.detail === 0) { openBuildInfoFromEvent(e, hudCombo, 'data-combo', 'combo', 'combo_status') } })
 		hudSkills.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var target = findBuildInfoTarget(e.target, hudSkills, 'data-skill'); if (target) { e.preventDefault(); showBuildInfo('skill', target.getAttribute('data-skill')) } } })
 		hudCombo.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { var target = findBuildInfoTarget(e.target, hudCombo, 'data-combo'); if (target) { e.preventDefault(); showBuildInfo('combo', target.getAttribute('data-combo')) } } })
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
@@ -529,15 +533,33 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		return null
 	}
 	function openBuildInfoFromEvent(e, rootNode, attr, kind, feedbackId) {
-		if (e.type === 'click' && e.detail > 0 && Date.now() - lastBuildInfoPointerAt < 600) { return }
 		var target = findBuildInfoTarget(e.target, rootNode, attr)
 		if (!target && e.clientX != null) { target = findBuildInfoTargetAtPoint(rootNode, attr, e.clientX, e.clientY) }
 		if (!target) { return }
 		if (e.cancelable) { e.preventDefault() }
-		if (e.type === 'pointerup') { lastBuildInfoPointerAt = Date.now() }
 		Bus.emit('ui:feedback', { kind: 'press', id: feedbackId })
 		showBuildInfo(kind, target.getAttribute(attr))
 	}
+	function beginBuildInfoPointer(e, rootNode, attr, kind, feedbackId) {
+		if (e.isPrimary === false) { return }
+		var target = findBuildInfoTarget(e.target, rootNode, attr)
+		if (!target && e.clientX != null) { target = findBuildInfoTargetAtPoint(rootNode, attr, e.clientX, e.clientY) }
+		if (!target) { return }
+		buildInfoPointer = { id: e.pointerId, target: target, rootNode: rootNode, attr: attr, kind: kind, feedbackId: feedbackId }
+		if (rootNode.setPointerCapture && e.pointerId != null) { try { rootNode.setPointerCapture(e.pointerId) } catch (err) { /* Safari may reject capture after a native gesture */ } }
+		if (e.cancelable) { e.preventDefault() }
+	}
+	function finishBuildInfoPointer(e) {
+		var active = buildInfoPointer
+		if (!active || (e.pointerId != null && active.id !== e.pointerId)) { return }
+		buildInfoPointer = null
+		if (active.rootNode.releasePointerCapture && e.pointerId != null && active.rootNode.hasPointerCapture && active.rootNode.hasPointerCapture(e.pointerId)) { try { active.rootNode.releasePointerCapture(e.pointerId) } catch (err) { /* A canceled pointer is already released */ } }
+		var rect = active.target.getBoundingClientRect()
+		if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) { return }
+		Bus.emit('ui:feedback', { kind: 'press', id: active.feedbackId })
+		showBuildInfo(active.kind, active.target.getAttribute(active.attr))
+	}
+	function cancelBuildInfoPointer() { buildInfoPointer = null }
 
 	function offerChoice(ev) {
 		if (choiceActive || GS.status !== 'playing' || choicesUsed >= NARR.choicePerRunMax) { return }

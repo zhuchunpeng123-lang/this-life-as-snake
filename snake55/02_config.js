@@ -426,8 +426,8 @@
 			playerStats: { overallScale: 0.95, widthVw: 27, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, fontSize: 13 },
 			surface: { primaryAlpha: 0.78, secondaryAlpha: 0.56, borderAlpha: 0.30, cornerPx: 12, glowAlpha: 0.14, glowBlurPx: 12 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
-			skills: { overallScale: 1, widthVw: 34, offsetX: 6, offsetY: 21, slotPx: 34, iconCellPx: 30, gapPx: 5, badgePx: 17 },
-			combo: { overallScale: 0.85, widthVw: 24, offsetX: 2, offsetY: 3, iconCellPx: 32, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3, icon1OffsetX: 9, icon1OffsetY: 0, icon2OffsetX: 0, icon2OffsetY: 0, icon3OffsetX: -10, icon3OffsetY: 0 },
+			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, slotPx: 35, iconCellPx: 30, gapPx: 5, badgePx: 17 },
+			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, iconCellPx: 32, fontPx: 13, itemGapPx: 5, innerGapPx: 5, padX: 7, padY: 3, icon1OffsetX: 9, icon1OffsetY: 0, icon2OffsetX: 0, icon2OffsetY: 0, icon3OffsetX: -10, icon3OffsetY: 0 },
 			bossBar: { widthPct: 0.58, maxWidthPx: 400, heightPx: 14, offsetY: -1, labelPx: 12, nameX: 0.50, nameY: 0.36, nameSize: 20, timeX: 0.50, timeY: 0.49, timeSize: 14, phaseX: 0.24, phaseY: 0.78, phaseSize: 13, statusX: 0.76, statusY: 0.78, statusSize: 13, hpX: 0.50, hpY: 0.66, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 15 },
 			system: { buttonScale: 0.7, offsetX: -8, offsetY: -35, gapPx: 0, alpha: 0 }
 		},
