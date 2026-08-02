@@ -1,0 +1,177 @@
+{
+  "package": "this_life_as_snake_repo_asset_contract_v3",
+  "runtime_note": "该JSON仅供Codex核验路径、尺寸、哈希和用途；游戏运行时只加载PNG。",
+  "stats_geometry": {
+    "asset": "snake55/assets/ui_hud_v1_refined/ui_player_stats_compact_v2.png",
+    "source_size": [
+      640,
+      128
+    ],
+    "divider_x_px": [
+      190,
+      320,
+      449
+    ],
+    "inner_left_px": 13,
+    "inner_right_px": 626,
+    "recommended_column_centers_normalized": [
+      0.159,
+      0.398,
+      0.601,
+      0.84
+    ],
+    "recommended_center_y_normalized": 0.48
+  },
+  "assets": [
+    {
+      "repo_path": "snake55/assets/ui_hud_v1_refined/ui_boss_wide_refined_v1.png",
+      "width": 690,
+      "height": 240,
+      "alpha_bbox": [
+        35,
+        33,
+        656,
+        205
+      ],
+      "sha256": "a060eb920040ad5b78ceb6789ce129aff23ce2e08fc4ec0c3662e11d5761e464",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "Boss中央框"
+    },
+    {
+      "repo_path": "snake55/assets/ui_hud_v1_refined/ui_combo_quiet_v1.png",
+      "width": 310,
+      "height": 169,
+      "alpha_bbox": [
+        14,
+        14,
+        296,
+        155
+      ],
+      "sha256": "26ba93215cefbade7976215b96c6db68c789fd419ede33d2065c49e1c47d658c",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "Combo三槽安静版"
+    },
+    {
+      "repo_path": "snake55/assets/ui_hud_v1_refined/ui_player_stats_compact_v2.png",
+      "width": 640,
+      "height": 128,
+      "alpha_bbox": [
+        2,
+        2,
+        638,
+        126
+      ],
+      "sha256": "9787d4d03b3a384107ab75cc87ef529fa46f88dd8cae8c45b9dcba9791f37b0b",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "玩家统计栏紧凑版；四个独立动态数据单元由代码渲染"
+    },
+    {
+      "repo_path": "snake55/assets/ui_hud_v1_refined/ui_stage_compact_v1.png",
+      "width": 420,
+      "height": 150,
+      "alpha_bbox": [
+        0,
+        0,
+        420,
+        150
+      ],
+      "sha256": "3ae80a8b0000b606272a62798aff808f43163c55fbaf932100783244f06816d4",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "普通阶段中央框"
+    },
+    {
+      "repo_path": "snake55/assets/ui_hud_v1_refined/ui_system_button_minimal_v1.png",
+      "width": 264,
+      "height": 156,
+      "alpha_bbox": [
+        14,
+        14,
+        250,
+        142
+      ],
+      "sha256": "e03fc556fac036ce477cd5bcf2720d6a2a8e9a08e3e5c1e5bc256b7bfd280892",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "暂停/全屏/GM通用按钮框"
+    },
+    {
+      "repo_path": "snake55/assets/vfx/fire/vfx_fire_core_v1.png",
+      "width": 256,
+      "height": 256,
+      "alpha_bbox": [
+        28,
+        16,
+        228,
+        240
+      ],
+      "sha256": "b6f0d867cb8147f0d84502210942ec0e03f614f69b672cd7f30c05cad66c42a9",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "火焰核心"
+    },
+    {
+      "repo_path": "snake55/assets/vfx/fire/vfx_fire_ember_v1.png",
+      "width": 128,
+      "height": 128,
+      "alpha_bbox": [
+        26,
+        10,
+        102,
+        118
+      ],
+      "sha256": "04caf3c27b70a970cc5d5e5492fbb7079c95e44e85d73e4cf0996c7b205e89cb",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "火焰余烬"
+    },
+    {
+      "repo_path": "snake55/assets/vfx/fire/vfx_fire_flame_a_v1.png",
+      "width": 256,
+      "height": 256,
+      "alpha_bbox": [
+        61,
+        14,
+        194,
+        242
+      ],
+      "sha256": "d7783e8e155e07b6f6565eeddfe3e8afdbaad23a2077bf5682c4af2965d7a931",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "火舌A"
+    },
+    {
+      "repo_path": "snake55/assets/vfx/fire/vfx_fire_flame_b_v1.png",
+      "width": 256,
+      "height": 256,
+      "alpha_bbox": [
+        25,
+        14,
+        231,
+        242
+      ],
+      "sha256": "7e4f98421b494d078dbb6814a48fe7071f05c293dbea27662a20bbea1cc5766f",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "火舌B"
+    },
+    {
+      "repo_path": "snake55/assets/vfx/fire/vfx_fire_hit_burst_v1.png",
+      "width": 192,
+      "height": 192,
+      "alpha_bbox": [
+        12,
+        22,
+        180,
+        170
+      ],
+      "sha256": "0bc3aa1886a0515176a7b8ae92b195385261cd4aa1271468ef66e06ed4d9c283",
+      "status": "approved_candidate",
+      "runtime_load": true,
+      "usage": "火焰命中爆裂"
+    }
+  ]
+}

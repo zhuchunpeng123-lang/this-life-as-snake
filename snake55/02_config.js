@@ -392,7 +392,7 @@
 		UI: {
 				hudSkin: {
 				life: { src: 'assets/ui_hud_v1_extracted/ui_player_life_frame.png', ratio: 3.13, content: { left: 0.22, right: 0.22, top: 0.27, bottom: 0.20 } },
-				stats: { src: 'assets/ui_hud_v1_refined/ui_player_stats_quiet_v1.png', ratio: 3.2229299363, columns: [0.125, 0.375, 0.625, 0.875], centerY: 0.52 },
+			stats: { src: 'assets/ui_hud_v1_refined/ui_player_stats_compact_v2.png', ratio: 5, columns: [0.159, 0.398, 0.601, 0.840], columnWidths: [0.2766, 0.2031, 0.2016, 0.2766], centerY: 0.48 },
 				stage: { src: 'assets/ui_hud_v1_refined/ui_stage_compact_v1.png', ratio: 2.8, content: { left: 0.18, right: 0.18, top: 0.18, bottom: 0.26 }, progress: { left: 0.18, right: 0.18, bottom: 0.16, height: 0.10 } },
 				boss: { src: 'assets/ui_hud_v1_refined/ui_boss_wide_refined_v1.png', ratio: 2.875, content: { left: 0.20, right: 0.20, top: 0.20, bottom: 0.24 }, hp: { left: 0.18, right: 0.18, bottom: 0.23, height: 0.14 } },
 				skills: { src: 'assets/ui_hud_v1_extracted/ui_skill_bar_frame.png', ratio: 2.83, slots: [{ x: 0.18, y: 0.51 }, { x: 0.34, y: 0.51 }, { x: 0.50, y: 0.51 }, { x: 0.66, y: 0.51 }, { x: 0.82, y: 0.51 }], slotWidth: 0.14, slotHeight: 0.54 },
@@ -423,7 +423,7 @@
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0, mobileHudScale: 1
 			},
 			playerLife: { overallScale: 0.6, widthVw: 24, offsetX: 1, offsetY: 15, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 25, statsGap: 0 },
-			playerStats: { overallScale: 0.95, widthVw: 27, heightPx: 0, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, fontSize: 13 },
+			playerStats: { overallScale: 0.95, widthVw: 34, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, labelSize: 12, valueSize: 14, labelValueGap: 5, lengthOffsetX: 0, killsOffsetX: 0, scoreOffsetX: 0, streakOffsetX: 0 },
 			stage: { overallScale: 1.05, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.77, progressHeight: 0.13, progressOffsetX: -0.01, progressOffsetY: -0.02 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, badgePx: 17 },
