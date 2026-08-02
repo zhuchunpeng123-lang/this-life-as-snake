@@ -19,7 +19,7 @@
 	var UI_RANGE = {
 		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.20, 0.01], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
-		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
+		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.5, 1.4, 0.05]
 	}
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
 	var ENEMY_STATS = [
@@ -178,6 +178,7 @@
 		{ group: '06 Boss', path: 'UI.tuning.bossBar.hpHeight', label: 'Boss 血条高度', rng: 'progressHeight' },
 		{ group: '06 Boss', path: 'UI.tuning.bossBar.hpTextSize', label: 'Boss 血量字号', rng: 'font' },
 		{ group: '07 System Buttons', path: 'UI.tuning.system.buttonScale', label: 'Button scale', rng: 'system' },
+		{ group: '07 System Buttons', path: 'UI.tuning.system.textSize', label: 'Button text size', rng: 'font' },
 		{ group: '07 System Buttons', path: 'UI.tuning.system.offsetX', label: 'Button group offset X', rng: 'offset' },
 		{ group: '07 System Buttons', path: 'UI.tuning.system.offsetY', label: 'Button group offset Y', rng: 'offset' },
 		{ group: '07 System Buttons', path: 'UI.tuning.system.gapPx', label: '按钮间距', rng: 'px' },
