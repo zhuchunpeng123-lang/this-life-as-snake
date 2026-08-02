@@ -428,7 +428,7 @@
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, badgePx: 17 },
 			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, icon1OffsetX: -4, icon1OffsetY: -8, icon2OffsetX: 0, icon2OffsetY: -6, icon3OffsetX: 2, icon3OffsetY: -7 },
-			bossBar: { widthPct: 0.58, maxWidthPx: 560, offsetY: -24, nameX: 0.50, nameY: 0.40, nameSize: 21, subtitleX: 0.50, subtitleY: 0.73, subtitleSize: 14, hpX: 0.49, hpY: 0.58, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 17 },
+			bossBar: { widthPct: 0.58, maxWidthPx: 560, offsetY: -24, nameX: 0.50, nameY: 0.40, nameSize: 21, subtitleX: 0.50, subtitleY: 0.73, subtitleSize: 14, hpX: 0.50, hpY: 0.58, hpWidth: 0.76, hpHeight: 0.20, hpTextSize: 17 },
 			system: { buttonScale: 0.7, offsetX: 2, offsetY: -68, gapPx: 0 }
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
