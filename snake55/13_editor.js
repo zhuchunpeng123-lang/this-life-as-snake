@@ -13,12 +13,12 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10], alpha: [0, 1, 0.02], fireWidth: [0.9, 1.05, 0.01]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
 		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.15, 0.01], alpha: [0, 1, 0.02],
-		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1], fireWidth: [0.9, 1.05, 0.01],
+		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.7, 1.4, 0.05]
 	}
 	var ENEMY_TYPES = Object.keys(CONFIG.ENEMIES)
