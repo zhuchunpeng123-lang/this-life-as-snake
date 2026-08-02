@@ -423,13 +423,13 @@
 				systemOffsetX: 0, systemOffsetY: 0, mobileScaleMin: 0.55, mobileScaleMax: 1.0, mobileHudScale: 1
 			},
 			playerLife: { overallScale: 0.6, widthVw: 24, offsetX: 1, offsetY: 15, contentScale: 1.27, contentOffsetX: 3, contentOffsetY: 0, heartSize: 28, heartGap: 25, statsGap: 0 },
-			playerStats: { overallScale: 0.95, widthVw: 27, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, fontSize: 13 },
-			stage: { overallScale: 1, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.63, progressHeight: 0.09, progressOffsetX: 0, progressOffsetY: 0 },
+			playerStats: { overallScale: 0.95, widthVw: 27, heightPx: 0, offsetX: -2, offsetY: -63, contentScale: 0.84, contentOffsetX: 2, contentOffsetY: 2, fontSize: 13 },
+			stage: { overallScale: 1.05, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.77, progressHeight: 0.13, progressOffsetX: -0.01, progressOffsetY: -0.02 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
 			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, badgePx: 17 },
-			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, icon1OffsetX: 0, icon1OffsetY: 0, icon2OffsetX: 0, icon2OffsetY: 0, icon3OffsetX: 0, icon3OffsetY: 0 },
-			bossBar: { widthPct: 0.58, maxWidthPx: 400, offsetY: -1, nameX: 0.50, nameY: 0.36, nameSize: 20, subtitleX: 0.50, subtitleY: 0.49, subtitleSize: 14, hpX: 0.50, hpY: 0.66, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 15 },
-			system: { buttonScale: 0.7, offsetX: -8, offsetY: -35, gapPx: 0 }
+			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, icon1OffsetX: -4, icon1OffsetY: -8, icon2OffsetX: 0, icon2OffsetY: -6, icon3OffsetX: 2, icon3OffsetY: -7 },
+			bossBar: { widthPct: 0.58, maxWidthPx: 560, offsetY: -24, nameX: 0.50, nameY: 0.40, nameSize: 21, subtitleX: 0.50, subtitleY: 0.73, subtitleSize: 14, hpX: 0.49, hpY: 0.58, hpWidth: 0.72, hpHeight: 0.10, hpTextSize: 17 },
+			system: { buttonScale: 0.7, offsetX: 2, offsetY: -68, gapPx: 0 }
 		},
 		mobileScaleClamp: { min: 0.55, max: 1.0 }  // 🟡 HUD 等比缩放 uiScale 钳制区间：矮屏(高375→~0.69)压到 0.55 防溢出；上限 1.0=原始尺寸→桌面(画布显示高>540)缩放恒为 1 不变，零回归
 	},
