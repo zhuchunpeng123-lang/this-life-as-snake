@@ -40,8 +40,8 @@
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
 
-	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high', sprite: null, rotation: 0, spriteScale: 1, spriteAlpha: 1, fireEmber: false } }
-	function resetParticle(p) { p.active = false; p.sprite = null; p.rotation = 0; p.spriteScale = 1; p.spriteAlpha = 1; p.fireEmber = false }
+	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
+	function resetParticle(p) { p.active = false }
 	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
 	function resetText(t) { t.active = false }
 
@@ -50,8 +50,8 @@
 	// 光束（fx:bolt / fx:lightning / fx:electroarc 复用），curve=true 走 quadratic 折线；爆环（fx:steamblast）
 	function newBeam() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, cx: 0, cy: 0, curve: false, life: 0, maxLife: 1, width: 2, color: '#fff' } }
 	function resetBeam(b) { b.active = false }
-	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff', sprite: null, rotation: 0, spriteAlpha: 1, overlay: false } }
-	function resetBlast(b) { b.active = false; b.sprite = null; b.rotation = 0; b.spriteAlpha = 1; b.overlay = false }
+	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
+	function resetBlast(b) { b.active = false }
 	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, color: '#fff' } }
 	function resetDart(b) { b.active = false }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
@@ -74,26 +74,6 @@
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
 	}
-	var FIRE_PARTICLE_ASSET_BASE = 'assets/vfx/fire/'
-	var FIRE_PARTICLE_ASSET_VER = 'fire-vfx-v1-20260802'
-	var fireParticleAssets = {}
-	function preloadFireParticleAssets() {
-		if (typeof global.Image !== 'function') { return }
-		var files = { ember: 'vfx_fire_ember_v1.png', hitBurst: 'vfx_fire_hit_burst_v1.png' }
-		for (var key in files) {
-			if (!files.hasOwnProperty(key) || fireParticleAssets[key]) { continue }
-			var img = new global.Image()
-			var rec = { img: img, ready: false, failed: false }
-			img.onload = (function (r) { return function () { r.ready = true } })(rec)
-			img.onerror = (function (r) { return function () { r.failed = true } })(rec)
-			img.src = FIRE_PARTICLE_ASSET_BASE + files[key] + '?v=' + FIRE_PARTICLE_ASSET_VER
-			fireParticleAssets[key] = rec
-		}
-	}
-	function fireParticleAsset(key) {
-		var rec = fireParticleAssets[key]
-		return rec && rec.ready && !rec.failed ? rec.img : null
-	}
 	// §5.5 人工特效降级（叠加在 PerfTier/预算之上；只在生成入口乘倍率，不动池 update/draw）：high=1 / med=0.6 / low=0.3
 	function fxScale() { var f = RT('STYLE.fxLevel', STYLE.fxLevel); return f === 'low' ? 0.3 : (f === 'med' ? 0.6 : 1) }
 	function fxLow() { return RT('STYLE.fxLevel', STYLE.fxLevel) === 'low' }   // low 档：跳白闪核（overdraw 大头）保可读，飘字/爆环仍在
@@ -104,12 +84,9 @@
 	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', perfFB('spawnBudget', CONFIG.PERF.spawnBudgetPerFrame)) }
 	var frameSpawn = 0   // 每帧 VFX 生成计数（Particle.update 帧首清零；与 fixed-step 对齐）
 	var dotTextThisFrame = 0   // P2-10：DOT 飘字每帧抽稀计数（火墙 MULTI-敌齐爆时限制同时刻飘字数，防糊屏）
-	var _fireTierName = 'HIGH'
-	var fireEmberNextSec = 0
-	Bus.on('perf:tier', function (d) { if (d && d.tier) { _fireTierName = d.tier } })
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
-	function emitParticle(x, y, vx, vy, life, size, color, drag, prio, sprite, spriteScale, rotation, spriteAlpha, fireEmber) {
+	function emitParticle(x, y, vx, vy, life, size, color, drag, prio) {
 		if (frameSpawn >= spawnBudget()) { return false }                 // 每帧预算耗尽：丢弃（削平齐爆尖峰）
 		if (particles.length >= maxParticles()) {
 			if (prio === 'high') { var ei = evictLow(particles); if (ei < 0) { return false } particlePool.release(particles[ei]); particles.splice(ei, 1) }
@@ -118,11 +95,6 @@
 		var p = particlePool.acquire()
 		p.active = true; p.x = x; p.y = y; p.prevX = x; p.prevY = y; p.vx = vx; p.vy = vy
 		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio
-		p.sprite = sprite || null
-		p.spriteScale = spriteScale > 0 ? spriteScale : 1
-		p.rotation = rotation || 0
-		p.spriteAlpha = spriteAlpha > 0 ? spriteAlpha : 1
-		p.fireEmber = !!fireEmber
 		particles.push(p); frameSpawn++; return true
 	}
 	function emitText(x, y, str, color, size, prio) {
@@ -168,25 +140,9 @@
 	function spawnBlast(x, y, radius, color, life) {
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆爆环尖峰
 		var b = blastPool.acquire()
-		b.active = true; b.x = x; b.y = y; b.radius = radius; b.color = color; b.ringWidth = BLAST_RING_W; b.overlay = false
+		b.active = true; b.x = x; b.y = y; b.radius = radius; b.color = color; b.ringWidth = BLAST_RING_W
 		b.life = b.maxLife = life
 		blasts.push(b); frameSpawn++
-	}
-	function spawnSpriteBlast(x, y, size, life, sprite, alpha, rotation) {
-		if (frameSpawn >= spawnBudget()) { return false }
-		var b = blastPool.acquire()
-		b.active = true; b.x = x; b.y = y; b.radius = size; b.color = '#fff'; b.ringWidth = 0
-		b.sprite = sprite || null; b.rotation = rotation || 0; b.spriteAlpha = alpha > 0 ? alpha : 1; b.overlay = true
-		b.life = b.maxLife = life
-		blasts.push(b); frameSpawn++; return true
-	}
-	function spawnFireHitBurst(x, y) {
-		var fv = (CONFIG.RENDER && CONFIG.RENDER.fireVfx) || {}, img = fireParticleAsset('hitBurst')
-		var size = typeof fv.hitBurstSize === 'number' ? fv.hitBurstSize : 58
-		var life = typeof fv.hitBurstLife === 'number' ? fv.hitBurstLife : 0.22
-		var alpha = typeof fv.hitBurstAlpha === 'number' ? fv.hitBurstAlpha : 0.9
-		if (img && spawnSpriteBlast(x, y, size, life, img, alpha, 0)) { return }
-		spawnBurst(x, y, 6, SKFX.fire, 130, 3, 0.24, 'high')
 	}
 	function spawnDart(x1, y1, x2, y2, color, life) {   // 飞行镖：从 head 沿弹道插值飞向目标，纯视觉
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平飞镖尖峰
@@ -211,42 +167,23 @@
 	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
 	//   受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌仍为固定频率)，零 gameplay
 	function spawnFireEmbers() {
+		// 自动关火(suppressFire)/GM T3 关火视觉 → 真正停喷余烬（消除 fill 爆炸主因）；与 render 同款读法(perfFB('suppressFire') 为回退源)，零双份真相源
 		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
-		var tier = _fireTierName
-		if (tier !== 'HIGH' && tier !== 'MED') { return }
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
-		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
-		var fv = (CONFIG.RENDER && CONFIG.RENDER.fireVfx) || {}
-		var intervalTable = fv.emberIntervalSec || {}, interval = intervalTable[tier] || (tier === 'MED' ? 0.14 : 0.09)
-		var now = GS.timeSec || 0
-		if (now < fireEmberNextSec) { return }
-		fireEmberNextSec = now + interval
-		if (particles.length >= maxParticles() * 0.5) { return }
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }   // 仅火墙激活
+		if (particles.length >= maxParticles() * 0.5) { return }   // 余量门控：池忙(≥半满)时停喷余烬，留 GPU 呼吸低谷，治"焊死 240/240 常载拖帧"
 		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length === 0) { return }
-		var maxTable = fv.emberMax || {}, emberCap = maxTable[tier] || (tier === 'MED' ? 4 : 6), emberCount = 0
-		for (var pi = 0; pi < particles.length; pi++) { if (particles[pi].fireEmber) { emberCount++ } }
-		if (emberCount >= emberCap) { return }
-		var segs = s.segments, emberImg = fireParticleAsset('ember')
-		var emberSize = typeof fv.emberSize === 'number' ? fv.emberSize : 6
-		var emberScale = typeof fv.emberScale === 'number' ? fv.emberScale : 1
-		var emberAlpha = typeof fv.emberAlpha === 'number' ? fv.emberAlpha : 0.55
-		var emberDrift = typeof fv.emberDriftX === 'number' ? fv.emberDriftX : 10
-		var emberRiseMin = typeof fv.emberRiseMin === 'number' ? fv.emberRiseMin : 26
-		var emberRiseMax = typeof fv.emberRiseMax === 'number' ? fv.emberRiseMax : 42
-		var emberLifeMin = typeof fv.emberLifeMin === 'number' ? fv.emberLifeMin : 0.28
-		var emberLifeMax = typeof fv.emberLifeMax === 'number' ? fv.emberLifeMax : 0.42
-		var emberJitter = typeof fv.emberJitter === 'number' ? fv.emberJitter : 4
-		var sample = 0.20 + Math.random() * 0.65, at = sample * (segs.length - 1)
-		var sg = segs[Math.max(0, Math.min(segs.length - 1, Math.round(at)))]
-		var drift = (Math.random() * 2 - 1) * emberDrift, rise = emberRiseMin + Math.random() * Math.max(0, emberRiseMax - emberRiseMin)
-		emitParticle(sg.x + (Math.random() * 2 - 1) * emberJitter, sg.y + (Math.random() * 2 - 1) * emberJitter,
-			drift, -rise,
-			emberLifeMin + Math.random() * Math.max(0, emberLifeMax - emberLifeMin), emberSize,
-			Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low', emberImg, emberScale,
-			Math.sin(now * 2 + sample) * 0.12, emberAlpha, true)
+		var segs = s.segments, fi = owned.fire - 1
+		var n = scN(Math.min(4, 2 + fi))   // 余烬数：1阶≈2 / 2阶≈3 / 3阶≈4 封顶 4；§5.5 med/low 再降
+		for (var ei = 0; ei < n; ei++) {
+			var sg = segs[(Math.random() * segs.length) | 0]   // 蛇身随机点（整条火墙燃烧，非单点）
+			var a = Math.random() * M.PI2, sp = 30 + Math.random() * 50
+			emitParticle(sg.x + (Math.random() * 2 - 1) * 6, sg.y + (Math.random() * 2 - 1) * 6,
+				Math.cos(a) * sp, Math.sin(a) * sp - 30,        // 略带上飘：火苗上窜感
+				0.35 + Math.random() * 0.2, 1.5 + Math.random() * 1.5,
+				Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low')   // low 优先：池满让位死亡/蒸汽/伤害 VFX
+		}
 	}
-
-	preloadFireParticleAssets()
 	var Particle = {
 		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
 		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
@@ -295,15 +232,9 @@
 				var p = particles[i]
 				var a = p.life / p.maxLife
 				if (a < 0) { a = 0 }
-				var px = M.lerp(p.prevX, p.x, ra), py = M.lerp(p.prevY, p.y, ra)
-				if (p.sprite && p.sprite.naturalWidth > 0 && p.sprite.naturalHeight > 0) {
-					ctx.save(); ctx.globalAlpha = a * p.spriteAlpha; ctx.translate(px, py); ctx.rotate(p.rotation || 0)
-					var ps = p.size * p.spriteScale; ctx.drawImage(p.sprite, -ps / 2, -ps / 2, ps, ps); ctx.restore()
-				} else {
-					ctx.globalAlpha = a
-					ctx.fillStyle = p.color
-					ctx.beginPath(); ctx.arc(px, py, p.size * a, 0, M.PI2); ctx.fill()
-				}
+				ctx.globalAlpha = a
+				ctx.fillStyle = p.color
+				ctx.beginPath(); ctx.arc(M.lerp(p.prevX, p.x, ra), M.lerp(p.prevY, p.y, ra), p.size * a, 0, M.PI2); ctx.fill()
 			}
 			// 光束：廉价双描边发光（宽+低透明打底 + 窄+高亮覆盖），避免 shadowBlur 拖帧（验收⑤）
 			ctx.lineCap = 'round'
@@ -333,14 +264,9 @@
 		// 爆环：随寿命从中心扩张并淡出（p=1→0 进度）
 			for (i = 0; i < blasts.length; i++) {
 				var bl = blasts[i]
-				if (bl.overlay) { continue }
 				var bla = bl.life / bl.maxLife
 				if (bla < 0) { bla = 0 }
 				var prog = 1 - bla
-				if (bl.sprite && bl.sprite.naturalWidth > 0 && bl.sprite.naturalHeight > 0) {
-					ctx.save(); ctx.globalAlpha = bla * bl.spriteAlpha; ctx.translate(bl.x, bl.y); ctx.rotate(bl.rotation || 0)
-					var bs = bl.radius * (0.86 + prog * 0.22); ctx.drawImage(bl.sprite, -bs / 2, -bs / 2, bs, bs); ctx.restore(); continue
-				}
 				ctx.globalAlpha = bla * 0.6; ctx.strokeStyle = bl.color; ctx.lineWidth = bl.ringWidth
 				ctx.beginPath(); ctx.arc(bl.x, bl.y, Math.max(1, bl.radius * prog), 0, M.PI2); ctx.stroke()
 			}
@@ -349,14 +275,6 @@
 		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
 		drawOverlay: function (ctx, ra) {
 			if (ra == null) { ra = 1 }
-			for (var bi = 0; bi < blasts.length; bi++) {
-				var ob = blasts[bi]
-				if (!ob.overlay || !ob.sprite || ob.sprite.naturalWidth <= 0 || ob.sprite.naturalHeight <= 0) { continue }
-				var oba = ob.life / ob.maxLife; if (oba < 0) { oba = 0 }
-				var obs = ob.radius * (0.86 + (1 - oba) * 0.22)
-				ctx.save(); ctx.globalAlpha = oba * ob.spriteAlpha; ctx.translate(ob.x, ob.y); ctx.rotate(ob.rotation || 0)
-				ctx.drawImage(ob.sprite, -obs / 2, -obs / 2, obs, obs); ctx.restore()
-			}
 			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
 			if (!(RT('PERF.suppressWhiteBurst', (global.PerfTier && global.PerfTier.suppressWhiteBurst) ? 1 : 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字；回退源=PerfTier.suppressWhiteBurst(原写死 0→白爆永不关，本次接线)
 				for (var i = 0; i < flashCores.length; i++) {
@@ -422,7 +340,8 @@
 	Bus.on('fx:burndart', function (d) {
 		if (!d || !d.from || !d.to) { return }
 		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, SKFX.fire, BOLT_FLY_SEC)
-		spawnFireHitBurst(d.to.x, d.to.y); return
+		spawnBurst(d.to.x, d.to.y, 10, SKFX.fire, 170, 4, 0.3)
+		spawnBurst(d.to.x, d.to.y, 5, '#ffd27a', 120, 3, 0.22)
 	})
 	Bus.on('fx:lightning', function (d) {
 		if (!d || !d.chain || d.chain.length < 2) { return }
@@ -487,7 +406,7 @@
 		spawnBlast(d.x, d.y, d.r || 40, 'rgba(225,243,255,0.75)', 0.3)   // 落点霜环扩张淡出
 		spawnBurst(d.x, d.y, 6, SKFX.ice, 110, 3, 0.28)                  // 冰晶爆点
 	})
-	Bus.on('core:run_reset', function () { fireEmberNextSec = 0; Particle.clear() })
+	Bus.on('core:run_reset', function () { Particle.clear() })
 
 	Registry.register('particle', Particle)
 	Log.info('particle 就绪：池 粒子512/字32/束64/爆96/镖32/闪96')
