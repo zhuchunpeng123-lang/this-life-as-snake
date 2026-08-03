@@ -885,18 +885,24 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 function drawBurnMark(e) {                                        // ⑦ 燃烧可见：红脉动环 + 头顶火苗（插值位姿消 165Hz 跳）
 	var _ex = _ix(e), _ey = _iy(e)
 	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 18)
-	ctx.globalAlpha = 0.35 + pulse * 0.3
-	ctx.beginPath(); ctx.arc(_ex, _ey, e.radius + 3, 0, M.PI2); ctx.strokeStyle = '#ff5a2c'; ctx.lineWidth = 2; ctx.stroke()
-	ctx.globalAlpha = 1; ctx.fillStyle = '#ff8a3c'
-	var fy = _ey - e.radius - 6 - pulse * 3
-	ctx.beginPath(); ctx.moveTo(_ex, fy - 6); ctx.lineTo(_ex - 4, fy + 2); ctx.lineTo(_ex + 4, fy + 2); ctx.closePath(); ctx.fill()
+	var fy = _ey - e.radius - 10 - pulse * 2
+	var flameScale = 1 + pulse * 0.12
+	ctx.save(); ctx.translate(_ex, fy); ctx.scale(flameScale, flameScale)
+	ctx.globalAlpha = 0.82 + pulse * 0.16; ctx.fillStyle = '#ff632f'
+	ctx.beginPath(); ctx.moveTo(0, -8); ctx.bezierCurveTo(5, -3, 5, 3, 0, 7); ctx.bezierCurveTo(-5, 3, -4, -2, 0, -8); ctx.closePath(); ctx.fill()
+	ctx.globalAlpha = 0.95; ctx.fillStyle = '#ffd36b'
+	ctx.beginPath(); ctx.moveTo(0, -4); ctx.bezierCurveTo(3, -1, 3, 3, 0, 5); ctx.bezierCurveTo(-3, 2, -2, -1, 0, -4); ctx.closePath(); ctx.fill()
+	ctx.restore(); ctx.globalAlpha = 1
 }
 function drawSlowMark(e) {                                        // 冰冻/减速可见：蓝染环 + 头顶冰晶（插值位姿消 165Hz 跳）
 	var _ex = _ix(e), _ey = _iy(e)
-	ctx.globalAlpha = 0.9; ctx.fillStyle = '#dff3ff'
-	var cy = _ey - e.radius - 6
+	var cy = _ey - e.radius - 10
+	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 10)
+	ctx.globalAlpha = 0.62 + pulse * 0.22; ctx.strokeStyle = '#8ceaff'; ctx.lineWidth = 2
+	ctx.beginPath(); ctx.arc(_ex, cy, 7 + pulse, 0, M.PI2); ctx.stroke()
+	ctx.globalAlpha = 0.95; ctx.fillStyle = '#dff3ff'
 	ctx.beginPath()
-	for (var k = 0; k < 6; k++) { var a = k * Math.PI / 3; var px = _ex + Math.cos(a) * 4, py = cy + Math.sin(a) * 4; if (k === 0) { ctx.moveTo(px, py) } else { ctx.lineTo(px, py) } }
+	for (var k = 0; k < 6; k++) { var a = k * Math.PI / 3; var px = _ex + Math.cos(a) * 4.5, py = cy + Math.sin(a) * 4.5; if (k === 0) { ctx.moveTo(px, py) } else { ctx.lineTo(px, py) } }
 	ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1
 }
 function drawChargeArrow(e) {
