@@ -4,4 +4,4 @@ interface:
   default_prompt: "Use $visual-review to run the local game, inspect the rendered result, and return the minimum visual evidence needed to support acceptance."
 
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false
