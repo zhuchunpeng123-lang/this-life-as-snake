@@ -84,6 +84,8 @@
 	function spawnBudget() { return RT('PERF.spawnBudgetPerFrame', perfFB('spawnBudget', CONFIG.PERF.spawnBudgetPerFrame)) }
 	var frameSpawn = 0   // 每帧 VFX 生成计数（Particle.update 帧首清零；与 fixed-step 对齐）
 	var dotTextThisFrame = 0   // P2-10：DOT 飘字每帧抽稀计数（火墙 MULTI-敌齐爆时限制同时刻飘字数，防糊屏）
+	var steamFlashTime = -1   // 蒸汽同一 fixed-step 只保留一个主闪；爆环/粒子仍逐事件生成
+	var skipNextSteamFlash = false
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
 	function emitParticle(x, y, vx, vy, life, size, color, drag, prio) {
@@ -110,6 +112,7 @@
 	}
 	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
 	function spawnFlashCore(x, y, radius, color, life) {
+		if (skipNextSteamFlash) { skipNextSteamFlash = false; return }
 		if (fxLow()) { return }   // §5.5 low 档：跳白闪核（overdraw 大头）保可读，爆环+飘字仍在
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆白闪核尖峰
 		if (flashCores.length >= flashCoreCap()) {    // 并发超上限 → 丢最旧(数组头最先老化)，保留最新视觉
@@ -372,6 +375,10 @@
 	// 需求B：steamExplosion 等的周期爆闪（爆心由调用方传入真实坐标）
 	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
+		var steamFrame = Math.floor(((global.performance && global.performance.now) ? global.performance.now() : Date.now()) / (1000 / ((CONFIG.GAME && CONFIG.GAME.fps) || 60)))
+		var steamTime = (typeof GS.timeSec === 'number' ? GS.timeSec : -1) + ':' + steamFrame
+		skipNextSteamFlash = steamTime === steamFlashTime
+		steamFlashTime = steamTime
 		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.5)', 0.22)   // 实心白闪核（绘于实体之上，不被盖；round6 稳定版，纯表现，零 gameplay）。【修 25s 偶发纯白屏】alpha 0.92→0.5：单核有效≈0.7*0.5=0.35(半透)；多个同点蒸汽/电闪核叠加 2~3 个封顶≈0.6~0.73，不再逼近纯白
 		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.5)', 0.55)              // 白色蒸汽云扩张≈r90（亮度下调：修 25s 偶发纯白屏，多个环叠加不再爆白）
 		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
@@ -406,7 +413,7 @@
 		spawnBlast(d.x, d.y, d.r || 40, 'rgba(225,243,255,0.75)', 0.3)   // 落点霜环扩张淡出
 		spawnBurst(d.x, d.y, 6, SKFX.ice, 110, 3, 0.28)                  // 冰晶爆点
 	})
-	Bus.on('core:run_reset', function () { Particle.clear() })
+	Bus.on('core:run_reset', function () { steamFlashTime = -1; skipNextSteamFlash = false; Particle.clear() })
 
 	Registry.register('particle', Particle)
 	Log.info('particle 就绪：池 粒子512/字32/束64/爆96/镖32/闪96')

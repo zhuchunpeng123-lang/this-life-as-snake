@@ -578,6 +578,14 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		ctx.drawImage(img, -d / 2 + dx, -d / 2 + dy, d, d)
 		return true
 	}
+	function drawBossSpriteHighlight(ctx, type, d, metric, alpha) {
+		if (!(alpha > 0)) { return }
+		ctx.save()
+		ctx.globalCompositeOperation = 'lighter'
+		ctx.globalAlpha = alpha
+		drawBossSprite(ctx, type, d, metric)
+		ctx.restore()
+	}
 	function clampBoss01(v) { return Math.max(0, Math.min(1, v)) }
 	function easeBoss(v) { v = clampBoss01(v); return v * v * (3 - 2 * v) }
 	function lerpBoss(a, b, t) { return a + (b - a) * t }
@@ -673,6 +681,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		var chargeType = chargeReady ? 'bossCharge' : (idleReady ? 'boss' : 'bossLegacy')
 		var idleType = idleReady ? 'boss' : (chargeReady ? 'bossCharge' : (legacyReady ? 'bossLegacy' : 'boss'))
 		var hasSprite = bossImageReady(chargeType) || bossImageReady(idleType)
+		var hitAlpha = b.flashT > 0 ? 0.24 : (b.invuln > 0 ? 0.10 + 0.06 * (0.5 + 0.5 * Math.sin(t * 12)) : 0)
 		ctx.save(); ctx.translate(x, visualY)
 		var vx = (b.prevX != null) ? (b.x - b.prevX) : 0
 		if (vx < 0) { ctx.scale(-1, 1) }
@@ -688,13 +697,15 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 				ctx.globalAlpha = chargeAlpha
 				drawBossSprite(ctx, chargeType, chargeDrawD, chargeType === 'bossCharge' ? chargeMetric : null)
 			}
+			if (hitAlpha > 0) {
+				if (idleAlpha > 0) { drawBossSpriteHighlight(ctx, idleType, idleDrawD, idleType === 'boss' ? idleMetric : null, hitAlpha * idleAlpha) }
+				if (chargeAlpha > 0) { drawBossSpriteHighlight(ctx, chargeType, chargeDrawD, chargeType === 'bossCharge' ? chargeMetric : null, hitAlpha * chargeAlpha) }
+			}
 		} else {
 			ctx.scale(effectD / (r * 2), effectD / (r * 2))
 			drawBossFallback(ctx, r, t, b)
 		}
 		ctx.restore()
-		if (b.flashT > 0) { ctx.globalAlpha = 0.5; circle(x, visualY, effectD * 0.5, '#ffdff0'); ctx.globalAlpha = 1 }
-		else if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { ctx.globalAlpha = 0.5; circle(x, visualY, effectD * 0.5, '#ffffff'); ctx.globalAlpha = 1 }
 		if (releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseFlashSec) {
 			var releasePulse = 1 - releaseAge / BOSS_VISUAL.releaseFlashSec
 			ctx.globalAlpha = BOSS_VISUAL.releaseRingAlpha * releasePulse
@@ -702,22 +713,12 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			ctx.strokeStyle = '#f7e9ff'
 			ctx.beginPath(); ctx.arc(x, visualY, effectD * (BOSS_VISUAL.releaseRingBase + releasePulse * BOSS_VISUAL.releaseRingExpand), 0, M.PI2); ctx.stroke()
 		}
-		var pulse = 0.5 + 0.5 * Math.sin(t * 2.5)
-		ctx.globalAlpha = BOSS_VISUAL.idleRingAlpha + pulse * BOSS_VISUAL.idleRingPulseAlpha
-		ctx.lineWidth = BOSS_VISUAL.idleRingWidth + pulse * BOSS_VISUAL.idleRingWidthPulse; ctx.strokeStyle = ringCol
-		ctx.beginPath(); ctx.arc(x, visualY, effectD * 0.5 + BOSS_VISUAL.idleRingOffset + pulse * BOSS_VISUAL.idleRingPulseOffset, 0, M.PI2); ctx.stroke()
 		if (warning > 0) {
 			var warningPulse = 0.5 + 0.5 * Math.sin(t * BOSS_VISUAL.warningRingHz)
 			ctx.globalAlpha = BOSS_VISUAL.warningRingAlpha + warning * BOSS_VISUAL.warningRingPulseAlpha
 			ctx.lineWidth = BOSS_VISUAL.warningRingWidth + warning * BOSS_VISUAL.warningRingWidthPulse
 			ctx.strokeStyle = ringCol
 			ctx.beginPath(); ctx.arc(x, visualY, effectD * (BOSS_VISUAL.warningRingBase + warning * BOSS_VISUAL.warningRingExpand + warningPulse * BOSS_VISUAL.warningRingPulseRadius), 0, M.PI2); ctx.stroke()
-		}
-		if (b.phase >= 2) {
-			ctx.globalAlpha = BOSS_VISUAL.phase2RingAlpha + pulse * BOSS_VISUAL.phase2RingPulseAlpha
-			ctx.lineWidth = BOSS_VISUAL.phase2RingWidth + pulse
-			ctx.strokeStyle = '#f7e9ff'
-			ctx.beginPath(); ctx.arc(x, visualY, effectD * 0.5 + BOSS_VISUAL.phase2RingOffset + pulse * 2, 0, M.PI2); ctx.stroke()
 		}
 		ctx.globalAlpha = 1
 	}
@@ -892,8 +893,6 @@ function drawBurnMark(e) {                                        // ⑦ 燃烧�
 }
 function drawSlowMark(e) {                                        // 冰冻/减速可见：蓝染环 + 头顶冰晶（插值位姿消 165Hz 跳）
 	var _ex = _ix(e), _ey = _iy(e)
-	ctx.globalAlpha = 0.4
-	ctx.beginPath(); ctx.arc(_ex, _ey, e.radius + 2, 0, M.PI2); ctx.strokeStyle = '#9fdcff'; ctx.lineWidth = 1.5; ctx.stroke()
 	ctx.globalAlpha = 0.9; ctx.fillStyle = '#dff3ff'
 	var cy = _ey - e.radius - 6
 	ctx.beginPath()
