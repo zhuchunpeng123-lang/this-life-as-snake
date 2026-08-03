@@ -43,18 +43,18 @@
 - 禁止 import/export，全部继续挂 `window`。
 - 业务代码不写裸数字，数值走 `CONFIG`。
 - 不经确认不动 `03_core.js` / `04_collision.js`。
-- 改代码前必须先出《计划》并等用户确认。
+- 执行权限和确认边界以 AGENTS.md 为准；已授权的低风险任务不重复确认。
 - 改任意 `snake55/*.js` 后必须同步 bump `index.html` 全部 `?v=` 缓存戳。
 - Git 禁止 `git add -A`、`push -f`、`push --all`。
 
 ## 下一阶段建议
 
 1. 先完成资料收口：归档已落地计划、旧审查，保持当前入口短而准。
-2. 做一个静态检查脚本，自动检查脚本顺序、import/export、JS 语法、缓存戳一致性和文档链接。
+2. 静态检查脚本已落地：使用 `tools/check-project.mjs`，后续按 `docs/workflow.md` 执行。
 3. 处理 P0：iOS standalone 复验；B-TUNE 按测试清单完成复验。
 4. 处理低风险 P1：碰撞盒 `headRadius`、注释/口径修正。
 5. 再做需要拍板的 gameplay 专项：AOE 判定口径、撞墙回正、Boss、技能可读性。
 
 ## 给 ChatGPT 总控窗口的建议
 
-请让总控窗口先产出“优化需求池 + 优先级 + 风险 + 验收方式”，不要直接让它写代码。代码落地继续由 Codex 按 `AGENTS.md` 流程执行。
+总控窗口可整理“优化需求池 + 优先级 + 风险 + 验收方式”；具体实现、验证和交付按任务授权与可用工具协作完成，执行权限以 `AGENTS.md` 为准。

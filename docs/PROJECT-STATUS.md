@@ -1,6 +1,6 @@
 # PROJECT-STATUS.md · 当前项目状态
 
-> 更新时间：2026-07-27。本文记录“现在项目是什么状态”，不写历史流水。
+> 项目状态内容更新时间：2026-07-27；治理入口复核：2026-08-03。本文记录“现在项目是什么状态”，不写历史流水。
 
 ## 当前基线
 
@@ -27,21 +27,14 @@
 ## 近期待办
 
 - 发布硬化：B-TUNE 已代码门控，待按测试清单复验。
-- 下一项：最小静态检查脚本。
+- 静态检查脚本已落地：使用 `tools/check-project.mjs`，后续按 `docs/workflow.md` 执行。
 - 低风险修复：GM 碰撞盒 `headRadius`、CONFIG 深冻结/覆盖口径说明或修复。
 - 用户复验：边缘撞墙回正、iOS standalone 音频。
 - 设计拍板：AOE 判定口径、Boss 能力、满级溢出、移动端优先级。
 
 ## 正式审查入口
 
-默认入口只读：
-
-1. `AGENTS.md`
-2. `docs/PROJECT-BRIEF.md`
-3. `docs/PROJECT-STATUS.md`
-4. `docs/DEBT.md`
-5. `docs/ARCHITECTURE.md`
-6. `docs/plans/STATUS.md`
+默认阅读范围遵循 `AGENTS.md` 与 `docs/README.md`：先读 `AGENTS.md`、当前任务相关文件和当前专项真理源；状态、开放债、历史资料和计划索引仅在任务相关时读取。
 
 按需再读：
 
