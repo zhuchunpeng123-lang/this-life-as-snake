@@ -212,26 +212,6 @@
 		// snake_body/snake_tail 已不用：身体改纯代码逐节圆(drawBodyTube) → 删除其 manifest 项消 404 控制台噪音；待接真图时再加回并量 solidDiameterPx
 	}
 	var _spriteCache = {}   // key → Image（init 一次性创建，每帧复用，绝不 new）
-	var FIRE_RENDER_ASSET_BASE = 'assets/vfx/fire/'
-	var FIRE_RENDER_ASSET_VER = 'fire-vfx-v1-20260802'
-	var fireRenderAssets = {}
-	function preloadFireRenderAssets() {
-		if (typeof global.Image !== 'function') { return }
-		var files = { core: 'vfx_fire_core_v1.png', flameA: 'vfx_fire_flame_a_v1.png', flameB: 'vfx_fire_flame_b_v1.png' }
-		for (var key in files) {
-			if (!files.hasOwnProperty(key) || fireRenderAssets[key]) { continue }
-			var img = new global.Image()
-			var rec = { img: img, ready: false, failed: false }
-			img.onload = (function (r) { return function () { r.ready = true } })(rec)
-			img.onerror = (function (r) { return function () { r.failed = true } })(rec)
-			img.src = FIRE_RENDER_ASSET_BASE + files[key] + '?v=' + FIRE_RENDER_ASSET_VER
-			fireRenderAssets[key] = rec
-		}
-	}
-	function fireRenderAsset(key) {
-		var rec = fireRenderAssets[key]
-		return rec && rec.ready && !rec.failed ? rec.img : null
-	}
 	// 敌人贴图清单（守卫式）：按 type 加载；缺图/失败 → drawEnemySprite 返回 false → 调用方按 type 走代码画兜底（零破功）。
 	// 文件名严格对应 type；当前 v1 源图为透明 PNG（本身不带发光/背景），威胁色光环由代码叠加（见 drawEnemySpriteWithFx）。
 	var ENEMY_SPRITE_FILE = {
@@ -382,7 +362,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		_traumaGateUntil = GS.timeSec + (SHK.gateSec[rank] || 0.5)
 	}
 
-	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize(); preloadSprites(); preloadFireRenderAssets() }   // b9+diag：包装 ctx 计数绘制调用；#M0 一次性预载精灵（每帧不 new/decode，空 assets→全 404→永远走 fallback）
+	function init(canvasEl) { canvas = canvasEl; ctx = canvas.getContext('2d'); wrapDc(ctx); resize(); preloadSprites() }   // b9+diag：包装 ctx 计数绘制调用；#M0 一次性预载精灵（每帧不 new/decode，空 assets→全 404→永远走 fallback）
 	function resize() {
 		if (!canvas) { return }
 		if (!updateViewport()) { return }
@@ -1073,63 +1053,36 @@ function drawSnake() {
 		}
 		ctxField.lineCap = 'round'; ctxField.lineJoin = 'round'; ctxField.lineWidth = fr * 2 * width; ctxField.strokeStyle = 'rgba(255,95,30,' + alpha + ')'; ctxField.stroke(); ctxField.restore()
 	}
-	function fireTierName() {
-		var tier = _tierName || 'HIGH'
-		var fx = RT('STYLE.fxLevel', STYLE.fxLevel)
-		if (fx === 'low') { return 'LOW' }
-		if (fx === 'med' && tier !== 'LOW' && tier !== 'POTATO') { return 'MED' }
-		return tier === 'POTATO' || tier === 'LOW' || tier === 'MED' || tier === 'HIGH' ? tier : 'HIGH'
-	}
 	function fireSegmentPoint(seg) {
 		return {
 			x: seg.px != null ? M.lerp(seg.px, seg.x, _ra) : seg.x,
 			y: seg.py != null ? M.lerp(seg.py, seg.y, _ra) : seg.y
 		}
 	}
-	function firePointAt(segs, at) {
-		var clamped = M.clamp(at, 0, segs.length - 1), lo = Math.floor(clamped), hi = Math.min(segs.length - 1, lo + 1), mix = clamped - lo
-		var a = fireSegmentPoint(segs[lo]), b = fireSegmentPoint(segs[hi])
-		return { x: M.lerp(a.x, b.x, mix), y: M.lerp(a.y, b.y, mix) }
-	}
-	function drawFireSprites() {
-		var sk = Registry.get('skill'), s = Registry.get('snake')
-		if (!sk || !sk.owned || !s || !s.segments || s.segments.length === 0) { return }
-		var owned = sk.owned()
-		if (!(owned.fire > 0) || RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
+	function drawFireBodyHeatBelowEntities() {
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length < 2) { return }
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
+		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var fv = CONFIG.RENDER && CONFIG.RENDER.fireVfx ? CONFIG.RENDER.fireVfx : {}
-		var tier = fireTierName(), levelCounts = fv.flameCountByLevel || [2, 3, 4, 4, 4], tierCounts = fv.flameCountByTier || { HIGH: 4, MED: 3, LOW: 0, POTATO: 0 }
-		var levelIndex = Math.max(0, Math.min(levelCounts.length - 1, owned.fire - 1)), count = Math.min(levelCounts[levelIndex] || 0, tierCounts[tier] || 0)
-		var segs = s.segments, flameA = fireRenderAsset('flameA'), flameB = fireRenderAsset('flameB')
-		count = Math.min(count, segs.length)
-		var flameSize = typeof fv.flameSize === 'number' ? fv.flameSize : 46
-		var flameAlpha = typeof fv.flameAlpha === 'number' ? fv.flameAlpha : 0.78
-		var rootOffset = typeof fv.flameRootOffset === 'number' ? fv.flameRootOffset : 0.85
-		var pivot = typeof fv.flamePivot === 'number' ? fv.flamePivot : 0.9
-		var flameSway = typeof fv.flameSway === 'number' ? fv.flameSway : 0.055
 		var bodyRadius = getSpriteRadius('PLAYER.bodyRadius')
-		var time = GS.timeSec || 0
-		for (var i = 0; i < count; i++) {
-			var ratio = count > 1 ? i / (count - 1) : 0.5, at = (0.18 + ratio * 0.70) * (segs.length - 1)
-			var center = firePointAt(segs, at), previous = firePointAt(segs, at - 1), next = firePointAt(segs, at + 1)
-			var tx = next.x - previous.x, ty = next.y - previous.y, tangentLen = Math.sqrt(tx * tx + ty * ty) || 1
-			var side = i % 2 === 0 ? -1 : 1, nx = -ty / tangentLen * side, ny = tx / tangentLen * side
-			var x = center.x + nx * bodyRadius * rootOffset, y = center.y + ny * bodyRadius * rootOffset
-			var img = (i % 2 === 0 ? flameA : flameB) || flameA || flameB
-			var pulse = Math.sin(time * 2.2 + i * 1.7), angle = Math.atan2(ny, nx) + M.PI / 2 + pulse * flameSway
-			var size = flameSize * (0.94 + pulse * 0.04)
-			if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-				ctx.save(); ctx.globalAlpha = M.clamp(flameAlpha * (0.92 + pulse * 0.08), 0, 1); ctx.translate(x, y); ctx.rotate(angle)
-				ctx.drawImage(img, -size / 2, -size * pivot, size, size); ctx.restore()
-			} else {
-				ctx.globalAlpha = flameAlpha * 0.35; ctx.fillStyle = '#ff9a3c'; ctx.beginPath(); ctx.arc(x, y, size * 0.18, 0, M.PI2); ctx.fill(); ctx.globalAlpha = 1
-			}
+		var levelIndex = Math.max(0, Math.min(4, owned.fire - 1))
+		var levelBoost = 1 + (typeof fv.bodyHeatLevelAlphaBoost === 'number' ? fv.bodyHeatLevelAlphaBoost : 0.18) * (levelIndex / 4)
+		var outerExtra = typeof fv.bodyHeatOuterExtraPx === 'number' ? fv.bodyHeatOuterExtraPx : 10
+		var innerExtra = typeof fv.bodyHeatInnerExtraPx === 'number' ? fv.bodyHeatInnerExtraPx : 4
+		var outerAlpha = M.clamp((typeof fv.bodyHeatOuterAlpha === 'number' ? fv.bodyHeatOuterAlpha : 0.20) * levelBoost, 0, 1)
+		var innerAlpha = M.clamp((typeof fv.bodyHeatInnerAlpha === 'number' ? fv.bodyHeatInnerAlpha : 0.12) * levelBoost, 0, 1)
+		var snap = DIR1_SNAP()
+		ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.beginPath()
+		for (var sf = 1; sf < s.segments.length; sf++) {
+			var point = fireSegmentPoint(s.segments[sf]), x = point.x, y = point.y
+			if (snap) { x = snapWX(x); y = snapWY(y) }
+			if (sf === 1) { ctx.moveTo(x, y) } else { ctx.lineTo(x, y) }
 		}
-		var core = fireRenderAsset('core')
-		if (fv.coreEnabled && core && core.naturalWidth > 0 && core.naturalHeight > 0) {
-			var h = interpHead() || s.head, hp = fireSegmentPoint(h), coreSize = typeof fv.coreSize === 'number' ? fv.coreSize : 30, coreAlpha = typeof fv.coreAlpha === 'number' ? fv.coreAlpha : 0.28
-			ctx.save(); ctx.globalAlpha = coreAlpha; ctx.drawImage(core, hp.x - coreSize / 2, hp.y - coreSize / 2, coreSize, coreSize); ctx.restore()
-		}
-		ctx.globalAlpha = 1
+		ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		ctx.lineWidth = bodyRadius * 2 + outerExtra; ctx.strokeStyle = 'rgba(255,95,30,' + outerAlpha + ')'; ctx.stroke()
+		ctx.lineWidth = bodyRadius * 2 + innerExtra; ctx.strokeStyle = 'rgba(255,180,60,' + innerAlpha + ')'; ctx.stroke()
+		ctx.restore()
 	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
@@ -1240,8 +1193,9 @@ function drawSnake() {
 	ctx.translate(-rcxS, -rcyS)
 	drawBounds()
 	drawFireFieldBelowEntities()
+	drawFireBodyHeatBelowEntities()
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
-	drawFireSprites(); drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
+	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
 	drawDebugHitboxes()
 	ctx.restore()

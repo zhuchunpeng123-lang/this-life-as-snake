@@ -208,8 +208,8 @@
 	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
 	// 火墙余烬：视觉绑定「火源=蛇身」而非「敌数」——第三轮误删火 DOT 逐次火花后火墙无粒子感(用户反馈表现力弱)，
-	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：每 fixed-step 沿蛇身随机取点喷 n 颗余烬，
-	//   数量随火阶微增但受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌=5 敌)，零 gameplay
+	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
+	//   受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌仍为固定频率)，零 gameplay
 	function spawnFireEmbers() {
 		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var tier = _fireTierName
@@ -227,15 +227,21 @@
 		for (var pi = 0; pi < particles.length; pi++) { if (particles[pi].fireEmber) { emberCount++ } }
 		if (emberCount >= emberCap) { return }
 		var segs = s.segments, emberImg = fireParticleAsset('ember')
-		var emberSize = typeof fv.emberSize === 'number' ? fv.emberSize : 7
+		var emberSize = typeof fv.emberSize === 'number' ? fv.emberSize : 6
 		var emberScale = typeof fv.emberScale === 'number' ? fv.emberScale : 1
-		var emberAlpha = typeof fv.emberAlpha === 'number' ? fv.emberAlpha : 0.7
-		var sample = 0.16 + Math.random() * 0.68, at = sample * (segs.length - 1)
+		var emberAlpha = typeof fv.emberAlpha === 'number' ? fv.emberAlpha : 0.55
+		var emberDrift = typeof fv.emberDriftX === 'number' ? fv.emberDriftX : 10
+		var emberRiseMin = typeof fv.emberRiseMin === 'number' ? fv.emberRiseMin : 26
+		var emberRiseMax = typeof fv.emberRiseMax === 'number' ? fv.emberRiseMax : 42
+		var emberLifeMin = typeof fv.emberLifeMin === 'number' ? fv.emberLifeMin : 0.28
+		var emberLifeMax = typeof fv.emberLifeMax === 'number' ? fv.emberLifeMax : 0.42
+		var emberJitter = typeof fv.emberJitter === 'number' ? fv.emberJitter : 4
+		var sample = 0.20 + Math.random() * 0.65, at = sample * (segs.length - 1)
 		var sg = segs[Math.max(0, Math.min(segs.length - 1, Math.round(at)))]
-		var a = Math.random() * M.PI2, sp = 30 + Math.random() * 50
-		emitParticle(sg.x + (Math.random() * 2 - 1) * 6, sg.y + (Math.random() * 2 - 1) * 6,
-			Math.cos(a) * sp, Math.sin(a) * sp - 30,
-			0.35 + Math.random() * 0.2, emberSize,
+		var drift = (Math.random() * 2 - 1) * emberDrift, rise = emberRiseMin + Math.random() * Math.max(0, emberRiseMax - emberRiseMin)
+		emitParticle(sg.x + (Math.random() * 2 - 1) * emberJitter, sg.y + (Math.random() * 2 - 1) * emberJitter,
+			drift, -rise,
+			emberLifeMin + Math.random() * Math.max(0, emberLifeMax - emberLifeMin), emberSize,
 			Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low', emberImg, emberScale,
 			Math.sin(now * 2 + sample) * 0.12, emberAlpha, true)
 	}
@@ -250,7 +256,7 @@
 			var i
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
 			dotTextThisFrame = 0   // P2-10：DOT 飘字抽稀计数归零
-			spawnFireEmbers()   // 火墙余烬：每 fixed-step 沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
+			spawnFireEmbers()   // 火墙余烬：按固定间隔沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
 			for (i = particles.length - 1; i >= 0; i--) {
 				var p = particles[i]
 				p.life -= dt

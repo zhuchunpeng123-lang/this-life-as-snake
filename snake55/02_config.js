@@ -121,26 +121,27 @@
 		// —— 纯视觉渲染（非 §9 平衡值；视图缩放仅改世界显示尺寸，不影响碰撞/坐标/平衡）——
 	RENDER: {
 		worldScale: 0.8,         // 视图缩放默认 0.8（还原「更小更精致」蛇/怪画面）；GM「视图缩放(纯视觉)」滑条 0.6–1.0 实时可调；×1.0=原始 1:1（注：此值仅作文档真理源，render 实际由 RT('RENDER.worldScale',0.8) 取、editor 覆盖优先）
-		fireField: { alpha: 0.06, width: 1 },
+		fireField: { alpha: 0.03, width: 1 },
 		fireVfx: {
-			flameCountByLevel: [2, 3, 4, 4, 4],
-			flameCountByTier: { HIGH: 4, MED: 3, LOW: 0, POTATO: 0 },
-			flameSize: 46,
-			flameAlpha: 0.78,
-			flameRootOffset: 0.85,
-			flamePivot: 0.9,
-			flameSway: 0.055,
-			emberIntervalSec: { HIGH: 0.09, MED: 0.14 },
-			emberMax: { HIGH: 6, MED: 4 },
-			emberSize: 7,
+			bodyHeatOuterExtraPx: 10,
+			bodyHeatOuterAlpha: 0.20,
+			bodyHeatInnerExtraPx: 4,
+			bodyHeatInnerAlpha: 0.12,
+			bodyHeatLevelAlphaBoost: 0.18,
+			emberIntervalSec: { HIGH: 0.18, MED: 0.28 },
+			emberMax: { HIGH: 4, MED: 2 },
+			emberSize: 6,
 			emberScale: 1,
-			emberAlpha: 0.7,
-			hitBurstSize: 58,
-			hitBurstLife: 0.18,
-			hitBurstAlpha: 0.9,
-			coreEnabled: false,
-			coreSize: 30,
-			coreAlpha: 0.28
+			emberAlpha: 0.55,
+			emberDriftX: 10,
+			emberRiseMin: 26,
+			emberRiseMax: 42,
+			emberLifeMin: 0.28,
+			emberLifeMax: 0.42,
+			emberJitter: 4,
+			hitBurstSize: 48,
+			hitBurstLife: 0.16,
+			hitBurstAlpha: 0.80
 		},
 		// 敌人贴图视觉微调系数（只缩放显示，不动碰撞/血量/速度/伤害；纯视觉，允许视觉≥判定）。
 		// 2026-07-24p · 贴图显示直径仍以碰撞半径为基线，但各 PNG 按透明主体占比做视觉校准，不改判定半径。
