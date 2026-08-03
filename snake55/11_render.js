@@ -853,8 +853,8 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		for (var k = 0; k < l.length; k++) {
 			var e2 = l[k]; if (!e2.active) { continue }
 			if (!inView(e2.x, e2.y, e2.radius)) { continue }
-			if (e2.burnT > 0) { drawBurnMark(e2) }       // ⑦ 燃烧标记（cheap，始终显示；关火仅压余烬粒子，不关视觉）
-			if (e2.slowT > 0 && !T3) { drawSlowMark(e2) }       // 减速标记
+			if (e2.burnT > 0) { drawBurnMark(e2, e2.slowT > 0 && !T3) }       // ⑦ 燃烧标记（cheap，始终显示；关火仅压余烬粒子，不关视觉）
+			if (e2.slowT > 0 && !T3) { drawSlowMark(e2, e2.burnT > 0) }       // 减速标记，与灼烧并排
 			if (e2.type !== 'bossBullet' && e2.type !== 'boss') { drawHpBar(e2, _ix(e2), _iy(e2)) }
 		}
 	}
@@ -882,10 +882,10 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			ctx.fillText(Math.ceil(e.hp) + '/' + e.maxHp, ix, by - 2)
 		}
 	}
-function drawBurnMark(e) {                                        // ⑦ 燃烧可见：红脉动环 + 头顶火苗（插值位姿消 165Hz 跳）
-	var _ex = _ix(e), _ey = _iy(e)
+function drawBurnMark(e, hasSlow) {                               // ⑦ 燃烧可见：仅绘制头顶火苗，与减速标记并排且避开血条
+	var _ex = _ix(e) + (hasSlow ? -9 : 0), _ey = _iy(e)
 	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 18)
-	var fy = _ey - e.radius - 10 - pulse * 2
+	var fy = _ey - e.radius - 23 - pulse * 2
 	var flameScale = 1 + pulse * 0.12
 	ctx.save(); ctx.translate(_ex, fy); ctx.scale(flameScale, flameScale)
 	ctx.globalAlpha = 0.82 + pulse * 0.16; ctx.fillStyle = '#ff632f'
@@ -894,9 +894,9 @@ function drawBurnMark(e) {                                        // ⑦ 燃烧�
 	ctx.beginPath(); ctx.moveTo(0, -4); ctx.bezierCurveTo(3, -1, 3, 3, 0, 5); ctx.bezierCurveTo(-3, 2, -2, -1, 0, -4); ctx.closePath(); ctx.fill()
 	ctx.restore(); ctx.globalAlpha = 1
 }
-function drawSlowMark(e) {                                        // 冰冻/减速可见：蓝染环 + 头顶冰晶（插值位姿消 165Hz 跳）
-	var _ex = _ix(e), _ey = _iy(e)
-	var cy = _ey - e.radius - 10
+function drawSlowMark(e, hasBurn) {                                // 冰冻/减速可见：蓝染环 + 头顶冰晶，与灼烧标记并排且避开血条
+	var _ex = _ix(e) + (hasBurn ? 9 : 0), _ey = _iy(e)
+	var cy = _ey - e.radius - 23
 	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 10)
 	ctx.globalAlpha = 0.62 + pulse * 0.22; ctx.strokeStyle = '#8ceaff'; ctx.lineWidth = 2
 	ctx.beginPath(); ctx.arc(_ex, cy, 7 + pulse, 0, M.PI2); ctx.stroke()
