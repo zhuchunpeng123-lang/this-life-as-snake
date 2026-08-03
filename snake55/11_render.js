@@ -1074,7 +1074,7 @@ function drawSnake() {
 		ctxField.lineCap = 'round'; ctxField.lineJoin = 'round'; ctxField.lineWidth = fr * 2 * width; ctxField.strokeStyle = 'rgba(255,95,30,' + alpha + ')'; ctxField.stroke(); ctxField.restore()
 	}
 	function fireTierName() {
-		var tier = global.PerfTier && global.PerfTier.tier
+		var tier = _tierName || 'HIGH'
 		var fx = RT('STYLE.fxLevel', STYLE.fxLevel)
 		if (fx === 'low') { return 'LOW' }
 		if (fx === 'med' && tier !== 'LOW' && tier !== 'POTATO') { return 'MED' }
@@ -1086,30 +1086,40 @@ function drawSnake() {
 			y: seg.py != null ? M.lerp(seg.py, seg.y, _ra) : seg.y
 		}
 	}
+	function firePointAt(segs, at) {
+		var clamped = M.clamp(at, 0, segs.length - 1), lo = Math.floor(clamped), hi = Math.min(segs.length - 1, lo + 1), mix = clamped - lo
+		var a = fireSegmentPoint(segs[lo]), b = fireSegmentPoint(segs[hi])
+		return { x: M.lerp(a.x, b.x, mix), y: M.lerp(a.y, b.y, mix) }
+	}
 	function drawFireSprites() {
 		var sk = Registry.get('skill'), s = Registry.get('snake')
 		if (!sk || !sk.owned || !s || !s.segments || s.segments.length === 0) { return }
 		var owned = sk.owned()
 		if (!(owned.fire > 0) || RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var fv = CONFIG.RENDER && CONFIG.RENDER.fireVfx ? CONFIG.RENDER.fireVfx : {}
-		var counts = fv.flameCount || {}, count = counts[fireTierName()] || 0
+		var tier = fireTierName(), levelCounts = fv.flameCountByLevel || [2, 3, 4, 4, 4], tierCounts = fv.flameCountByTier || { HIGH: 4, MED: 3, LOW: 0, POTATO: 0 }
+		var levelIndex = Math.max(0, Math.min(levelCounts.length - 1, owned.fire - 1)), count = Math.min(levelCounts[levelIndex] || 0, tierCounts[tier] || 0)
 		var segs = s.segments, flameA = fireRenderAsset('flameA'), flameB = fireRenderAsset('flameB')
 		count = Math.min(count, segs.length)
-		var flameSize = typeof fv.flameSize === 'number' ? fv.flameSize : 34
+		var flameSize = typeof fv.flameSize === 'number' ? fv.flameSize : 46
 		var flameAlpha = typeof fv.flameAlpha === 'number' ? fv.flameAlpha : 0.78
-		var flameSway = typeof fv.flameSway === 'number' ? fv.flameSway : 0.08
+		var rootOffset = typeof fv.flameRootOffset === 'number' ? fv.flameRootOffset : 0.85
+		var pivot = typeof fv.flamePivot === 'number' ? fv.flamePivot : 0.9
+		var flameSway = typeof fv.flameSway === 'number' ? fv.flameSway : 0.055
+		var bodyRadius = getSpriteRadius('PLAYER.bodyRadius')
 		var time = GS.timeSec || 0
 		for (var i = 0; i < count; i++) {
-			var ratio = count > 1 ? i / (count - 1) : 0.5, at = ratio * (segs.length - 1)
-			var lo = Math.floor(at), hi = Math.min(segs.length - 1, lo + 1), mix = at - lo
-			var p0 = fireSegmentPoint(segs[lo]), p1 = fireSegmentPoint(segs[hi])
-			var x = M.lerp(p0.x, p1.x, mix), y = M.lerp(p0.y, p1.y, mix)
+			var ratio = count > 1 ? i / (count - 1) : 0.5, at = (0.18 + ratio * 0.70) * (segs.length - 1)
+			var center = firePointAt(segs, at), previous = firePointAt(segs, at - 1), next = firePointAt(segs, at + 1)
+			var tx = next.x - previous.x, ty = next.y - previous.y, tangentLen = Math.sqrt(tx * tx + ty * ty) || 1
+			var side = i % 2 === 0 ? -1 : 1, nx = -ty / tangentLen * side, ny = tx / tangentLen * side
+			var x = center.x + nx * bodyRadius * rootOffset, y = center.y + ny * bodyRadius * rootOffset
 			var img = (i % 2 === 0 ? flameA : flameB) || flameA || flameB
-			var pulse = Math.sin(time * 2.2 + i * 1.7), angle = -M.PI / 2 + pulse * flameSway
+			var pulse = Math.sin(time * 2.2 + i * 1.7), angle = Math.atan2(ny, nx) + M.PI / 2 + pulse * flameSway
 			var size = flameSize * (0.94 + pulse * 0.04)
 			if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
 				ctx.save(); ctx.globalAlpha = M.clamp(flameAlpha * (0.92 + pulse * 0.08), 0, 1); ctx.translate(x, y); ctx.rotate(angle)
-				ctx.drawImage(img, -size / 2, -size / 2, size, size); ctx.restore()
+				ctx.drawImage(img, -size / 2, -size * pivot, size, size); ctx.restore()
 			} else {
 				ctx.globalAlpha = flameAlpha * 0.35; ctx.fillStyle = '#ff9a3c'; ctx.beginPath(); ctx.arc(x, y, size * 0.18, 0, M.PI2); ctx.fill(); ctx.globalAlpha = 1
 			}

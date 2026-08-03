@@ -121,19 +121,24 @@
 		// —— 纯视觉渲染（非 §9 平衡值；视图缩放仅改世界显示尺寸，不影响碰撞/坐标/平衡）——
 	RENDER: {
 		worldScale: 0.8,         // 视图缩放默认 0.8（还原「更小更精致」蛇/怪画面）；GM「视图缩放(纯视觉)」滑条 0.6–1.0 实时可调；×1.0=原始 1:1（注：此值仅作文档真理源，render 实际由 RT('RENDER.worldScale',0.8) 取、editor 覆盖优先）
-		fireField: { alpha: 0.11, width: 1 },
+		fireField: { alpha: 0.06, width: 1 },
 		fireVfx: {
-			flameCount: { HIGH: 6, MED: 4, LOW: 0, POTATO: 0 },
-			flameSize: 34,
+			flameCountByLevel: [2, 3, 4, 4, 4],
+			flameCountByTier: { HIGH: 4, MED: 3, LOW: 0, POTATO: 0 },
+			flameSize: 46,
 			flameAlpha: 0.78,
-			flameSway: 0.08,
-			emberSize: 10,
+			flameRootOffset: 0.85,
+			flamePivot: 0.9,
+			flameSway: 0.055,
+			emberIntervalSec: { HIGH: 0.09, MED: 0.14 },
+			emberMax: { HIGH: 6, MED: 4 },
+			emberSize: 7,
 			emberScale: 1,
-			emberAlpha: 0.82,
+			emberAlpha: 0.7,
 			hitBurstSize: 58,
-			hitBurstLife: 0.22,
+			hitBurstLife: 0.18,
 			hitBurstAlpha: 0.9,
-			coreEnabled: true,
+			coreEnabled: false,
 			coreSize: 30,
 			coreAlpha: 0.28
 		},
