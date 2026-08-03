@@ -1033,6 +1033,57 @@ function drawSnake() {
 		drawSnakeEyes(ctx, _snakeEyeR, _snakeEyeAng)
 		ctx.restore()
 	}
+	function drawFireFieldBelowEntities() {
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var s = Registry.get('snake'); if (!s || !s.head) { return }
+		var owned = sk.owned(), segs = s.segments || [], SKC = CONFIG.SKILL
+		if (!(owned.fire > 0) || segs.length === 0) { return }
+		var ed = Registry.get('editor')
+		function tune(path, fallback) { var v = ed && typeof ed.rtGet === 'function' ? ed.rtGet(path) : undefined; return v !== undefined && v !== null ? v : fallback }
+		var fi = owned.fire - 1, field = CONFIG.RENDER && CONFIG.RENDER.fireField ? CONFIG.RENDER.fireField : { alpha: 0, width: 1 }
+		var fr = tune('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
+		var alpha = M.clamp(tune('RENDER.fireField.alpha', field.alpha), 0, 0.18)
+		var width = M.clamp(tune('RENDER.fireField.width', field.width), 0.9, 1.05)
+		var snap = DIR1_SNAP(), ctxField = ctx
+		ctxField.save(); ctxField.globalCompositeOperation = 'source-over'; ctxField.beginPath()
+		for (var sf = 0; sf < segs.length; sf += stepF) {
+			var sg = segs[sf], x = sg.px != null ? M.lerp(sg.px, sg.x, _ra) : sg.x, y = sg.py != null ? M.lerp(sg.py, sg.y, _ra) : sg.y
+			if (snap) { x = snapWX(x); y = snapWY(y) }
+			if (sf === 0) { ctxField.moveTo(x, y) } else { ctxField.lineTo(x, y) }
+		}
+		ctxField.lineCap = 'round'; ctxField.lineJoin = 'round'; ctxField.lineWidth = fr * 2 * width; ctxField.strokeStyle = 'rgba(255,95,30,' + alpha + ')'; ctxField.stroke(); ctxField.restore()
+	}
+	function fireSegmentPoint(seg) {
+		return {
+			x: seg.px != null ? M.lerp(seg.px, seg.x, _ra) : seg.x,
+			y: seg.py != null ? M.lerp(seg.py, seg.y, _ra) : seg.y
+		}
+	}
+	function drawFireBodyHeatBelowEntities() {
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length < 2) { return }
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
+		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
+		var fv = CONFIG.RENDER && CONFIG.RENDER.fireVfx ? CONFIG.RENDER.fireVfx : {}
+		var bodyRadius = getSpriteRadius('PLAYER.bodyRadius')
+		var levelIndex = Math.max(0, Math.min(4, owned.fire - 1))
+		var levelBoost = 1 + (typeof fv.bodyHeatLevelAlphaBoost === 'number' ? fv.bodyHeatLevelAlphaBoost : 0.18) * (levelIndex / 4)
+		var outerExtra = typeof fv.bodyHeatOuterExtraPx === 'number' ? fv.bodyHeatOuterExtraPx : 10
+		var innerExtra = typeof fv.bodyHeatInnerExtraPx === 'number' ? fv.bodyHeatInnerExtraPx : 4
+		var outerAlpha = M.clamp((typeof fv.bodyHeatOuterAlpha === 'number' ? fv.bodyHeatOuterAlpha : 0.20) * levelBoost, 0, 1)
+		var innerAlpha = M.clamp((typeof fv.bodyHeatInnerAlpha === 'number' ? fv.bodyHeatInnerAlpha : 0.12) * levelBoost, 0, 1)
+		var snap = DIR1_SNAP()
+		ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.beginPath()
+		for (var sf = 1; sf < s.segments.length; sf++) {
+			var point = fireSegmentPoint(s.segments[sf]), x = point.x, y = point.y
+			if (snap) { x = snapWX(x); y = snapWY(y) }
+			if (sf === 1) { ctx.moveTo(x, y) } else { ctx.lineTo(x, y) }
+		}
+		ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		ctx.lineWidth = bodyRadius * 2 + outerExtra; ctx.strokeStyle = 'rgba(255,95,30,' + outerAlpha + ')'; ctx.stroke()
+		ctx.lineWidth = bodyRadius * 2 + innerExtra; ctx.strokeStyle = 'rgba(255,180,60,' + innerAlpha + ')'; ctx.stroke()
+		ctx.restore()
+	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
@@ -1044,26 +1095,7 @@ function drawSnake() {
 	if (_snapA) { _iax = snapWX(_iax); _iay = snapWY(_iay) }
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		ctx.save()
-		// 火墙范围：复用真实技能半径与 segStep，作为实体之后的单层范围表现。
-		if (owned.fire > 0) {
-			var fireIndex = owned.fire - 1
-			var fireRadius = RTA('SKILL.fire.radius.' + fireIndex, SKC.fire.radius[fireIndex])
-			var fireStep = SKC.fire.segStep[fireIndex] || 1
-			var fireField = CONFIG.RENDER && CONFIG.RENDER.fireField ? CONFIG.RENDER.fireField : { alpha: 0.18 }
-			var fireAlpha = M.clamp(RTA('RENDER.fireField.alpha', fireField.alpha), 0.16, 0.20)
-			ctx.globalCompositeOperation = 'lighter'
-			ctx.beginPath()
-			for (var fireSeg = 0; fireSeg < s.segments.length; fireSeg += fireStep) {
-				var firePoint = s.segments[fireSeg]
-				var fireX = firePoint.px != null ? M.lerp(firePoint.px, firePoint.x, _ra) : firePoint.x
-				var fireY = firePoint.py != null ? M.lerp(firePoint.py, firePoint.y, _ra) : firePoint.y
-				if (_snapA) { fireX = snapWX(fireX); fireY = snapWY(fireY) }
-				if (fireSeg === 0) { ctx.moveTo(fireX, fireY) } else { ctx.lineTo(fireX, fireY) }
-			}
-			ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = fireRadius * 2
-			ctx.strokeStyle = 'rgba(255,95,30,' + fireAlpha + ')'; ctx.stroke()
-			ctx.globalCompositeOperation = 'source-over'
-		}
+		// —— 火墙：用户验收反馈 v2——保留"范围火墙"软光带(可见火墙范围) + 去掉沿身亮热边/flick 跳变(原被用户判为"蛇身细线/一闪一闪")；火焰反馈同时由 05_particle spawnFireEmbers 沿身余烬承担（零 gameplay，伤害判定在 08_skill 不动）——
 		// —— 护盾：球绕蛇头公转，半径/周期读 config（与 tickShield 同 orbitRadius/orbitSec，消双份真相源）——
 		if (owned.shield > 0) {
 			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = RTA('SKILL.shield.orbitRadius.' + si, SKC.shield.orbitRadius[si])
@@ -1160,6 +1192,8 @@ function drawSnake() {
 	if (window.__DIAG_FLICKER) { diagFlickerTick(rcx, rcy, rcxS, rcyS) }   // 中心闪诊断：每帧采样蛇头屏幕位置(受吸附 vs 真值)，供 GM 矩阵检测双重取整 toggle
 	ctx.translate(-rcxS, -rcyS)
 	drawBounds()
+	drawFireFieldBelowEntities()
+	drawFireBodyHeatBelowEntities()
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
 	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息

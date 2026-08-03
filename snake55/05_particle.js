@@ -40,8 +40,8 @@
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
 
-	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high', sprite: null, rotation: 0, spriteScale: 1, spriteAlpha: 1, kind: '', emberOuterLength: 0, emberOuterWidth: 0, emberInnerLength: 0, emberInnerWidth: 0 } }
-	function resetParticle(p) { p.active = false; p.sprite = null; p.rotation = 0; p.spriteScale = 1; p.spriteAlpha = 1; p.kind = ''; p.emberOuterLength = 0; p.emberOuterWidth = 0; p.emberInnerLength = 0; p.emberInnerWidth = 0 }
+	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high', sprite: null, rotation: 0, spriteScale: 1, spriteAlpha: 1, fireEmber: false } }
+	function resetParticle(p) { p.active = false; p.sprite = null; p.rotation = 0; p.spriteScale = 1; p.spriteAlpha = 1; p.fireEmber = false }
 	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
 	function resetText(t) { t.active = false }
 
@@ -79,7 +79,7 @@
 	var fireParticleAssets = {}
 	function preloadFireParticleAssets() {
 		if (typeof global.Image !== 'function') { return }
-		var files = { hitBurst: 'vfx_fire_hit_burst_v1.png' }
+		var files = { ember: 'vfx_fire_ember_v1.png', hitBurst: 'vfx_fire_hit_burst_v1.png' }
 		for (var key in files) {
 			if (!files.hasOwnProperty(key) || fireParticleAssets[key]) { continue }
 			var img = new global.Image()
@@ -109,7 +109,7 @@
 	Bus.on('perf:tier', function (d) { if (d && d.tier) { _fireTierName = d.tier } })
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
-	function emitParticle(x, y, vx, vy, life, size, color, drag, prio, sprite, spriteScale, rotation, spriteAlpha, fireEmber, emberOuterLength, emberOuterWidth, emberInnerLength, emberInnerWidth) {
+	function emitParticle(x, y, vx, vy, life, size, color, drag, prio, sprite, spriteScale, rotation, spriteAlpha, fireEmber) {
 		if (frameSpawn >= spawnBudget()) { return false }                 // 每帧预算耗尽：丢弃（削平齐爆尖峰）
 		if (particles.length >= maxParticles()) {
 			if (prio === 'high') { var ei = evictLow(particles); if (ei < 0) { return false } particlePool.release(particles[ei]); particles.splice(ei, 1) }
@@ -122,11 +122,7 @@
 		p.spriteScale = spriteScale > 0 ? spriteScale : 1
 		p.rotation = rotation || 0
 		p.spriteAlpha = spriteAlpha > 0 ? spriteAlpha : 1
-		p.kind = fireEmber ? 'fireEmber' : ''
-		p.emberOuterLength = emberOuterLength > 0 ? emberOuterLength : 0
-		p.emberOuterWidth = emberOuterWidth > 0 ? emberOuterWidth : 0
-		p.emberInnerLength = emberInnerLength > 0 ? emberInnerLength : 0
-		p.emberInnerWidth = emberInnerWidth > 0 ? emberInnerWidth : 0
+		p.fireEmber = !!fireEmber
 		particles.push(p); frameSpawn++; return true
 	}
 	function emitText(x, y, str, color, size, prio) {
@@ -211,45 +207,43 @@
 	}
 	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
-	// 火焰拖线：视觉绑定「火源=蛇身」而非敌数，使用固定预算和短寿命程序线段。
+	// 火墙余烬：视觉绑定「火源=蛇身」而非「敌数」——第三轮误删火 DOT 逐次火花后火墙无粒子感(用户反馈表现力弱)，
+	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
+	//   受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌仍为固定频率)，零 gameplay
 	function spawnFireEmbers() {
+		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var tier = _fireTierName
-		if (tier !== 'HIGH' && tier !== 'MED' && tier !== 'LOW') { return }
-		var suppress = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0
-		if (tier !== 'LOW' && suppress) { return }
+		if (tier !== 'HIGH' && tier !== 'MED') { return }
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
 		var fv = (CONFIG.RENDER && CONFIG.RENDER.fireVfx) || {}
-		var intervalTable = fv.emberIntervalSec || {}, interval = intervalTable[tier] || (tier === 'MED' ? 0.28 : (tier === 'LOW' ? 0.42 : 0.18))
+		var intervalTable = fv.emberIntervalSec || {}, interval = intervalTable[tier] || (tier === 'MED' ? 0.14 : 0.09)
 		var now = GS.timeSec || 0
 		if (now < fireEmberNextSec) { return }
 		fireEmberNextSec = now + interval
 		if (particles.length >= maxParticles() * 0.5) { return }
 		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length === 0) { return }
-		var maxTable = fv.emberMax || {}, emberCap = maxTable[tier] || (tier === 'MED' ? 5 : (tier === 'LOW' ? 2 : 8)), emberCount = 0
-		for (var pi = 0; pi < particles.length; pi++) { if (particles[pi].kind === 'fireEmber') { emberCount++ } }
+		var maxTable = fv.emberMax || {}, emberCap = maxTable[tier] || (tier === 'MED' ? 4 : 6), emberCount = 0
+		for (var pi = 0; pi < particles.length; pi++) { if (particles[pi].fireEmber) { emberCount++ } }
 		if (emberCount >= emberCap) { return }
-		var segs = s.segments
-		var outerLengthMin = typeof fv.emberOuterLengthMin === 'number' ? fv.emberOuterLengthMin : 5
-		var outerLengthMax = typeof fv.emberOuterLengthMax === 'number' ? fv.emberOuterLengthMax : 9
-		var outerWidth = typeof fv.emberOuterWidth === 'number' ? fv.emberOuterWidth : 2.5
-		var innerLengthRatio = typeof fv.emberInnerLengthRatio === 'number' ? fv.emberInnerLengthRatio : 0.62
-		var innerWidth = typeof fv.emberInnerWidth === 'number' ? fv.emberInnerWidth : 1.3
+		var segs = s.segments, emberImg = fireParticleAsset('ember')
+		var emberSize = typeof fv.emberSize === 'number' ? fv.emberSize : 6
+		var emberScale = typeof fv.emberScale === 'number' ? fv.emberScale : 1
+		var emberAlpha = typeof fv.emberAlpha === 'number' ? fv.emberAlpha : 0.55
 		var emberDrift = typeof fv.emberDriftX === 'number' ? fv.emberDriftX : 10
 		var emberRiseMin = typeof fv.emberRiseMin === 'number' ? fv.emberRiseMin : 26
 		var emberRiseMax = typeof fv.emberRiseMax === 'number' ? fv.emberRiseMax : 42
 		var emberLifeMin = typeof fv.emberLifeMin === 'number' ? fv.emberLifeMin : 0.28
 		var emberLifeMax = typeof fv.emberLifeMax === 'number' ? fv.emberLifeMax : 0.42
 		var emberJitter = typeof fv.emberJitter === 'number' ? fv.emberJitter : 4
-		var sample = 0.15 + Math.random() * 0.75, at = sample * (segs.length - 1)
+		var sample = 0.20 + Math.random() * 0.65, at = sample * (segs.length - 1)
 		var sg = segs[Math.max(0, Math.min(segs.length - 1, Math.round(at)))]
 		var drift = (Math.random() * 2 - 1) * emberDrift, rise = emberRiseMin + Math.random() * Math.max(0, emberRiseMax - emberRiseMin)
-		var outerLength = outerLengthMin + Math.random() * Math.max(0, outerLengthMax - outerLengthMin)
 		emitParticle(sg.x + (Math.random() * 2 - 1) * emberJitter, sg.y + (Math.random() * 2 - 1) * emberJitter,
 			drift, -rise,
-			emberLifeMin + Math.random() * Math.max(0, emberLifeMax - emberLifeMin), 1,
-			fv.emberOuterColor || '#ff7a2f', 0.9, 'low', null, 1,
-			0, 1, true, outerLength, outerWidth, outerLength * innerLengthRatio, innerWidth)
+			emberLifeMin + Math.random() * Math.max(0, emberLifeMax - emberLifeMin), emberSize,
+			Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low', emberImg, emberScale,
+			Math.sin(now * 2 + sample) * 0.12, emberAlpha, true)
 	}
 
 	preloadFireParticleAssets()
@@ -302,17 +296,7 @@
 				var a = p.life / p.maxLife
 				if (a < 0) { a = 0 }
 				var px = M.lerp(p.prevX, p.x, ra), py = M.lerp(p.prevY, p.y, ra)
-				if (p.kind === 'fireEmber') {
-					var evx = p.vx, evy = p.vy, el = Math.sqrt(evx * evx + evy * evy) || 1
-					var eux = evx / el, euy = evy / el
-					var outerHalf = p.emberOuterLength * 0.5, innerHalf = p.emberInnerLength * 0.5
-					var emberConfig = (CONFIG.RENDER && CONFIG.RENDER.fireVfx) || {}
-					ctx.save(); ctx.globalAlpha = a
-					ctx.lineCap = 'round'; ctx.strokeStyle = p.color; ctx.lineWidth = p.emberOuterWidth
-					ctx.beginPath(); ctx.moveTo(px - eux * outerHalf, py - euy * outerHalf); ctx.lineTo(px + eux * outerHalf, py + euy * outerHalf); ctx.stroke()
-					ctx.globalAlpha = a * 0.95; ctx.strokeStyle = emberConfig.emberInnerColor || '#ffd27a'; ctx.lineWidth = p.emberInnerWidth
-					ctx.beginPath(); ctx.moveTo(px - eux * innerHalf, py - euy * innerHalf); ctx.lineTo(px + eux * innerHalf, py + euy * innerHalf); ctx.stroke(); ctx.restore()
-				} else if (p.sprite && p.sprite.naturalWidth > 0 && p.sprite.naturalHeight > 0) {
+				if (p.sprite && p.sprite.naturalWidth > 0 && p.sprite.naturalHeight > 0) {
 					ctx.save(); ctx.globalAlpha = a * p.spriteAlpha; ctx.translate(px, py); ctx.rotate(p.rotation || 0)
 					var ps = p.size * p.spriteScale; ctx.drawImage(p.sprite, -ps / 2, -ps / 2, ps, ps); ctx.restore()
 				} else {
