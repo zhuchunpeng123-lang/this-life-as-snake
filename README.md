@@ -26,7 +26,7 @@
 - 无构建流程、无 import/export。
 - 所有脚本由 `snake55/index.html` 顺序加载。
 - 改任意 `snake55/*.js` 后必须同步 bump `index.html` 的 `?v=` 缓存戳。
-- 代码改动前必须先按 `AGENTS.md` 出计划并等用户确认。
+- 执行权限和确认边界以 `AGENTS.md` 为准；已授权的低风险任务不重复确认。
 
 ## 提交前静态检查
 
