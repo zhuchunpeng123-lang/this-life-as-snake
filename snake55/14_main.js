@@ -282,7 +282,7 @@
 			_diag.dtHist = {}; _diag.headHist = {}; _diag.freeze = 0; _diag.prevHx = null; _diag.prevHy = null
 		}
 	}
-	var startEl = null
+	var startEl = null, startStage = null, startButton = null
 	Bus.on('snake:hurt', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
 	Bus.on('enemy:phase', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
 	Bus.on('combo:found', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
@@ -322,15 +322,48 @@
 	}
 	Bus.on('ui:fullscreen_toggle', toggleFullscreen)   // 全屏按钮（#ui-stage 内）经 Bus 触发
 
-	function startIfMenu() {
+	function startIfMenu(allow) {
+		if (!allow) { return }
 		if (GS.status === 'menu') {
 			var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() }   // iOS 首次开始必须在同一用户手势内同步解锁，再重置本局并启动 BGM
 			// 不 display:none：隐藏元素会触发浏览器对本手势 pointer 的 pointercancel，把刚激活的摇杆瞬间释放（移动端触摸隐式捕获尤甚）→ 点开始后按住拖动全部失效
 			// 改为透明+不可交互，元素仍留 DOM 不触发 cancel；下一拍(手势已离开/已捕获到 canvas)再彻底移除
-			if (startEl) { startEl.style.pointerEvents = 'none'; startEl.style.opacity = '0'; setTimeout(function () { if (startEl) { startEl.style.display = 'none' } }, 400) }
+			if (startButton && startButton.blur) { startButton.blur() }
+			if (startEl) { startEl.setAttribute('aria-hidden', 'true'); startEl.style.pointerEvents = 'none'; startEl.style.opacity = '0'; setTimeout(function () { if (startEl) { startEl.style.display = 'none' } }, 400) }
 			var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() }
 		}
 	}
+
+	function startPageTuning(key, fallback) {
+		var ed = Registry.get('editor')
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet('UI.tuning.opening.' + key); if (v !== undefined && v !== null) { return v } }
+		var cfg = CONFIG.UI && CONFIG.UI.tuning && CONFIG.UI.tuning.opening
+		return cfg && cfg[key] != null ? cfg[key] : fallback
+	}
+	function refreshStartButtonVisual() {
+		if (!startButton) { return }
+		var base = Number(startPageTuning('buttonScale', 1)); if (!isFinite(base)) { base = 1 }
+		var factor = startButton._visualState === 'active' ? 0.98 : (startButton._visualState === 'hover' ? 1.02 : 1)
+		startButton.style.transform = 'scale(' + (base * factor) + ')'
+	}
+	function refreshStartPageLayout() {
+		if (!startStage || !startButton) { return }
+		var page = CONFIG.UI && CONFIG.UI.openingPage || {}
+		var w = Number(page.logicalWidth) || 1280, h = Number(page.logicalHeight) || 720
+		var b = page.button || { x: 134, y: 423, width: 500, height: 150 }
+		var unit = (startStage.clientWidth || w) / w
+		var ox = Number(startPageTuning('offsetX', 0)), oy = Number(startPageTuning('offsetY', 0)), os = Number(startPageTuning('scale', 1))
+		if (!isFinite(ox)) { ox = 0 }; if (!isFinite(oy)) { oy = 0 }; if (!isFinite(os) || os <= 0) { os = 1 }
+		startStage.style.transform = 'translate(' + (ox * unit) + 'px,' + (oy * unit) + 'px) scale(' + os + ')'
+		var bx = Number(startPageTuning('buttonOffsetX', 0)), by = Number(startPageTuning('buttonOffsetY', 0))
+		if (!isFinite(bx)) { bx = 0 }; if (!isFinite(by)) { by = 0 }
+		startButton.style.left = (((Number(b.x) || 134) + bx) / w * 100) + '%'
+		startButton.style.top = (((Number(b.y) || 423) + by) / h * 100) + '%'
+		startButton.style.width = ((Number(b.width) || 500) / w * 100) + '%'
+		startButton.style.height = ((Number(b.height) || 150) / h * 100) + '%'
+		refreshStartButtonVisual()
+	}
+	Bus.on('ui:tuning_changed', refreshStartPageLayout)
 
 	function readInput() {
 		// #3 修复：键盘优先——任一移动键按下即用键盘方向，鼠标悬停不再永久屏蔽 WASD
@@ -457,13 +490,33 @@
 
 	function buildStart(wrap) {
 		startEl = document.createElement('div')
-		startEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#fff;font:700 24px system-ui;background:rgba(8,10,20,0.6);z-index:15;cursor:pointer'
-		var t = document.createElement('div'); t.textContent = '5.5 好玩基因融合版贪吃蛇'; startEl.appendChild(t)
-		var sub = document.createElement('div'); sub.style.cssText = 'font-size:16px;opacity:.8'; sub.textContent = '点击 / 方向键(WASD) 开始 · ~ 调参'; startEl.appendChild(sub)
+		startEl.setAttribute('aria-label', '开局页')
+		startEl.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden;background:#11162a;z-index:15;opacity:1;transition:opacity .18s ease;pointer-events:none'
+		var page = CONFIG.UI && CONFIG.UI.openingPage || {}
+		var backdrop = document.createElement('div')
+		backdrop.setAttribute('aria-hidden', 'true')
+		backdrop.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#11162a;z-index:0'
+		var backdropImage = document.createElement('div')
+		backdropImage.style.cssText = 'position:absolute;inset:-32px;background:#11162a url("' + (page.backgroundSrc || 'assets/ui_hud_v1_refined/opening_background_1280x720.png') + '") center/cover no-repeat;filter:blur(24px) brightness(.55) saturate(.8);transform:scale(1.08);transform-origin:center center'
+		var backdropShade = document.createElement('div')
+		backdropShade.style.cssText = 'position:absolute;inset:0;background:rgba(5,12,32,.25)'
+		backdrop.appendChild(backdropImage); backdrop.appendChild(backdropShade); startEl.appendChild(backdrop)
+		startStage = document.createElement('div')
+		startStage.style.cssText = 'position:relative;width:min(100vw,177.7777777778vh);height:min(56.25vw,100vh);aspect-ratio:16/9;background:#11162a url("' + (page.backgroundSrc || 'assets/ui_hud_v1_refined/opening_background_1280x720.png') + '") center/100% 100% no-repeat;transform-origin:center center;overflow:visible;z-index:1'
+		startButton = document.createElement('button')
+		startButton.type = 'button'; startButton.tabIndex = 0; startButton.setAttribute('aria-label', '开始蛇生')
+		startButton.style.cssText = 'position:absolute;display:block;margin:0;padding:0;border:0;background:transparent url("' + (page.buttonSrc || 'assets/ui_hud_v1_refined/start_snake_life_button.png') + '") center/100% 100% no-repeat;cursor:pointer;pointer-events:auto;transform-origin:center center;transition:filter .15s ease,transform .15s ease;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;touch-action:manipulation'
+		startButton._visualState = 'idle'
+		startButton.addEventListener('pointerenter', function () { startButton._visualState = 'hover'; startButton.style.filter = 'brightness(1.08)'; refreshStartButtonVisual() })
+		startButton.addEventListener('pointerleave', function () { startButton._visualState = 'idle'; startButton.style.filter = ''; refreshStartButtonVisual() })
+		startButton.addEventListener('pointerdown', function (e) { startButton._visualState = 'active'; refreshStartButtonVisual(); e.stopPropagation(); startIfMenu(true) })
+		startButton.addEventListener('pointerup', function () { if (GS.status === 'menu') { startButton._visualState = 'hover'; refreshStartButtonVisual() } })
+		startButton.addEventListener('pointercancel', function () { startButton._visualState = 'idle'; refreshStartButtonVisual() })
+		startButton.addEventListener('click', function () { startIfMenu(true) })
+		startStage.appendChild(startButton); startEl.appendChild(startStage)
 		wrap.appendChild(startEl)
-		startEl.addEventListener('pointerdown', startIfMenu)
-		startEl.addEventListener('touchend', function () { var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() } }, { passive: true })
-		startEl.addEventListener('click', function () { var audio = Registry.get('audio'); if (audio && audio.unlock) { audio.unlock() } })
+		refreshStartPageLayout()
+		try { startButton.focus({ preventScroll: true }) } catch (_) { startButton.focus() }
 	}
 
 	function boot() {
@@ -510,6 +563,7 @@
 				viewportResizeFrame = 0
 				invalidateJoyGeometry()
 				var rr = Registry.get('render'); if (rr && rr.resize) { rr.resize() }
+				refreshStartPageLayout()
 			})
 		}
 		buildJoy()
@@ -531,7 +585,6 @@
 			return { x: (e.clientX - g.rect.left) * logicalW / g.rect.width, y: (e.clientY - g.rect.top) * logicalH / g.rect.height }
 		}
 		function joyDown(e) {
-			startIfMenu()                                // 点「开始/再来一局」先翻 playing，使本次按压的余下拖动即可转向（修开始遮罩吞 pointerdown→首手势摇杆不激活/蛇不转向）
 			if (inputBlocked()) { return }             // 6① 模态打开不接管（翻态后仍被挡则不激活）
 			if (joy.active) { return }                  // 6② 已锁定首指，多指忽略（不重置锚点）
 			if (isTouch && isPortrait()) { return }    // 竖屏遮罩激活时不接管摇杆（避免误触藏在遮罩下的操作区）
@@ -557,7 +610,7 @@
 			if (e.pointerId !== joy.pid) { return }   // 6② 仅锁定指释放，多指不误释放
 			joyRelease()
 		}
-		// 摇杆监听挂 window（非 canvas）：开始遮罩/结算遮罩等 UI 层不再吞 pointerdown，首手势即可激活摇杆并转向（修「进游戏摇杆不出现/蛇不转向」）；HUD 按钮点击仍走各自 handler 不受影响
+		// 摇杆监听挂 window（非 canvas）：开始遮罩/结算遮罩等 UI 层不再吞 pointerdown，首手势即可激活摇杆并转向；HUD 按钮点击仍走各自 handler 不受影响
 		global.addEventListener('pointerdown', function (e) {
 			if (e.target === canvas && e.cancelable) { e.preventDefault() }   // 仅画布区阻 iOS 双击缩放/滚动；HUD 按钮不 preventDefault 保证 click 正常
 			joyDown(e)                                  // 任意指针(鼠标/触摸/pen)按下即出浮动摇杆（6⑥ 全屏激活；落点=锚点）；joyDown 内先 startIfMenu 翻态
@@ -580,7 +633,6 @@
 			// 调试：重量级特效开关（2026-07-24 实测定因：白爆(T1)+火墙(T3)是 GPU 填充率尖峰主因）按 V
 			if (e.key === 'v' || e.key === 'V') { _toggleVfx() }   // 重量级特效诊断开关（仅改渲染，不再弹顶部横幅）
 			if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { Bus.emit('game:toggle_pause'); return }
-			if (e.key !== '`' && e.key !== '~') { startIfMenu() }
 		})
 		function _toggleVfx() {   // 一键关掉最贵的两种 GPU 填充：白爆(T1=suppressWhiteBurst) + 火墙/余烬(T3=suppressFire)，并锁 MED 档防摆动；纯诊断用，不动数值结构
 			var pt = global.PerfTier

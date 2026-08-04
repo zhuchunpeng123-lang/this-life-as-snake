@@ -403,6 +403,13 @@
 				normalCardSrc: 'assets/ui_hud_v1_refined/ui_choice_card_normal_v1.png',
 				selectedCardSrc: 'assets/ui_hud_v1_refined/ui_choice_card_selected_v1.png'
 			},
+			openingPage: {
+				backgroundSrc: 'assets/ui_hud_v1_refined/opening_background_1280x720.png',
+				buttonSrc: 'assets/ui_hud_v1_refined/start_snake_life_button.png',
+				logicalWidth: 1280,
+				logicalHeight: 720,
+				button: { x: 134, y: 423, width: 500, height: 150 }
+			},
 			icons: {
 			paddingPx: 2,
 			scale: 1,
@@ -430,6 +437,7 @@
 			playerStats: { overallScale: 0.8, widthVw: 34, offsetX: 6, offsetY: -56, contentScale: 0.74, contentOffsetX: -25, contentOffsetY: 0, labelSize: 17, valueSize: 15, labelValueGap: 1, lengthOffsetX: 0.01, killsOffsetX: 0.08, scoreOffsetX: 0.14, streakOffsetX: 0.19 },
 			stage: { overallScale: 1.05, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.77, progressHeight: 0.13, progressOffsetX: -0.01, progressOffsetY: -0.02 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
+			opening: { offsetX: 0, offsetY: 0, scale: 1, buttonOffsetX: 0, buttonOffsetY: 0, buttonScale: 1 },
       choice: { overallScale: 1.20, maxWidthPx: 881, gapPx: 0, cardWidthPx: 219, cardHeightPx: 265, cardPaddingPx: 39, cardPaddingTopPx: 60, cardPaddingBottomPx: 58, titleSizePx: 22, nameSizePx: 18, descSizePx: 12, badgeSizePx: 11, iconFramePx: 26, iconGapPx: 7, footerGapPx: 10, panelPaddingPx: 38, cardOffsetYPx: -17, titleOffsetYPx: -31 },
 			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, badgePx: 17 },
 			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, icon1OffsetX: -4, icon1OffsetY: -8, icon2OffsetX: 0, icon2OffsetY: -6, icon3OffsetX: 2, icon3OffsetY: -7 },
