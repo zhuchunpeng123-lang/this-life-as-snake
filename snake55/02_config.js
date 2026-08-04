@@ -398,6 +398,11 @@
 				combo: { src: 'assets/ui_hud_v1_refined/ui_combo_quiet_v1.png', ratio: 1.8343195266, title: { left: 0.24, right: 0.24, top: 0.08, height: 0.22 }, slots: [{ x: 0.25, y: 0.62 }, { x: 0.50, y: 0.62 }, { x: 0.75, y: 0.62 }], slotWidth: 0.22, slotHeight: 0.42 },
 				system: { src: 'assets/ui_hud_v1_refined/ui_system_button_minimal_v1.png', ratio: 1.6923076923, content: { left: 0.18, right: 0.18, top: 0.24, bottom: 0.22 } }
 			},
+			choiceSkin: {
+				panelSrc: 'assets/ui_hud_v1_refined/ui_choice_panel_v1.png',
+				normalCardSrc: 'assets/ui_hud_v1_refined/ui_choice_card_normal_v1.png',
+				selectedCardSrc: 'assets/ui_hud_v1_refined/ui_choice_card_selected_v1.png'
+			},
 			icons: {
 			paddingPx: 2,
 			scale: 1,
@@ -425,6 +430,7 @@
 			playerStats: { overallScale: 0.8, widthVw: 34, offsetX: 6, offsetY: -56, contentScale: 0.74, contentOffsetX: -25, contentOffsetY: 0, labelSize: 17, valueSize: 15, labelValueGap: 1, lengthOffsetX: 0.01, killsOffsetX: 0.08, scoreOffsetX: 0.14, streakOffsetX: 0.19 },
 			stage: { overallScale: 1.05, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.77, progressHeight: 0.13, progressOffsetX: -0.01, progressOffsetY: -0.02 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
+      choice: { overallScale: 1.20, maxWidthPx: 881, gapPx: 0, cardWidthPx: 219, cardHeightPx: 265, cardPaddingPx: 39, cardPaddingTopPx: 60, cardPaddingBottomPx: 58, titleSizePx: 22, nameSizePx: 18, descSizePx: 12, badgeSizePx: 11, iconFramePx: 26, iconGapPx: 7, footerGapPx: 10, panelPaddingPx: 38, cardOffsetYPx: -17, titleOffsetYPx: -31 },
 			skills: { overallScale: 0.9, widthVw: 34, offsetX: 6, offsetY: 14, badgePx: 17 },
 			combo: { overallScale: 0.75, widthVw: 24, offsetX: 0, offsetY: -16, icon1OffsetX: -4, icon1OffsetY: -8, icon2OffsetX: 0, icon2OffsetY: -6, icon3OffsetX: 2, icon3OffsetY: -7 },
 			bossBar: { widthPct: 0.58, maxWidthPx: 560, offsetY: -24, nameX: 0.50, nameY: 0.40, nameSize: 21, subtitleX: 0.50, subtitleY: 0.73, subtitleSize: 14, hpX: 0.50, hpY: 0.58, hpWidth: 0.76, hpHeight: 0.20, hpTextSize: 17 },
@@ -437,7 +443,7 @@
 		AUDIO: { enabled: true, masterVolume: 0.7, sfxVolume: 0.8, bgmVolume: 0.4 },
 
 		// —— Debug ——
-		DEBUG: { enabled: false, showHitboxes: false, showSpatialGrid: false, showFps: true, editorEnabled: false }
+		DEBUG: { enabled: true, showHitboxes: false, showSpatialGrid: false, showFps: true, editorEnabled: true }
 	}
 
 	global.CONFIG = CONFIG

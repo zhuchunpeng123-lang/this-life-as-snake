@@ -6,6 +6,7 @@
 	var UI_ICONS = (CONFIG.UI && CONFIG.UI.icons) || {}
 	var UI_ICON_ASSETS = UI_ICONS.assets || {}
 	var UI_HUD_SKIN = (CONFIG.UI && CONFIG.UI.hudSkin) || {}
+	var UI_CHOICE_SKIN = (CONFIG.UI && CONFIG.UI.choiceSkin) || {}
 
 	var SKILL_LABEL = { fire: '火焰光环', ice: '冰霜领域', bolt: '追踪飞镖', shield: '守护力场', lightning: '连锁闪电' } // TODO: 待确认
 	var SKILL_GLYPH = { fire: '火', ice: '冰', bolt: '镖', shield: '盾', lightning: '雷' }   // 技能栏单字徽标（文本，非 hex）
@@ -27,7 +28,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var timers = []
 	var usedChoiceIds = {}
 	var chooseKeyHandler = null   // 三选一键盘 1/2/3 监听句柄（显示时挂载、hideChoose 时移除）
-	var bossTagged = false, firstUpgradeTagged = false, choicesUsed = 0, choiceActive = false
+	var bossTagged = false, firstUpgradeTagged = false, choicesUsed = 0, choiceActive = false, choiceChoices = null
 	var ownedSkillIds = {}
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
@@ -40,7 +41,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		var text = iconText(fallback), box = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:' + frame + 'px;height:' + frame + 'px;padding:' + pad + 'px;overflow:hidden;flex:0 0 auto;line-height:1;text-align:center'
 		if (!spec.src) { return '<span style="' + box + ';font:800 15px system-ui">' + text + '</span>' }
 		var src = iconText(spec.src)
-		return '<span style="' + box + '"><img src="' + src + '" alt="" style="display:block;max-width:100%;max-height:100%;object-fit:contain;transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
+		return '<span style="' + box + '"><img src="' + src + '" alt="" style="display:block;max-width:100%;max-height:100%;object-fit:contain;transform:scale(' + scale + ');transform-origin:center center" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
 	}
 	function fmtTime(s) { var m = Math.floor(s / 60), ss = Math.floor(s % 60); return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss }
 	function hexA(hex, a) {   // STYLE token → rgba（派生透明度，无新 hex 字面量）；用于面板底/描边/阴影
@@ -55,6 +56,10 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		var cur = CONFIG.UI && CONFIG.UI.tuning, parts = path.split('.')
 		for (var i = 0; cur && i < parts.length; i++) { cur = cur[parts[i]] }
 		return cur
+	}
+	function getChoiceTuning(key, fallback) {
+		var value = getUiTuning('choice.' + key)
+		return value !== undefined ? value : fallback
 	}
 	function uiVar(name, value, unit) { if (hud) { hud.style.setProperty(name, String(value) + (unit || '')) } }
 	function ensureHudStyle() {
@@ -93,6 +98,22 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 			+ '@media (max-width:620px){.ui-v1-status{max-width:39vw}.ui-v1-build{max-width:43vw}.ui-v1-data{gap:2px 5px}.ui-v1-system-btn{min-width:86px}.ui-v1-boss{max-width:52vw}}'
 		style.textContent += '.ui-v1-skill,.ui-v1-combo-item{appearance:none;-webkit-appearance:none;border:0;padding:0;margin:0;background:transparent;color:inherit;font:inherit}'
 		style.textContent += '.ui-v1-panel{background-color:transparent}.ui-v1-stage{width:min(calc(var(--ui-stage-width-vw) * 1vw),360px)}.ui-v1-boss{background-color:transparent}.ui-v1-boss-subtitle{position:absolute;left:var(--boss-subtitle-x);top:var(--boss-subtitle-y);transform:translate(-50%,-50%);font-size:var(--boss-subtitle-size);color:var(--ui-text-dim);white-space:nowrap}.ui-v1-boss-track{background:transparent}.ui-v1-boss-hp-text{font-size:var(--boss-hp-text-size)}'
+		style.textContent += '.ui-v1-choice-content{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:var(--choice-title-gap);width:min(var(--choice-content-width),92vw);padding:var(--choice-panel-padding);transform:scale(var(--choice-scale));transform-origin:center center;background-color:var(--choice-panel-bg);background-repeat:no-repeat;background-position:center;background-size:100% 100%;color:var(--ui-text);text-align:center}'
+		style.textContent += '.ui-v1-choice-title{width:100%;margin:0;color:var(--ui-text);font:700 var(--choice-title-size)/1.2 system-ui;white-space:nowrap;text-shadow:0 1px 2px var(--ui-shadow);transform:translateY(var(--choice-title-offset-y))}'
+		style.textContent += '.ui-v1-choice-cards{display:grid;grid-template-columns:repeat(var(--choice-columns),minmax(0,1fr));gap:var(--choice-gap);width:100%;transform:translateY(var(--choice-cards-offset-y))}'
+		style.textContent += '.ui-v1-choice-card{position:relative;isolation:isolate;box-sizing:border-box;min-width:0;height:var(--choice-card-height);padding:var(--choice-card-padding-top) var(--choice-card-padding) var(--choice-card-padding-bottom);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:var(--choice-icon-gap);border:0;border-radius:14px;background-color:var(--choice-card-bg);color:var(--ui-text);cursor:pointer;font:600 var(--choice-name-size) system-ui;text-align:center;touch-action:manipulation;user-select:none;transition:transform .12s ease;overflow:hidden}'
+		style.textContent += '.ui-v1-choice-card::before{content:"";position:absolute;inset:0;z-index:0;background:transparent var(--choice-card-normal) center/100% 100% no-repeat;pointer-events:none}'
+		style.textContent += '.ui-v1-choice-card> *{position:relative;z-index:1}'
+		style.textContent += '.ui-v1-choice-card:hover,.ui-v1-choice-card:focus-visible,.ui-v1-choice-card:active{transform:translateY(-2px);outline:none}.ui-v1-choice-card:hover::before,.ui-v1-choice-card:focus-visible::before,.ui-v1-choice-card:active::before{filter:brightness(1.08) drop-shadow(0 0 9px var(--choice-skill-color))}'
+		style.textContent += '.ui-v1-choice-icon-row{display:flex;align-items:center;justify-content:center;width:var(--choice-icon-frame);height:var(--choice-icon-frame);flex:0 0 var(--choice-icon-frame);margin:0 auto}'
+		style.textContent += '.ui-v1-choice-icon-row>span{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;box-sizing:border-box}'
+		style.textContent += '.ui-v1-choice-name{width:100%;min-height:1.25em;color:var(--ui-text);font:700 var(--choice-name-size)/1.25 system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+		style.textContent += '.ui-v1-choice-desc{width:100%;min-height:2.6em;color:var(--ui-text-dim);font:500 var(--choice-desc-size)/1.45 system-ui;display:flex;align-items:flex-start;justify-content:center;overflow:hidden}'
+		style.textContent += '.ui-v1-choice-footer{display:flex;align-items:center;justify-content:space-between;gap:var(--choice-footer-gap);width:100%;margin-top:auto;flex:0 0 auto}'
+		style.textContent += '.ui-v1-choice-badge,.ui-v1-choice-key{box-sizing:border-box;white-space:nowrap;font:700 var(--choice-badge-size)/1.25 system-ui}'
+		style.textContent += '.ui-v1-choice-badge{padding:2px 10px;border-radius:999px;background:var(--choice-badge-bg);border:1px solid var(--choice-skill-color);color:var(--choice-skill-color)}'
+		style.textContent += '.ui-v1-choice-key{padding:2px 10px;border-radius:8px;background:var(--choice-key-bg);border:1px solid var(--choice-key-border);color:var(--ui-text-dim)}'
+		style.textContent += '@media (max-width:760px){.ui-v1-choice-content{width:92vw}.ui-v1-choice-card{padding-left:var(--choice-card-padding-small);padding-right:var(--choice-card-padding-small)}.ui-v1-choice-badge,.ui-v1-choice-key{padding-left:6px;padding-right:6px}.ui-v1-choice-desc{font-size:var(--choice-desc-size-small)}}'
 		document.head.appendChild(style)
 	}
 	function applyUiTuning() {
@@ -188,7 +209,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var _nf = document.createElement('style')
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
 		if (document.head) { document.head.appendChild(_nf) }
-		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
+		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;overflow:auto;padding:16px;box-sizing:border-box;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
 		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
 		buildInfoLayer = mk('div', '', froot); buildInfoLayer.className = 'ui-v1-build-info-layer'
 		buildInfoBox = mk('div', '', buildInfoLayer); buildInfoBox.className = 'ui-v1-build-info'
@@ -444,28 +465,99 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
 	}
 	function renderChooseCards(choices) {
+		choiceChoices = choices
 		choose.innerHTML = ''
-		var box = mk('div', 'display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:880px', choose)
-		mk('div', 'width:100%;text-align:center;color:' + STYLE.textMain + ';font:700 22px system-ui;margin-bottom:14px;white-space:nowrap', box).textContent = '三选一 · 升级'
+		var tuning = (CONFIG.UI && CONFIG.UI.tuning && CONFIG.UI.tuning.choice) || {}
+		var choiceScale = getChoiceTuning('overallScale', tuning.overallScale != null ? tuning.overallScale : 1.0)
+		var maxWidth = getChoiceTuning('maxWidthPx', tuning.maxWidthPx != null ? tuning.maxWidthPx : 880)
+		var gap = getChoiceTuning('gapPx', tuning.gapPx != null ? tuning.gapPx : 16)
+		var cardWidth = getChoiceTuning('cardWidthPx', tuning.cardWidthPx != null ? tuning.cardWidthPx : 220)
+		var cardPadding = getChoiceTuning('cardPaddingPx', tuning.cardPaddingPx != null ? tuning.cardPaddingPx : 16)
+		var cardHeight = getChoiceTuning('cardHeightPx', tuning.cardHeightPx != null ? tuning.cardHeightPx : 290)
+		var cardPaddingTop = getChoiceTuning('cardPaddingTopPx', tuning.cardPaddingTopPx != null ? tuning.cardPaddingTopPx : 54)
+		var cardPaddingBottom = getChoiceTuning('cardPaddingBottomPx', tuning.cardPaddingBottomPx != null ? tuning.cardPaddingBottomPx : 48)
+		var panelPadding = getChoiceTuning('panelPaddingPx', tuning.panelPaddingPx != null ? tuning.panelPaddingPx : 22)
+		var cardOffsetY = getChoiceTuning('cardOffsetYPx', tuning.cardOffsetYPx != null ? tuning.cardOffsetYPx : 0)
+		var titleOffsetY = getChoiceTuning('titleOffsetYPx', tuning.titleOffsetYPx != null ? tuning.titleOffsetYPx : 0)
+		var titleSize = getChoiceTuning('titleSizePx', tuning.titleSizePx != null ? tuning.titleSizePx : 22)
+		var nameSize = getChoiceTuning('nameSizePx', tuning.nameSizePx != null ? tuning.nameSizePx : 18)
+		var descSize = getChoiceTuning('descSizePx', tuning.descSizePx != null ? tuning.descSizePx : 13)
+		var badgeSize = getChoiceTuning('badgeSizePx', tuning.badgeSizePx != null ? tuning.badgeSizePx : 12)
+		var iconFrame = getChoiceTuning('iconFramePx', tuning.iconFramePx != null ? tuning.iconFramePx : (UI_ICONS.framePx && UI_ICONS.framePx.card ? UI_ICONS.framePx.card : 34))
+		var iconGap = getChoiceTuning('iconGapPx', tuning.iconGapPx != null ? tuning.iconGapPx : 8)
+		var footerGap = getChoiceTuning('footerGapPx', tuning.footerGapPx != null ? tuning.footerGapPx : 10)
+		var columns = Math.max(1, choices.length || 1)
+		var contentWidth = Math.min(maxWidth, cardWidth * columns + gap * Math.max(0, columns - 1) + panelPadding * 2)
+		var contentHeight = panelPadding * 2 + titleSize * 1.2 + Math.max(8, Math.round(gap * 0.75)) + cardHeight
+		var viewportWidth = Number(global.innerWidth) || contentWidth
+		var viewportHeight = Number(global.innerHeight) || contentHeight
+		var fitScale = Math.min((viewportWidth * 0.92) / contentWidth, (viewportHeight * 0.92) / contentHeight)
+		if (fitScale > 0 && fitScale < choiceScale) { choiceScale = fitScale }
+		var content = mk('div', '', choose)
+		content.className = 'ui-v1-choice-content'
+		content.style.setProperty('--choice-scale', String(choiceScale))
+		content.style.setProperty('--choice-content-width', contentWidth + 'px')
+		content.style.setProperty('--choice-columns', String(columns))
+		content.style.setProperty('--choice-gap', gap + 'px')
+		content.style.setProperty('--choice-panel-padding', panelPadding + 'px')
+		content.style.setProperty('--choice-title-gap', Math.max(8, Math.round(gap * 0.75)) + 'px')
+		content.style.setProperty('--choice-cards-offset-y', cardOffsetY + 'px')
+		content.style.setProperty('--choice-title-offset-y', titleOffsetY + 'px')
+		content.style.setProperty('--choice-title-size', titleSize + 'px')
+		content.style.setProperty('--choice-card-padding', cardPadding + 'px')
+		content.style.setProperty('--choice-card-padding-small', Math.max(8, Math.round(cardPadding * 0.75)) + 'px')
+		content.style.setProperty('--choice-card-height', cardHeight + 'px')
+		content.style.setProperty('--choice-card-padding-top', cardPaddingTop + 'px')
+		content.style.setProperty('--choice-card-padding-bottom', cardPaddingBottom + 'px')
+		content.style.setProperty('--choice-icon-frame', iconFrame + 'px')
+		content.style.setProperty('--choice-icon-gap', iconGap + 'px')
+		content.style.setProperty('--choice-name-size', nameSize + 'px')
+		content.style.setProperty('--choice-desc-size', descSize + 'px')
+		content.style.setProperty('--choice-desc-size-small', Math.max(11, descSize - 1) + 'px')
+		content.style.setProperty('--choice-footer-gap', footerGap + 'px')
+		content.style.setProperty('--choice-badge-size', badgeSize + 'px')
+		content.style.setProperty('--ui-text', STYLE.textMain)
+		content.style.setProperty('--ui-text-dim', STYLE.textDim)
+		content.style.setProperty('--ui-shadow', hexA(STYLE.bg, 0.6))
+		content.style.setProperty('--choice-panel-bg', 'transparent')
+		content.style.setProperty('--choice-card-bg', 'transparent')
+		content.style.setProperty('--choice-key-bg', hexA(STYLE.ui, 0.12))
+		content.style.setProperty('--choice-key-border', hexA(STYLE.ui, 0.30))
+		if (UI_CHOICE_SKIN.panelSrc) { content.style.backgroundImage = 'url("' + UI_CHOICE_SKIN.panelSrc.replace(/"/g, '') + '")' }
+		var title = mk('div', '', content)
+		title.className = 'ui-v1-choice-title'
+		title.textContent = '三选一 · 升级'
+		var cards = mk('div', '', content)
+		cards.className = 'ui-v1-choice-cards'
 		for (var i = 0; i < choices.length; i++) {
 			(function (c, idx) {
 				var col = STYLE.skillFx[c.id] || STYLE.ui   // 读真源 skillFx[id]（守护力场=shield 薄荷绿、冰霜=ice 冰蓝，不撞色）
 				var name = SKILL_LABEL[c.id] || c.id
 				var desc = SKILL_DESC[c.id] || ''
 				var lvlTxt = c.isNew ? '新技能' : ('升级 → Lv' + c.level)
-				var card = mk('button', 'width:min(220px,78vw);padding:16px;border-radius:14px;border:2px solid ' + col + ';background:' + STYLE.panel + ';color:' + STYLE.textMain + ';cursor:pointer;font:600 clamp(14px,4vw,16px) system-ui;text-align:left;box-shadow:0 0 14px ' + hexA(col, 0.28), box)   // P0-3：skillFx 色图标 + 名 + 描述 + Lv 标记 + 1/2/3 提示；P1-8 发光
-				card.innerHTML =
-					'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-					+ '<span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:' + hexA(col, 0.18) + ';border:1.5px solid ' + col + ';color:' + col + ';font:800 18px system-ui">' + (SKILL_GLYPH[c.id] || '?') + '</span>'
-					+ '<span style="font:700 18px system-ui;color:' + STYLE.textMain + '">' + name + '</span>'
-					+ '</div>'
-					+ '<div style="color:' + STYLE.textDim + ';font:500 13px/1.6 system-ui;min-height:42px">' + desc + '</div>'
-					+ '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">'
-					+ '<span style="padding:2px 10px;border-radius:999px;background:' + hexA(col, 0.16) + ';border:1px solid ' + col + ';color:' + col + ';font:700 12px system-ui">' + lvlTxt + '</span>'
-					+ '<span style="padding:2px 10px;border-radius:8px;background:' + hexA(STYLE.ui, 0.12) + ';border:1px solid ' + hexA(STYLE.ui, 0.3) + ';color:' + STYLE.textDim + ';font:700 12px system-ui">按 ' + (idx + 1) + '</span>'
-					+ '</div>'
-				var cardIconSlot = card.querySelector('div > span')
-				if (cardIconSlot) { cardIconSlot.outerHTML = iconMarkup(c.id, SKILL_GLYPH[c.id] || '?', 'card') }
+				var card = mk('button', '', cards)
+				card.type = 'button'
+				card.className = 'ui-v1-choice-card'
+				card.style.setProperty('--choice-skill-color', col)
+				if (UI_CHOICE_SKIN.normalCardSrc) { card.style.setProperty('--choice-card-normal', 'url("' + UI_CHOICE_SKIN.normalCardSrc.replace(/"/g, '') + '")') }
+				card.setAttribute('aria-label', name + '，' + lvlTxt)
+				var iconRow = mk('div', '', card)
+				iconRow.className = 'ui-v1-choice-icon-row'
+				iconRow.innerHTML = iconMarkup(c.id, SKILL_GLYPH[c.id] || '?', 'card')
+				var nameEl = mk('div', '', card)
+				nameEl.className = 'ui-v1-choice-name'
+				nameEl.textContent = name
+				var descEl = mk('div', '', card)
+				descEl.className = 'ui-v1-choice-desc'
+				descEl.textContent = desc
+				var footer = mk('div', '', card)
+				footer.className = 'ui-v1-choice-footer'
+				var badge = mk('span', '', footer)
+				badge.className = 'ui-v1-choice-badge'
+				badge.textContent = lvlTxt
+				var key = mk('span', '', footer)
+				key.className = 'ui-v1-choice-key'
+				key.textContent = '按 ' + (idx + 1)
 				card.onclick = function () { Bus.emit('ui:feedback', { kind: 'press', id: 'skill_card' }); var s = Registry.get('skill'); if (s) { s.pick(c.id) } hideChoose() }
 			})(choices[i], i)
 		}
@@ -482,7 +574,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (isPortrait()) { showRotateChoice(function () { renderChooseCards(choices) }); return }
 		renderChooseCards(choices)
 	}
-	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } hideRotateChoice() }
+	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } choiceChoices = null; hideRotateChoice() }
 	function hideBuildInfo() {
 		if (!buildInfoLayer) { return }
 		buildInfoLayer.style.display = 'none'
@@ -758,7 +850,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (hudData && hudData.scrollWidth > hudData.clientWidth + 1) { Log.warn('[ui][CB] hudData 溢出', hudData.scrollWidth, hudData.clientWidth) }
 	}
 
-	Bus.on('ui:tuning_changed', function () { _skillDomSignature = null; _comboDomSignature = null; applyUiTuning(); applyUiScale(); refreshHUD() })
+	Bus.on('ui:tuning_changed', function () { _skillDomSignature = null; _comboDomSignature = null; applyUiTuning(); applyUiScale(); refreshHUD(); if (choose && choiceChoices && choose.style.display !== 'none') { renderChooseCards(choiceChoices) } })
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })
 	Bus.on('skill:gained', function (d) {
 		if (!d) { return }

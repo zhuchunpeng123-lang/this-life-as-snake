@@ -1,0 +1,246 @@
+{
+  "source": "this_life_as_snake_hud_v1_module_kit.png",
+  "padding_px": 12,
+  "parts": [
+    {
+      "name": "ui_stage_frame",
+      "file": "ui_stage_frame.png",
+      "source_bbox": [
+        640,
+        106,
+        970,
+        285
+      ],
+      "crop_bbox_with_padding": [
+        628,
+        94,
+        982,
+        297
+      ],
+      "size": [
+        354,
+        203
+      ]
+    },
+    {
+      "name": "ui_player_life_frame",
+      "file": "ui_player_life_frame.png",
+      "source_bbox": [
+        37,
+        112,
+        607,
+        278
+      ],
+      "crop_bbox_with_padding": [
+        25,
+        100,
+        619,
+        290
+      ],
+      "size": [
+        594,
+        190
+      ]
+    },
+    {
+      "name": "ui_skill_bar_frame",
+      "file": "ui_skill_bar_frame.png",
+      "source_bbox": [
+        1003,
+        119,
+        1506,
+        281
+      ],
+      "crop_bbox_with_padding": [
+        991,
+        107,
+        1518,
+        293
+      ],
+      "size": [
+        527,
+        186
+      ]
+    },
+    {
+      "name": "ui_boss_frame",
+      "file": "ui_boss_frame.png",
+      "source_bbox": [
+        864,
+        352,
+        1518,
+        637
+      ],
+      "crop_bbox_with_padding": [
+        852,
+        340,
+        1530,
+        649
+      ],
+      "size": [
+        678,
+        309
+      ]
+    },
+    {
+      "name": "ui_combo_frame",
+      "file": "ui_combo_frame.png",
+      "source_bbox": [
+        541,
+        462,
+        827,
+        607
+      ],
+      "crop_bbox_with_padding": [
+        529,
+        450,
+        839,
+        619
+      ],
+      "size": [
+        310,
+        169
+      ]
+    },
+    {
+      "name": "ui_player_stats_frame",
+      "file": "ui_player_stats_frame.png",
+      "source_bbox": [
+        34,
+        474,
+        516,
+        607
+      ],
+      "crop_bbox_with_padding": [
+        22,
+        462,
+        528,
+        619
+      ],
+      "size": [
+        506,
+        157
+      ]
+    },
+    {
+      "name": "ui_system_button_square",
+      "file": "ui_system_button_square.png",
+      "source_bbox": [
+        390,
+        723,
+        580,
+        912
+      ],
+      "crop_bbox_with_padding": [
+        378,
+        711,
+        592,
+        924
+      ],
+      "size": [
+        214,
+        213
+      ]
+    },
+    {
+      "name": "ui_deco_left",
+      "file": "ui_deco_left.png",
+      "source_bbox": [
+        1114,
+        723,
+        1264,
+        913
+      ],
+      "crop_bbox_with_padding": [
+        1102,
+        711,
+        1276,
+        925
+      ],
+      "size": [
+        174,
+        214
+      ]
+    },
+    {
+      "name": "ui_deco_right",
+      "file": "ui_deco_right.png",
+      "source_bbox": [
+        1317,
+        723,
+        1467,
+        913
+      ],
+      "crop_bbox_with_padding": [
+        1305,
+        711,
+        1479,
+        925
+      ],
+      "size": [
+        174,
+        214
+      ]
+    },
+    {
+      "name": "ui_crystal_center",
+      "file": "ui_crystal_center.png",
+      "source_bbox": [
+        664,
+        757,
+        760,
+        879
+      ],
+      "crop_bbox_with_padding": [
+        652,
+        745,
+        772,
+        891
+      ],
+      "size": [
+        120,
+        146
+      ]
+    },
+    {
+      "name": "ui_system_button_wide",
+      "file": "ui_system_button_wide.png",
+      "source_bbox": [
+        64,
+        766,
+        304,
+        898
+      ],
+      "crop_bbox_with_padding": [
+        52,
+        754,
+        316,
+        910
+      ],
+      "size": [
+        264,
+        156
+      ]
+    },
+    {
+      "name": "ui_divider",
+      "file": "ui_divider.png",
+      "source_bbox": [
+        833,
+        808,
+        1053,
+        849
+      ],
+      "crop_bbox_with_padding": [
+        821,
+        796,
+        1065,
+        861
+      ],
+      "size": [
+        244,
+        65
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
-		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.20, 0.01], alpha: [0, 1, 0.02],
+		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], choiceWidth: [120, 1200, 1], choiceHeight: [120, 500, 1], choiceOffset: [-160, 160, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.20, 0.01], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.5, 1.4, 0.05]
 	}
@@ -106,6 +106,24 @@
 		{ group: '布局', path: 'UI.tuning.layout.statusOffsetY', label: '状态 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.buildOffsetY', label: '构筑区 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.systemOffsetY', label: '系统按钮 Y 偏移', rng: 'offset' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.overallScale', label: '三选一整体倍率', rng: 'scale' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardOffsetYPx', label: '卡牌框整体 Y', rng: 'choiceOffset' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.titleOffsetYPx', label: '三选一标题 Y', rng: 'choiceOffset' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.maxWidthPx', label: '面板最大宽度', rng: 'choiceWidth' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.gapPx', label: '卡牌间距', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardWidthPx', label: '卡牌宽度', rng: 'choiceWidth' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardHeightPx', label: '卡牌高度', rng: 'choiceHeight' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.panelPaddingPx', label: '面板内边距', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardPaddingPx', label: '卡牌水平内边距', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardPaddingTopPx', label: '卡牌内容顶部', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.cardPaddingBottomPx', label: '卡牌内容底部', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.iconFramePx', label: '技能图标框尺寸', rng: 'icon' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.iconGapPx', label: '图标与文字间距', rng: 'px' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.titleSizePx', label: '三选一标题字号', rng: 'font' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.nameSizePx', label: '技能名称字号', rng: 'font' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.descSizePx', label: '技能说明字号', rng: 'font' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.badgeSizePx', label: '等级标签字号', rng: 'font' },
+		{ group: '三选一 UI', path: 'UI.tuning.choice.footerGapPx', label: '底部标签间距', rng: 'px' },
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.overallScale', label: 'Life overall scale', rng: 'scale' },
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.widthVw', label: 'Life width', rng: 'width' },
 		{ group: '01 Player Life', path: 'UI.tuning.playerLife.offsetX', label: 'Life offset X', rng: 'offset' },
