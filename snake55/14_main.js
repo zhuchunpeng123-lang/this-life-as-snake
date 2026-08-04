@@ -19,7 +19,7 @@
 	var TIER_ORDER = ['HIGH', 'MED', 'LOW', 'POTATO']
 	var PerfTier = {
 		tier: 'HIGH', auto: true,
-		maxBackW: 2560, worldScale: 0.8, maxParticles: 240, maxTexts: 48, spawnBudget: 120,
+		maxBackW: 2560, worldScale: 0.8, maxParticles: 240, maxTexts: 48, spawnBudget: 120, maxBeams: 32,
 		suppressFire: false, suppressIceFill: false, suppressShake: false, simpleVignette: false, suppressWhiteBurst: false,
 		_downSec: 0, _upSec: 0, _emergencyCd: 0, _lastAppBackW: null, _fillSec: 0, _fillEma: null, _fireLockUntil: 0, _fireSuppressed: false, _recvSec: 0,
 		_tierCfg: function (name) { var t = PERF.tiers[name]; return t || PERF.tiers.HIGH },
@@ -28,6 +28,7 @@
 			this.tier = name
 			this.maxBackW = t.maxBackW; this.worldScale = t.worldScale
 			this.maxParticles = t.maxParticles; this.maxTexts = t.maxTexts; this.spawnBudget = t.spawnBudget
+			this.maxBeams = (t.maxBeams != null) ? t.maxBeams : (((((CONFIG.VFX || {}).electric || {}).maxBeamsByTier || {})[name]) || 32)
 			this.suppressFire = t.suppressFire || !!this._fireSuppressed; this.suppressIceFill = t.suppressIceFill
 			this.suppressShake = t.suppressShake; this.simpleVignette = t.simpleVignette
 			this.suppressWhiteBurst = !!t.suppressWhiteBurst

@@ -2,6 +2,7 @@
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, Log = global.Log
 	var AUDIO = CONFIG.AUDIO
+	var ELECTRIC_AUDIO = AUDIO.electric
 
 	// masterVolume controls the master bus; sfxVolume and UI_VOLUME stay on their own buses.
 	var MASTER_GAIN = AUDIO.masterVolume
@@ -135,13 +136,43 @@
 		src.connect(g); g.connect(out); trackVoice(list, src); if (when == null) { src.start() } else { src.start(when) }
 	}
 
+	// 短时滤波噪声：闪电裂响走 bandpass，电磁炮击走 lowpass；仅 one-shot，不创建常驻节点。
+	function filteredNoise(opt, dest, when) {
+		if (muted || hardPaused || !ensure()) { return }
+		if (when == null) { resume() }
+		opt = opt || {}
+		var t = when == null ? ctx.currentTime : when, dur = opt.dur || 0.08
+		var n = Math.max(1, Math.floor(ctx.sampleRate * dur)), buf = ctx.createBuffer(1, n, ctx.sampleRate), data = buf.getChannelData(0)
+		for (var i = 0; i < n; i++) {
+			var envelope = 1 - i / n, grain = opt.crackle ? (((i % 43) < 7) ? 1 : 0.34) : 1
+			data[i] = (Math.random() * 2 - 1) * envelope * grain
+		}
+		var src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain()
+		src.buffer = buf; filter.type = opt.filterType || 'bandpass'
+		filter.frequency.setValueAtTime(Math.max(20, opt.freq || 1200), t)
+		if (opt.freqTo) { filter.frequency.exponentialRampToValueAtTime(Math.max(20, opt.freqTo), t + dur) }
+		filter.Q.value = opt.q == null ? 0.8 : opt.q
+		g.gain.setValueAtTime(0.0001, t)
+		g.gain.exponentialRampToValueAtTime(opt.gain || 0.08, t + (opt.attack || 0.002))
+		g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+		var out = dest || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes
+		src.connect(filter); filter.connect(g); g.connect(out); trackVoice(list, src); src.start(t); src.stop(t + dur + 0.02)
+	}
+
 	// —— 节流器：同 key 在 ms 内只触发一次（防割草期/持续伤害音效堆叠成噪海）——
 	var _lastAt = {}
+	var electricGateAt = { lightning: -Infinity, electro: -Infinity }
 	function throttled(key, ms, fn) {
 		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
 		if (_lastAt[key] && (now - _lastAt[key]) < ms) { return }
 		_lastAt[key] = now
 		fn()
+	}
+	function electricGate(kind, fn) {
+		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now(), gate = ELECTRIC_AUDIO.gateMs
+		var last = electricGateAt[kind] == null ? -Infinity : electricGateAt[kind]
+		if (now - last < gate) { return }
+		electricGateAt[kind] = now; fn()
 	}
 	// —— 密度感知 duck：窗口内音效 >阈值 自动再压一档（多技能齐发/BGM 不打架，见 §十 密度 duck）——
 	var sfxCount = 0, sfxWinStart = 0, densityOn = false, densityTimer = null
@@ -199,6 +230,47 @@
 		var t = when == null ? ctx.currentTime : when, step = spacing || 0.06
 		for (var i = 0; i < notes.length; i++) { tone({ freq: notes[i], dur: 0.08 + i * 0.01, type: type, gain: gain }, sfxGain, t + i * step) }
 	}
+	function audioLevelValue(list, level, fallback) {
+		var i = Math.max(0, Math.min(4, (level || 1) - 1))
+		return list && list[i] != null ? list[i] : fallback
+	}
+	function playElectricLightning(d) {
+		if (muted || hardPaused || !ensure()) { return }
+		var meta = d && d.chain && d.chain.vfxMeta ? d.chain.vfxMeta : null
+		var level = Math.max(1, Math.min(5, meta && meta.level ? meta.level : ((d && d.level) || 1))), a = ELECTRIC_AUDIO.lightning, t = ctx.currentTime
+		var crackDur = audioLevelValue(a.crackleDurationByLevel, level, 0.10)
+		resume()
+		// 高频裂响 + 向下的击穿瞬态 + 向上的滋滋尾音；Lv1也保持清晰，Lv3/Lv5增加短脉冲层。
+		filteredNoise({ dur: crackDur, gain: audioLevelValue(a.crackleGainByLevel, level, 0.09), filterType: 'bandpass', freq: audioLevelValue(a.crackleHzByLevel, level, 2700), freqTo: audioLevelValue(a.crackleHzByLevel, level, 2700) * 0.72, q: a.crackleQ, crackle: true }, sfxGain, t)
+		tone({ freq: audioLevelValue(a.snapStartHzByLevel, level, 1200), freqTo: audioLevelValue(a.snapEndHzByLevel, level, 680), dur: audioLevelValue(a.snapDurationByLevel, level, 0.085), type: 'sawtooth', gain: audioLevelValue(a.snapGainByLevel, level, 0.12), attack: 0.002 }, sfxGain, t)
+		tone({ freq: audioLevelValue(a.tailStartHzByLevel, level, 1040), freqTo: audioLevelValue(a.tailEndHzByLevel, level, 1600), dur: audioLevelValue(a.tailDurationByLevel, level, 0.12), type: 'triangle', gain: audioLevelValue(a.tailGainByLevel, level, 0.043), attack: 0.004 }, sfxGain, t + 0.012)
+		var pulses = audioLevelValue(a.pulseCountByLevel, level, 1), pulseGain = audioLevelValue(a.pulseGainByLevel, level, 0.03)
+		for (var i = 0; i < pulses; i++) {
+			tone({ freq: 1680 - i * 150, freqTo: 1080 - i * 90, dur: a.pulseDurationSec, type: 'square', gain: pulseGain, attack: 0.001 }, sfxGain, t + 0.018 + i * a.pulseSpacingSec)
+		}
+	}
+	function playElectroDeploy(d) {
+		if (muted || hardPaused || !ensure()) { return }
+		var a = ELECTRIC_AUDIO.electro, t = ctx.currentTime
+		resume()
+		tone({ freq: a.deployStartHz, freqTo: a.deployEndHz, dur: a.deployDuration, type: 'sine', gain: a.deployGain, attack: 0.012 }, sfxGain, t)
+		tone({ freq: a.deployBodyStartHz, freqTo: a.deployBodyEndHz, dur: a.deployDuration * 0.90, type: 'triangle', gain: a.deployBodyGain, attack: 0.010 }, sfxGain, t)
+	}
+	function playElectroFire(d) {
+		if (muted || hardPaused || !ensure()) { return }
+		var a = ELECTRIC_AUDIO.electro, level = Math.max(1, Math.min(5, (d && d.comboLevel) || 1)), t = ctx.currentTime
+		resume()
+		// 炮击主体：低频下坠“砰” + 低通爆破 + 短促机械咔 + 紫电余响；与闪电的高频滋滋完全分域。
+		tone({ freq: audioLevelValue(a.fireBodyStartHzByLevel, level, 175), freqTo: a.fireBodyEndHz, dur: audioLevelValue(a.fireBodyDurationByLevel, level, 0.12), type: 'triangle', gain: audioLevelValue(a.fireBodyGainByLevel, level, 0.16), attack: 0.002 }, sfxGain, t)
+		filteredNoise({ dur: a.blastNoiseDuration, gain: audioLevelValue(a.blastNoiseGainByLevel, level, 0.086), filterType: 'lowpass', freq: a.blastNoiseHz, freqTo: a.blastNoiseHz * 0.58, q: a.blastNoiseQ }, sfxGain, t)
+		tone({ freq: a.fireClickStartHz, freqTo: a.fireClickEndHz, dur: a.fireClickDuration, type: 'square', gain: audioLevelValue(a.fireClickGainByLevel, level, 0.065), attack: 0.001 }, sfxGain, t + 0.006)
+		tone({ freq: audioLevelValue(a.energyStartHzByLevel, level, 810), freqTo: audioLevelValue(a.energyEndHzByLevel, level, 440), dur: a.energyDuration, type: 'triangle', gain: audioLevelValue(a.energyGainByLevel, level, 0.055), attack: 0.003 }, sfxGain, t + 0.018)
+	}
+	function playElectroEnd(d) {
+		if (muted || hardPaused || !ensure()) { return }
+		var a = ELECTRIC_AUDIO.electro, t = ctx.currentTime
+		resume(); tone({ freq: a.endStartHz, freqTo: a.endEndHz, dur: a.endDuration, type: 'sine', gain: a.endGain, attack: 0.006 }, sfxGain, t)
+	}
 	function playUiSemantic(d) {
 		d = d || {}
 		var cue = UI_AUDIO[d.kind] || UI_AUDIO.press
@@ -242,6 +314,7 @@
 	Bus.on('enemy:hit', function (d) {
 		d = d || {}
 		if (d.isDot && d.src === 'fire') { throttled('hit:fire', FIRE_AUDIO.dotThrottleMs, playFire) }
+		else if (d.src === 'electro' || d.src === 'lightning') { return }
 		else { throttled('hit:other', 70, function () { tone({ freq: 520, dur: 0.05, type: 'triangle', gain: 0.08 }) }) }
 	})
 	Bus.on('enemy:die', function (d) {
@@ -264,8 +337,10 @@
 	Bus.on('fx:bolt', function () { throttled('fx:bolt', 110, function () { tone({ freq: 720, freqTo: 980, dur: 0.07, type: 'square', gain: 0.08 }) }) })
 	Bus.on('fx:ice_throw', function () { throttled('fx:ice_throw', 140, function () { tone({ freq: 900, freqTo: 500, dur: 0.10, type: 'sine', gain: 0.08 }) }) })
 	Bus.on('fx:ice_pool', function () { throttled('fx:ice_pool', 220, function () { tone({ freq: 500, freqTo: 900, dur: 0.16, type: 'sine', gain: 0.08 }) }) })
-	Bus.on('fx:lightning', function () { throttled('fx:lightning', 120, function () { tone({ freq: 860, freqTo: 1300, dur: 0.08, type: 'sawtooth', gain: 0.10 }) }) })
-	Bus.on('fx:electroarc', function () { throttled('fx:electroarc', 120, function () { playSfxCue([520, 780, 1170], 'square', 0.08, 0.035) }) })
+	Bus.on('fx:lightning', function (d) { electricGate('lightning', function () { playElectricLightning(d) }) })
+	Bus.on('fx:electroturretdeploy', function (d) { electricGate('electro', function () { playElectroDeploy(d) }) })
+	Bus.on('fx:electroturretfire', function (d) { electricGate('electro', function () { playElectroFire(d) }) })
+	Bus.on('fx:electroturretend', playElectroEnd)
 	Bus.on('fx:steamblast', function () { throttled('fx:steamblast', FIRE_AUDIO.steamThrottleMs, playSteamBlast) })
 	Bus.on('fx:burndart', function () { throttled('fx:burndart', FIRE_AUDIO.dartThrottleMs, playBurnDart) })
 
@@ -479,7 +554,7 @@
 		if (duckTimer) { clearTimeout(duckTimer); duckTimer = null }
 		stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
 		pauseMul = 1; sfxPauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1
-		densityOn = false; sfxCount = 0; sfxWinStart = 0; curLayer = 'explore'; battleHeat = 1.0
+		densityOn = false; sfxCount = 0; sfxWinStart = 0; electricGateAt.lightning = -Infinity; electricGateAt.electro = -Infinity; curLayer = 'explore'; battleHeat = 1.0
 		pressureLevel = 0; pressureTarget = 0; buildLevel = 0; buildTarget = 0; musicSampleAt = 0; runCount++
 		if (ensure()) { applySfxGain(true); setLayer('explore') }
 		startBgm()

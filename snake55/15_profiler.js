@@ -24,8 +24,12 @@
 	var p = Registry && Registry.get('particle')
 	var en = Registry && Registry.get('enemy')
 		var sk = Registry && Registry.get('skill')
+		var edg = (sk && sk.getElectricDiag) ? sk.getElectricDiag() : {}
 		var G = gs()
 		var cv = (global.document && global.document.getElementById('game-canvas'))
+		var logicalW = global.CONFIG && global.CONFIG.GAME ? global.CONFIG.GAME.logicalWidth : 0, logicalH = global.CONFIG && global.CONFIG.GAME ? global.CONFIG.GAME.logicalHeight : 0
+		var rect = cv && cv.getBoundingClientRect ? cv.getBoundingClientRect() : null, cssW = rect ? rect.width : (cv ? cv.clientWidth : 0), cssH = rect ? rect.height : (cv ? cv.clientHeight : 0), dpr = global.devicePixelRatio || 1
+		var logicalToBackingScale = cv && logicalW ? cv.width / logicalW : 0
 		var pt = global.PerfTier
 		var fireSupp = (pt && pt.suppressFire) ? true : false   // 读自动关火态(perfFB 回退源与 render 一致)，日志可观测是否真关火
 		var owned = (sk && sk.owned) ? sk.owned() : null
@@ -42,6 +46,23 @@
 			presentGap: d.fps > 0 ? Math.max(0, 1000 / d.fps - d.cpuMs) : 0,   // 呈现gap=帧间隔(1000/fps)−主线程JS(cpuMs)；高 FPS≈vsync 空闲，掉帧时>0=JS 外等待(环境)，坐实"非代码"掉帧
 			particles: (p && p.particles) ? p.particles.length : 0,
 			texts: (p && p.texts) ? p.texts.length : 0,
+			beams: (p && p.beams) ? p.beams.length : 0,
+			maxBeams: (global.PerfTier && global.PerfTier.maxBeams != null) ? global.PerfTier.maxBeams : 0,
+			lightningActive: (p && p.DBG && p.DBG.lightningActive) ? 1 : 0,
+			electroTurretActive: (p && p.DBG && p.DBG.electroTurretActive) ? 1 : 0,
+			electroTurretFireAge: (p && p.DBG && typeof p.DBG.electroTurretFireAge === 'number') ? p.DBG.electroTurretFireAge : 999,
+			electroBeamCount: (p && p.DBG && p.DBG.electroBeamCount) ? p.DBG.electroBeamCount : 0,
+			beamDrops: (p && p.DBG && p.DBG.beamDrops) ? p.DBG.beamDrops : 0,
+			electricDecorDowngrade: (p && p.DBG && p.DBG.electricDecorDowngrade) ? p.DBG.electricDecorDowngrade : 0,
+			electricDecorDowngradeCumulative: true,
+			denseElectricMode: (p && p.DBG && p.DBG.denseElectricMode) ? 1 : 0,
+			electroAttempts: edg.electroAttempts || 0,
+			electroSuccess: edg.electroSuccess || 0,
+			electroNoTarget: edg.electroNoTarget || 0,
+			electroTargetsHit: edg.electroTargetsHit || 0,
+			electroLastGapSec: typeof edg.electroLastGapSec === 'number' ? edg.electroLastGapSec : 0,
+			electroRuntimeCooldown: typeof edg.electroRuntimeCooldown === 'number' ? edg.electroRuntimeCooldown : 0,
+			electroTimerRemaining: typeof edg.electroTimerRemaining === 'number' ? edg.electroTimerRemaining : 0,
 			pmax: (global.CONFIG && global.CONFIG.PERF) ? global.CONFIG.PERF.maxParticles : 0,
 			enemies: (en && en.countMobs) ? en.countMobs() : 0,
 			chasing: (en && en.chasingCount) ? en.chasingCount() : 0,   // 段③ aggro 读数：当前追蛇实敌数（HUD「追蛇/总数」占比）
@@ -59,7 +80,8 @@
 			tier: (global.PerfTier ? global.PerfTier.tier : '-'),
 			auto: (global.PerfTier ? global.PerfTier.auto : true),
 			stepRate: (global.__STEP_RATE != null ? global.__STEP_RATE : 0),   // 每秒 step() 次数（验证主循环回退：≈60，旧~330）
-			canvas: cv ? (cv.width + 'x' + cv.height) : '-'
+			canvas: cv ? (cv.width + 'x' + cv.height) : '-',
+			worldScale: rtVal('RENDER.worldScale', 1), devicePixelRatio: dpr, backingWidth: cv ? cv.width : 0, backingHeight: cv ? cv.height : 0, cssWidth: cssW, cssHeight: cssH, logicalToBackingScale: logicalToBackingScale
 		}
 	}
 	function push(line) {
@@ -70,6 +92,7 @@
 	function sample() {
 		var G = gs()
 		var s = getDiag()
+		push('Electric beams ' + s.electroBeamCount + '/3 | lightning ' + s.lightningActive + ' | turret ' + s.electroTurretActive + ' fireAge ' + s.electroTurretFireAge.toFixed(2) + ' | attempt/success/noTarget ' + s.electroAttempts + '/' + s.electroSuccess + '/' + s.electroNoTarget + ' | targetsHit ' + s.electroTargetsHit + ' | gap ' + s.electroLastGapSec.toFixed(2) + 's | timer/runtimeCD ' + s.electroTimerRemaining.toFixed(2) + '/' + s.electroRuntimeCooldown.toFixed(2) + ' | drops ' + s.beamDrops + ' | decorDown ' + s.electricDecorDowngrade + ' | dense ' + s.denseElectricMode)
 		push('FPS ' + s.fps + '/min' + s.fpsMin + ' | CPU ' + s.cpuMs.toFixed(1) + 'ms | step/s ' + s.stepRate.toFixed(0) + ' | 帧 ' + s.frameMs.toFixed(1) + 'ms | 外部 ' + s.presentGap.toFixed(1) + 'ms | 绘制 ' + s.drawCalls + '(' + s.dcDetail + ') | 粒子 ' + s.particles + '/' + s.pmax + ' | 白爆 ' + s.flash + ' | 全屏 ' + s.overlay + ' | 飘字 ' + s.texts + ' | 敌 ' + s.enemies + '(可见 ' + s.visEnemies + ') | 追蛇 ' + s.chasing + '/' + s.enemies + ' | 余烬 ' + s.embers + ' | 火焰 ' + s.flame + ' | T1 ' + s.t1 + ' | T3 ' + s.t3 + ' | 档 ' + s.tier + (s.auto ? '自动' : '固定') + ' | overdraw≈' + (s.overdraw / 1000 | 0) + 'k | 节 ' + s.segments + ' | 升级 ' + (G ? G.upgradesThisRun : 0) + ' | 画布 ' + s.canvas)
 		if (s.fps > 0 && s.fps < FPS_DROP && !dropping) { dropping = true; push('⚠ FPS 掉至 ' + s.fps + '(瞬时 min ' + s.fpsMin + ')（敌 ' + s.enemies + ' 可见 ' + s.visEnemies + ' 粒子 ' + s.particles + '/' + s.pmax + ' 白爆 ' + s.flash + ' 全屏 ' + s.overlay + ' 绘制 ' + s.drawCalls + ' 余烬 ' + s.embers + ' 火焰 ' + s.flame + ' overdraw≈' + (s.overdraw / 1000 | 0) + 'k CPU ' + s.cpuMs.toFixed(1) + 'ms）') }
 		else if (dropping && s.fps >= FPS_RECOVER) { dropping = false; push('✓ FPS 恢复至 ' + s.fps) }

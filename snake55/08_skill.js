@@ -21,13 +21,17 @@ var ICE_THROW_SEC = 0.16            // TODO: 冰锥飞行时长(s)（候选 0.15
 var ICE_POOL_GROW_SEC = 0.15        // TODO: 冰池生长时长(s)，scale 0→1（候选 0.12 / 0.18）
 var ICE_RETRY_SEC = 0.5             // TODO: 无目标时重试间隔(s)（候选 0.3 / 0.7）；避免蛇头远离敌群时空耗整轮 CD 导致节奏不稳
 var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool（等冰锥飞到落点再出霜环）；GS.timeSec 驱动，pause-safe
-	// ⚠ COMBO_ELECTRO_INTERVAL_SEC 已废弃：原周期 electroTurret 触发器已改为「bolt 命中触发 + 全局冷却」，
-	//   冷却语义由 CONFIG.COMBO.electroTurret.cooldownSec（§9 2026-07-11 已登记，单源 config 支持 ~ 编辑器/localStorage 热调）承接，不再留作本地常量。
+	// 电磁炮台只由有效飞镖命中部署，后续齐射由自身状态机驱动。
 
-	var timer = { bolt: 0, lightning: 0, electro: 0, ice: 0 }   // ⑥ 新增 ice CD；④ 移除 steam（改 per-enemy 冷却，见 enemy.steamCd）
+	var timer = { bolt: 0, lightning: 0, ice: 0 }   // ice CD；steam 使用 per-enemy 冷却
 	var foundCombo = {}
+	var electroTurretState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, shotsFired: 0, nextShotAt: 0, collapseSent: false, redeployCooldown: 0 }
 	var _enemySnap = []   // 每帧敌列快照（原地填充复用，零每帧分配；b6b380d 性能优化的回归修复：原每帧 new 数组 → GC 偶发卡顿）
 	var _aoeScratch = []   // enemiesIn 复用数组（AOE 索敌每帧多次调用，消除重复分配）
+	var electroDiag = {
+		electroAttempts: 0, electroSuccess: 0, electroNoTarget: 0, electroTargetsHit: 0,
+		electroLastTriggerSec: -1, electroLastGapSec: 0
+	}
 
 	function lvl(id) { return GS.ownedSkills[id] || 0 }
 	function idx(id) { return lvl(id) - 1 }
@@ -200,8 +204,96 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		Bus.emit('fx:ice_throw', { from: { x: tail.x, y: tail.y }, to: { x: x, y: y }, r: r, travel: ICE_THROW_SEC })   // 事件名全小写过 Bus 断言
 		icePending.push({ at: GS.timeSec + ICE_THROW_SEC, x: x, y: y, r: r, life: linger })   // 冰锥到达落点→出霜环（pause-safe 延迟）
 	}
+	function comboLevelFor(id, levels) {
+		var c = CO[id]; if (!c || !c.parts || !c.parts.length) { return 0 }
+		var min = SK.maxLevel, missing = false
+		for (var i = 0; i < c.parts.length; i++) {
+			var v = levels ? (levels[c.parts[i]] || 0) : lvl(c.parts[i])
+			if (v <= 0) { missing = true } else { min = Math.min(min, v) }
+		}
+		return missing ? 0 : Math.max(0, Math.min(SK.maxLevel, min))
+	}
+	function comboTierFor(id) {
+		var level = comboLevelFor(id)
+		return level >= 5 ? '高阶' : (level >= 3 ? '中阶' : (level >= 1 ? '初阶' : '未激活'))
+	}
+	function previewComboChanges(skillId, nextLevel) {
+		var result = [], keys = Object.keys(CO), hypothetical = {}
+		for (var i = 0; i < SK.list.length; i++) { hypothetical[SK.list[i]] = lvl(SK.list[i]) }
+		hypothetical[skillId] = Math.max(0, Math.min(SK.maxLevel, nextLevel | 0))
+		for (var k = 0; k < keys.length; k++) {
+			var id = keys[k], before = comboLevelFor(id), after = comboLevelFor(id, hypothetical)
+			if (after !== before) { result.push({ id: id, from: before, to: after, unlocks: before === 0 && after > 0 }) }
+		}
+		return result
+	}
+
+	function turretArray(name, level, fallback) {
+		var a = CO.electroTurret[name] || fallback
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function turretVfx() { return (((CONFIG.VFX || {}).electric || {}).electro) || {} }
+	function turretRadius(level) {
+		var a = turretVfx().radiusByLevel || [28, 32, 36, 40, 44]
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function clampTurretCoord(v, radius, max) { return Math.max(radius, Math.min(max - radius, v)) }
+	function deployElectroTurretAtHit(enemy) {
+		var s = electroTurretState
+		if (!foundCombo.electroTurret || s.active || s.redeployCooldown > 0 || !enemy) { return false }
+		var level = comboLevelFor('electroTurret'); if (level <= 0) { return false }
+		var h = headPos(), dx = enemy.x - h.x, dy = enemy.y - h.y, len = Math.sqrt(dx * dx + dy * dy), angle = len > 0.001 ? Math.atan2(dy, dx) : (h.angle || 0)
+		var radius = turretRadius(level), clearance = CO.electroTurret.deployClearancePx
+		var distance = enemy.radius + radius * 0.75 + clearance
+		s.x = clampTurretCoord(enemy.x - Math.cos(angle) * distance, radius, CONFIG.GAME.worldWidth)
+		s.y = clampTurretCoord(enemy.y - Math.sin(angle) * distance, radius, CONFIG.GAME.worldHeight)
+		s.active = true; s.phase = 'deploy'; s.age = 0; s.comboLevel = level; s.shotsFired = 0; s.collapseSent = false
+		s.nextShotAt = CO.electroTurret.firstShotSec
+		Bus.emit('fx:electroturretdeploy', { x: s.x, y: s.y, comboLevel: level, radius: radius })
+		return true
+	}
+	function turretTargets(s) {
+		var radius = turretArray('attackRadiusByLevel', s.comboLevel, [170, 190, 220, 245, 270]), radius2 = radius * radius
+		var minRange = CO.electroTurret.preferredMinRange, preferred = [], near = []
+		for (var i = 0; i < _enemySnap.length; i++) {
+			var e = _enemySnap[i]
+			if (!e || !e.active || e.type === 'bossBullet' || e.invuln > 0) { continue }
+			var d2 = M.distSq(s.x, s.y, e.x, e.y); if (d2 > radius2) { continue }
+			;(Math.sqrt(d2) >= minRange ? preferred : near).push({ enemy: e, d2: d2 })
+		}
+		preferred.sort(function (a, b) { return a.d2 - b.d2 }); near.sort(function (a, b) { return a.d2 - b.d2 })
+		var want = turretArray('targetsPerSalvoByLevel', s.comboLevel, [2, 2, 3, 3, 3]), selected = [], seen = {}
+		function take(list) { for (var i = 0; i < list.length && selected.length < want; i++) { var e = list[i].enemy; if (!seen[e.id]) { seen[e.id] = true; selected.push({ id: e.id, x: e.x, y: e.y, enemy: e }) } } }
+		take(preferred); take(near)
+		return selected
+	}
+	function fireElectroTurretSalvo(s) {
+		var targets = turretTargets(s), now = typeof GS.timeSec === 'number' ? GS.timeSec : 0
+		electroDiag.electroAttempts++; if (electroDiag.electroLastTriggerSec >= 0) { electroDiag.electroLastGapSec = now - electroDiag.electroLastTriggerSec }
+		electroDiag.electroLastTriggerSec = now
+		if (targets.length) { Bus.emit('fx:electroturretfire', { x: s.x, y: s.y, comboLevel: s.comboLevel, targets: targets.map(function (t) { return { id: t.id, x: t.x, y: t.y } }) }) }
+		for (var i = 0; i < targets.length; i++) { hurtCombo(targets[i].enemy, SK.lightning.damage[s.comboLevel - 1] * CO.electroTurret.damageMul, false, 'electro') }
+		if (targets.length) { electroDiag.electroSuccess++; electroDiag.electroTargetsHit += targets.length } else { electroDiag.electroNoTarget++ }
+	}
+	function tickElectroTurret(dt) {
+		var s = electroTurretState, cfg = CO.electroTurret
+		if (!s.active) { if (s.redeployCooldown > 0) { s.redeployCooldown = Math.max(0, s.redeployCooldown - dt) }; return }
+		s.age += dt
+		var salvoCount = turretArray('salvoCountByLevel', s.comboLevel, [3, 3, 4, 4, 4])
+		var interval = turretArray('salvoIntervalSecByLevel', s.comboLevel, [1.10, 1.05, 0.95, 0.90, 0.85])
+		var lastShotAt = CO.electroTurret.firstShotSec + (salvoCount - 1) * interval
+		var collapseAt = lastShotAt + CO.electroTurret.postFireHoldSec
+		var endAt = collapseAt + CO.electroTurret.collapseSec
+		if (s.phase === 'deploy' && s.age >= CO.electroTurret.firstShotSec) { s.phase = 'firing' }
+		if (s.phase === 'firing' && s.shotsFired < salvoCount && s.age >= s.nextShotAt) {
+			fireElectroTurretSalvo(s); s.shotsFired++; s.nextShotAt += interval
+			if (s.shotsFired >= salvoCount) { s.phase = 'postFire' }
+		}
+		if (s.phase === 'postFire' && s.age >= collapseAt) { s.phase = 'collapse'; s.collapseSent = true; Bus.emit('fx:electroturretend', { x: s.x, y: s.y, comboLevel: s.comboLevel, radius: turretRadius(s.comboLevel) }) }
+		if (s.age >= endAt) { s.active = false; s.phase = 'inactive'; s.redeployCooldown = cfg.redeployCooldownSec }
+	}
 	function tickBolt(dt) {
-		var i = idx('bolt'); timer.bolt -= dt; timer.electro -= dt   // P2 修复：电磁冷却每帧推进（移出 return 之后）；恢复真源 §4.6 冻结的 cooldownSec=0.5s 真正生效（bug 修复非数值改动，不改 cooldownSec 值本身、不回写真源）
+		var i = idx('bolt'); timer.bolt -= dt
 		if (timer.bolt > 0) { return }
 		timer.bolt = 1 / SK.bolt.fireRate[i]
 		var h = headPos(), es = _enemySnap.slice(), maxR2 = SK.bolt.maxRange[i] * SK.bolt.maxRange[i]   // #4 修复：拷贝快照本地排序，避免污染共享 _enemySnap；P1-1 射程门控
@@ -213,22 +305,20 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		hurt(es[k], SK.bolt.damage[i], false, boltSrc)
 			Bus.emit(foundCombo.burningBarrage ? 'fx:burndart' : 'fx:bolt', { from: { x: h.x, y: h.y }, to: { x: es[k].x, y: es[k].y } })   // P1-5 弹道视效（灼烧弹幕走 fx:burndart 橙，其余白黄）
 			if (foundCombo.burningBarrage) { Registry.get('enemy').ignite(es[k], CO.burningBarrage.burnSec, CO.burningBarrage.burnDps); var _p = Registry.get('particle'); if (_p && _p.incIgnite) { _p.incIgnite() } }   // 灼烧弹幕：飞镖命中点燃 + b9-diag 直计（零 Bus、零 gameplay）
-			if (foundCombo.electroTurret && timer.electro <= 0) {   // 电磁炮台：bolt 命中触发连锁闪电（§4.6/§9 2026-07-11）；走 comboDamage 不叠 effect；全局冷却防密集弹幕 DPS/性能失控
-				timer.electro = RT('COMBO.electroTurret.cooldownSec', CO.electroTurret.cooldownSec)   // P1 电磁 Combo 节奏主控经 RT 桥热调（~ 滑条）；def 由 config 推导=0.5（无裸数字）；快侧上界 0.4 守失控兜底（用户裁定，<0.4 不定终值）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，桥留作基建
-				var li = idx('lightning'), emr2 = SK.lightning.maxRange[li] * SK.lightning.maxRange[li]
-				doLightningChain(es[k].x, es[k].y, CO.electroTurret.chains, SK.lightning.damage[li] * CO.electroTurret.damageMul, emr2, true, 'fx:electroarc', 'electro')   // B-4 验收①a：电磁连锁伤害独立来源 'electro'
-			}
+			if (foundCombo.electroTurret) { deployElectroTurretAtHit(es[k]) }
 			fired++
 		}
 	}
 	// 链式选敌（lightning / electroTurret 共用，避免复制走样）。px,py=源点；hops=跳跃数；damageBase 经 hurt()（吃蛇长+暴击）；maxR2=首跳射程平方
-	function doLightningChain(px, py, hops, damageBase, maxR2, useCombo, vfxEvent, srcTag, skipNearHeadR) {   // useCombo=true → 走 comboDamage 不叠 effect；vfxEvent 默认 fx:lightning（基础蓝白），electro 显式传 fx:electroarc（紫）；srcTag=伤害来源标签（B-4 验收①a：电磁用 'electro' 独立标识，不再写死 'lightning'，仅透传飘字色，零 gameplay）；skipNearHeadR>0：首跳跳过源点周围该半径内的敌（② 闪电内圈死区，仅蛇头源点传非零）
-		var poolE = _enemySnap, hit = {}, chain = [{ x: px, y: py }]
+	function doLightningChain(px, py, hops, damageBase, maxR2, useCombo, vfxEvent, srcTag, skipNearHeadR, impactRadius) {
+		var poolE = _enemySnap, hit = {}, chain = [{ x: px, y: py }], hitCount = 0
+		impactRadius = impactRadius != null ? impactRadius : 0
+		chain.vfxMeta = { level: idx('lightning') + 1, originKind: 'head' }
 		var li = idx('lightning'), jumpR2 = SK.lightning.chainJumpRange[li] * SK.lightning.chainJumpRange[li]   // #5 链跳跃半径门控（config 驱动，防跨全场连锁）
 		for (var c = 0; c < hops; c++) {
 			var best = null, bd = Infinity
 			for (var k = 0; k < poolE.length; k++) {
-				var e = poolE[k]; if (hit[e.id]) { continue }
+				var e = poolE[k]; if (!e || !e.active || e.type === 'bossBullet' || hit[e.id]) { continue }
 				var d = M.distSq(px, py, e.x, e.y)
 			if (c === 0) {   // 首跳：射程门控 + ② 内圈死区（火环半径内不索敌，交给火墙/护盾）
 				if (d > maxR2) { continue }
@@ -240,10 +330,12 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			}
 		if (!best) { break }
 		hit[best.id] = true
+		hitCount++
 		if (useCombo) { hurtCombo(best, damageBase, false, srcTag || 'lightning') } else { hurt(best, damageBase, false, srcTag || 'lightning') }   // B-4 验收①a：电磁连锁经 srcTag='electro' 走独立紫飘字 + 独立伤害数字
-			chain.push({ x: best.x, y: best.y }); px = best.x; py = best.y   // 链式跳跃 + 收集链条节点
+			chain.push({ id: best.id, x: best.x, y: best.y }); px = best.x; py = best.y   // 链式跳跃 + 收集链条节点
 		}
-		if (chain.length > 1) { Bus.emit(vfxEvent || 'fx:lightning', { chain: chain }) }   // P1-5 闪电链视效（事件名全小写以过 Bus 断言）
+		if (chain.length > 1) { Bus.emit(vfxEvent || 'fx:lightning', { chain: chain }) }   // 基础闪电链视效保持原事件与链条
+		return { chain: chain, hitCount: hitCount }
 	}
 	function tickLightning(dt) {
 		var i = idx('lightning'); timer.lightning -= dt; if (timer.lightning > 0) { return }
@@ -272,9 +364,9 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var keys = Object.keys(CO)
 		for (var i = 0; i < keys.length; i++) {
 			var key = keys[i], c = CO[key]
-			if (comboReady(c) && !foundCombo[key]) {
-				foundCombo[key] = true; GS.comboScore += ECON.comboFindScore; Bus.emit('combo:found', { id: key })
-			}
+			var active = comboLevelFor(key) > 0, was = !!foundCombo[key]
+			foundCombo[key] = active
+			if (active && !was) { GS.comboScore += ECON.comboFindScore; Bus.emit('combo:found', { id: key }) }
 		}
 	}
 function tickCombos(dt) {
@@ -309,7 +401,7 @@ function tickCombos(dt) {
 			}
 		}
 	}
-	// electroTurret 已改为 bolt 命中触发（见 tickBolt）；冷却由 timer.electro + CO.electroTurret.cooldownSec 管控，此处不再周期触发
+	// 电磁炮台部署与齐射由 tickBolt/tickElectroTurret 驱动；基础闪电仍只走 tickLightning。
 }
 
 	// —— 3 选 1（保底 guaranteeAttack 攻 + guaranteeSurvival 生）——
@@ -388,6 +480,17 @@ function tickCombos(dt) {
 
 	var Skill = {
 		owned: function () { return GS.ownedSkills }, offer: offer, pick: pick,
+		getComboLevel: function (id) { return comboLevelFor(id) },
+		getComboTier: function (id) { return comboTierFor(id) },
+		previewComboChanges: function (skillId, nextLevel) { return previewComboChanges(skillId, nextLevel) },
+		getElectricDiag: function () {
+			return {
+				electroAttempts: electroDiag.electroAttempts, electroSuccess: electroDiag.electroSuccess, electroNoTarget: electroDiag.electroNoTarget,
+				electroTargetsHit: electroDiag.electroTargetsHit, electroLastTriggerSec: electroDiag.electroLastTriggerSec, electroLastGapSec: electroDiag.electroLastGapSec,
+				electroRuntimeCooldown: CO.electroTurret.redeployCooldownSec, electroTimerRemaining: electroTurretState.redeployCooldown,
+				electroTurretActive: electroTurretState.active, electroTurretPhase: electroTurretState.phase, electroTurretShotsFired: electroTurretState.shotsFired
+			}
+		},
 		allMaxed: function () { return candidates().length === 0 },   // 战线B 满级闸门同源判定：候选为空＝无更多有效升级（与 buildOffer/offer 完全一致，杜绝双份真相漂移；09_wave 经此门控停刷技能球）
 		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll, debugSetSkill: debugSetSkill,
 		update: function (dt) {
@@ -396,6 +499,7 @@ function tickCombos(dt) {
 			if (owns('fire')) { tickFire(dt) }
 			if (owns('ice')) { tickIce(dt) }
 			if (owns('bolt')) { tickBolt(dt) }
+			tickElectroTurret(dt)
 			if (owns('lightning')) { tickLightning(dt) }
 			if (owns('shield')) { tickShield(dt) }
 		tickCombos(dt)
@@ -405,7 +509,10 @@ function tickCombos(dt) {
 
 	Bus.on('pickup:eat', function (d) { if (d && d.kind === 'skill') { offer() } })
 	Bus.on('core:run_reset', function () {
-		foundCombo = {}; timer.bolt = 0; timer.lightning = 0; timer.electro = 0   // ④ 移除 timer.steam（per-enemy 冷却在 enemy 侧复位）
+		electroDiag.electroAttempts = 0; electroDiag.electroSuccess = 0; electroDiag.electroNoTarget = 0; electroDiag.electroTargetsHit = 0
+		electroDiag.electroLastTriggerSec = -1; electroDiag.electroLastGapSec = 0
+		foundCombo = {}; timer.bolt = 0; timer.lightning = 0
+		electroTurretState.active = false; electroTurretState.phase = 'inactive'; electroTurretState.x = 0; electroTurretState.y = 0; electroTurretState.age = 0; electroTurretState.comboLevel = 1; electroTurretState.shotsFired = 0; electroTurretState.nextShotAt = 0; electroTurretState.collapseSent = false; electroTurretState.redeployCooldown = 0
 		icePools.length = 0; icePending.length = 0; timer.ice = 0   // ⑥：清空冰池 + 延迟霜环队列 + 复位 CD，防重开残留/NaN
 	})
 

@@ -4,15 +4,13 @@
 	var M = Core.M
 	var COLORS = CONFIG.COLORS
 	var STYLE = CONFIG.STYLE, SKFX = CONFIG.STYLE.skillFx   // §5.5 视觉真源 + 五技能标志色（键=代码技能 id）
+	var COMBAT_FX = STYLE.combatFx || {}, COMBAT_E = COMBAT_FX.electro || {}, COMBAT_TEXT = COMBAT_FX.text || {}
 
 	// —— 表现债：技能视效参数（🟡 纯表现层，待 ~ 调参器定稿，候选见 TODO；不动 §9）——
 	var BOLT_COLOR = SKFX.bolt      // §5.5：飞镖/射击标志色（原白黄 #fff1a8 → STYLE.skillFx.bolt，避开 ui 青）
 	var BOLT_LIFE = 0.2             // TODO: 弹道光束存活 0.2s（候选 0.15 / 0.25）
 	var BEAM_W_PX = 3               // TODO: 光束线宽 3px（候选 2 / 4）
 	var LIGHTNING_COLOR = SKFX.lightning // §5.5：闪电标志色（原蓝白 #9fd0ff → STYLE.skillFx.lightning）
-	var LIGHTNING_W_PX = 2          // TODO: 电链线宽 2px（候选 3 / 1.5）
-	var LIGHTNING_LIFE = 0.22       // TODO: 电链存活 0.22s（候选 0.18 / 0.28）
-	var LIGHTNING_JAG = 14          // TODO: 电链折线抖动 14px（候选 10 / 20）
 	var BLAST_COLOR = STYLE.enemyCalm  // §5.5：爆环暖橙（原 #ffb04d → STYLE.enemyCalm，统一暖橙语义）
 	var BLAST_LIFE = 0.4            // TODO: 爆环存活 0.4s（候选 0.3 / 0.5）
 	var BLAST_RING_W = 4            // TODO: 爆环线宽 4px（候选 3 / 6）
@@ -21,18 +19,11 @@
 	var DART_TRAIL_PX = 10            // TODO: 飞镖拖尾占比（候选 8 / 14）
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
 	var DOT_TEXT_SIZE = 10            // P2-10：DOT 飘字缩小字号（候选 10/12）；与瞬伤 12/16 区分，别糊屏
-	// —— B-4 增强：电磁 vs 基础闪电"一眼区分"靠 粗细 / 分叉结构 / 命中残留时长（非只色）· 纯表现 TODO 待 ~ 定稿 ——
-	var ELECTRO_W_PX = 5          // TODO: 电磁电链线宽 5px（基础闪电 2px；粗弧拉开）候选 4 / 6
-	var ELECTRO_LIFE = 0.34       // TODO: 电磁电链存活 0.34s（基础 0.22；停留更久留得住眼）候选 0.30 / 0.40
-	var ELECTRO_JAG = 18          // TODO: 电磁电链折线抖动 18px（更狂野分叉感）候选 14 / 22
-	var ELECTRO_BRANCH_N = 8      // TODO: 电磁节点放射分叉数 8（基础无分叉）候选 6 / 10
-	var ELECTRO_BRANCH_LIFE = 0.2 // TODO: 电磁分叉/命中残留辉光存活 0.2s（基础无残留）候选 0.15 / 0.25
-	var ELECTRO_GLOW_R = 16       // TODO: 电磁命中残留辉光半径 16px（基础无）候选 12 / 20
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
 	var SRC_STYLE = {
 		bolt:      { label: '飞镖 ', color: SKFX.bolt },        // §5.5：飞镖标志色（原青 #2ad4ff → STYLE.skillFx.bolt，避开 ui 青）
 		lightning: { label: '闪电 ', color: SKFX.lightning },   // §5.5：闪电标志色（→ STYLE.skillFx.lightning，与 fx:lightning 电链一致）
-		electro:   { label: '⚡电磁 ', color: STYLE.elite },    // 电磁炮台连锁：紫（→ STYLE.elite，独立于基础闪电；src='electro' 由 08_skill doLightningChain 透传）
+		electro:   { label: '电磁 ', color: COMBAT_E.text },   // 电磁炮台：暂与现有来源标签体系一致，显示“电磁 数字”
 		fire:      { label: '🔥火墙 ', color: '#ff9a3c' },      // 火焰墙 DOT：橙（B-4 衍生：与灼烧引燃分源独立飘字，标签区分）
 		burn:      { label: '🔥灼烧 ', color: '#ff5a2c' },      // 灼烧弹幕引燃：红橙（B-4 衍生：与火墙分源独立飘字，色比火墙红以辨识）
 		burning:   { label: '🔥灼烧 ', color: '#ff7a3c' },      // 灼烧弹幕 combo：橙（B-4 验收①c 补全：bolt 命中经此标识，与 fx:burndart 橙镖/火环一致；仅飘字前缀，零 gameplay）
@@ -40,14 +31,35 @@
 		steam:     { label: '💥蒸汽 ', color: '#ffb04d' }       // 蒸汽爆炸：暖橙（候选 #ff8a3d / #ffd27a）
 	}
 
+	var ELECTRIC = ((CONFIG.VFX || {}).electric) || {}
+	var ELECTRIC_L = ELECTRIC.lightning || {}
+	var ELECTRIC_E = ELECTRIC.electro || {}
+	var ELECTRO_COMBO = ((CONFIG.COMBO || {}).electroTurret) || {}
+	var ELECTRIC_WHITE = STYLE.textMain
+	var lightningFxState = null
+	var electroVfxState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, fireAge: 999, targets: [], scanAge: 999, deployAge: 0, collapseAge: 0, aimAngle: 0 }
+	var electroImpacts = [
+		{ active: false, targetId: null, x: 0, y: 0, age: 999 },
+		{ active: false, targetId: null, x: 0, y: 0, age: 999 },
+		{ active: false, targetId: null, x: 0, y: 0, age: 999 }
+	]
+	// 世界层专用夜庭晶环 PNG：只加载一次；程序层叠加呼吸、汇能、炮口、束线与命中。加载失败时回退程序化晶体节点。
+	var electroSprite = null, electroSpriteReady = false
+	if (global.Image && ELECTRIC_E.spriteSrc) {
+		electroSprite = new global.Image()
+		electroSprite.onload = function () { electroSpriteReady = true }
+		electroSprite.onerror = function () { electroSpriteReady = false }
+		electroSprite.src = ELECTRIC_E.spriteSrc
+	}
+
 	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
 	function resetParticle(p) { p.active = false }
-	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high' } }
+	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high', strokeColor: null, strokeWidth: 0, iconId: null, iconColor: null } }
 	function resetText(t) { t.active = false }
 
 	var particlePool = Core.createPool(newParticle, resetParticle, 512)   // b9 性能护栏：齐爆峰值防爆池增长 GC 尖刺（128→512，一次性内存廉价）
 	var textPool = Core.createPool(newText, resetText, 32)
-	// 光束（fx:bolt / fx:lightning / fx:electroarc 复用），curve=true 走 quadratic 折线；爆环（fx:steamblast）
+	// 通用光束（fx:bolt / fx:lightning），curve=true 走 quadratic 折线；电磁炮台束由 drawElectroBeam 直接绘制；爆环（fx:steamblast）
 	function newBeam() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, cx: 0, cy: 0, curve: false, life: 0, maxLife: 1, width: 2, color: '#fff' } }
 	function resetBeam(b) { b.active = false }
 	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
@@ -64,7 +76,7 @@
 	var darts = []
 	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 96)   // b9：闪核池 32→96（蒸汽白闪/电磁辉光峰值）
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
-	var DBG = { ignite: 0, fireDot: 0, flashDrawn: 0, steamBlasts: 0, steamAoeCmp: 0 }   // b9-diag/measure：诊断计数器（仅 HUD，零 gameplay；不进 caps/伤害管线）；steamBlasts=本帧真引爆次数(未被 steamFxCap 门控)、steamAoeCmp=蒸汽 AOE 邻居比较总次数
+	var DBG = { ignite: 0, fireDot: 0, flashDrawn: 0, steamBlasts: 0, steamAoeCmp: 0, electricDecorDowngradeMode: 'cumulative' }   // b9-diag/measure：诊断计数器（仅 HUD，零 gameplay；不进 caps/伤害管线）；steamBlasts=本帧真引爆次数(未被 steamFxCap 门控)、steamAoeCmp=蒸汽 AOE 邻居比较总次数
 	// b9：VFX 输出硬上限（门控所有进池写入，治"怪多+combo 多"draw 爆炸掉帧）
 	//   maxParticles/maxTexts=活跃上限；spawnBudgetPerFrame=每帧生成预算（削平齐爆单帧尖峰）
 	//   优先级：high=死亡爆点/蒸汽VFX/combo爆环/玩家受击（尽量保留）；low=enemy:hit 逐次命中火花+伤害飘字/冰减速标签（满时先丢）
@@ -99,7 +111,7 @@
 		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio
 		particles.push(p); frameSpawn++; return true
 	}
-	function emitText(x, y, str, color, size, prio) {
+	function emitText(x, y, str, color, size, prio, opts) {
 		if (frameSpawn >= spawnBudget()) { return false }
 		if (texts.length >= maxTexts()) {
 			if (prio === 'high') { var ei = evictLow(texts); if (ei < 0) { return false } textPool.release(texts[ei]); texts.splice(ei, 1) }
@@ -107,7 +119,7 @@
 		}
 		var t = textPool.acquire()
 		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -36
-		t.life = t.maxLife = 0.6; t.text = str; t.color = color; t.size = size || 14; t.prio = prio   // P2-10：淡出 0.8→0.6s（更快淡出，超量不糊屏）
+		t.life = t.maxLife = opts && opts.customLife ? opts.customLife : 0.6; t.text = str; t.color = color; t.size = size || 14; t.prio = prio; t.strokeColor = opts && opts.strokeColor ? opts.strokeColor : null; t.strokeWidth = opts && opts.strokeWidth ? opts.strokeWidth : 0; t.iconId = opts && opts.iconId ? opts.iconId : null; t.iconColor = opts && opts.iconColor ? opts.iconColor : null   // 普通伤害保持旧寿命/样式
 		texts.push(t); frameSpawn++; return true
 	}
 	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
@@ -125,7 +137,20 @@
 	}
 
 	// 生成一段光束：from→to；jag>0 时于中点法向偏移出折线控制点（创建时一次性算，绘制零成本）
-	function spawnBeam(x1, y1, x2, y2, color, width, life, jag) {
+	function maxBeams() {
+		var tier = global.PerfTier && global.PerfTier.tier ? global.PerfTier.tier : 'HIGH'
+		var caps = ELECTRIC.maxBeamsByTier || { HIGH: 32, MED: 24, LOW: 16, POTATO: 12 }
+		return RT('PERF.maxBeams', (global.PerfTier && global.PerfTier.maxBeams != null) ? global.PerfTier.maxBeams : (caps[tier] || caps.HIGH))
+	}
+	function spawnBeam(x1, y1, x2, y2, color, width, life, jag, prio) {
+		prio = prio || 'main'
+		if (beams.length >= maxBeams()) {
+			if (prio === 'low') { DBG.beamDrops = (DBG.beamDrops || 0) + 1; return false }
+			var drop = -1
+			for (var di = 0; di < beams.length; di++) { if (beams[di].prio === 'low') { drop = di; break } }
+			if (drop < 0) { DBG.beamDrops = (DBG.beamDrops || 0) + 1; return false }
+			beamPool.release(beams[drop]); beams.splice(drop, 1)
+		}
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平电链/飞镖束尖峰
 		var b = beamPool.acquire()
 		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.width = width; b.color = color
@@ -136,8 +161,8 @@
 			var off = (Math.random() * 2 - 1) * jag
 			b.cx = mx + (nx / nl) * off; b.cy = my + (ny / nl) * off
 		}
-		b.life = b.maxLife = life
-		beams.push(b)
+		b.life = b.maxLife = life; b.prio = prio
+		beams.push(b); frameSpawn++; return true
 	}
 	// 生成扩张爆环 + 少量爆散团（爆散团走小圆点粒子）
 	function spawnBlast(x, y, radius, color, life) {
@@ -164,7 +189,7 @@
 			emitParticle(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, size * (0.7 + Math.random() * 0.6), color, 0.88, prio)
 		}
 	}
-	function spawnText(x, y, str, color, size, prio) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high') }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
+	function spawnText(x, y, str, color, size, prio, opts) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high', opts) }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
 
 	// 火墙余烬：视觉绑定「火源=蛇身」而非「敌数」——第三轮误删火 DOT 逐次火花后火墙无粒子感(用户反馈表现力弱)，
 	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
@@ -187,6 +212,523 @@
 				Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low')   // low 优先：池满让位死亡/蒸汽/伤害 VFX
 		}
 	}
+	function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v) }
+	function electricLevel(id, fallback) {
+		var sk = Registry.get('skill'), owned = sk && sk.owned ? sk.owned() : null
+		return Math.max(1, Math.min(5, (owned && owned[id]) || fallback || 1))
+	}
+	function electricChain(chain, electro, level) {
+		var out = [], kinks = [], max = ELECTRIC.maxChainPoints || 8, list = chain || []
+		for (var i = 0; i < list.length && out.length < max; i++) {
+			if (list[i] && list[i].x != null && list[i].y != null) { out.push({ id: list[i].id != null ? list[i].id : null, x: list[i].x, y: list[i].y }) }
+		}
+		for (var c = 1; c < out.length; c++) { kinks.push([]) }
+		return { points: out, kinks: kinks }
+	}
+	function makeLightningState(d) {
+		var chain = d && d.chain ? d.chain : [], meta = chain.vfxMeta || (d && d.vfxMeta) || {}, level = Math.max(1, Math.min(5, meta.level || d.level || electricLevel('lightning', 1))), c = electricChain(chain, false, level), li = level - 1
+		var segmentCount = Math.max(0, c.points.length - 1), hop = ELECTRIC_L.hopDelayByLevel[li], impact = ELECTRIC_L.impactDurationByLevel[li], fade = ELECTRIC_L.fadeDurationByLevel[li]
+		return { type: 'lightning', chain: c.points, kinks: c.kinks, originKind: meta.originKind || '', level: level, age: 0, phase: 'propagate', currentSegment: segmentCount ? 0 : -1,
+			segmentCount: segmentCount, hopDelay: hop, impactDuration: impact, fadeDuration: fade, propagateEnd: segmentCount * hop, impactEnd: segmentCount * hop + impact, fadeEnd: segmentCount * hop + impact + fade,
+			mainWidth: ELECTRIC_L.widthByLevel[li], finalBurstLife: level === 5 ? ELECTRIC_L.levelFiveBurstLifeSec : 0 }
+	}
+	function activeEnemyById(id) {
+		if (id == null) { return null }
+		var enemy = Registry.get('enemy'), list = enemy && enemy.list
+		if (!list) { return null }
+		for (var i = 0; i < list.length; i++) { var e = list[i]; if (e && e.active && e.id === id) { return e } }
+		return null
+	}
+	function syncLightningAnchors(state) {
+		if (!state || !state.chain || !state.chain.length) { return }
+		if (state.originKind === 'head') {
+			var snake = Registry.get('snake')
+			if (snake && snake.head) { state.chain[0].x = snake.head.x; state.chain[0].y = snake.head.y }
+		}
+		for (var i = 1; i < state.chain.length; i++) {
+			var point = state.chain[i], e = activeEnemyById(point.id)
+			if (e) { point.x = e.x; point.y = e.y }
+		}
+	}
+	function syncElectroTargets(state) {
+		if (!state || !state.targets) { return }
+		for (var i = 0; i < state.targets.length; i++) {
+			var target = state.targets[i], e = activeEnemyById(target.id)
+			if (e) { target.x = e.x; target.y = e.y }
+			if (electroImpacts[i] && electroImpacts[i].active) { electroImpacts[i].x = target.x; electroImpacts[i].y = target.y }
+		}
+	}
+	function resetElectroVfx() {
+		electroVfxState.active = false; electroVfxState.phase = 'inactive'; electroVfxState.x = 0; electroVfxState.y = 0; electroVfxState.age = 0; electroVfxState.comboLevel = 1; electroVfxState.fireAge = 999; electroVfxState.targets.length = 0; electroVfxState.scanAge = 999; electroVfxState.deployAge = 0; electroVfxState.collapseAge = 0; electroVfxState.aimAngle = 0
+		for (var i = 0; i < electroImpacts.length; i++) { electroImpacts[i].active = false; electroImpacts[i].targetId = null; electroImpacts[i].age = 999 }
+	}
+	function deployElectroVfx(d) {
+		var s = electroVfxState; s.active = true; s.phase = 'deploy'; s.x = d.x; s.y = d.y; s.age = 0; s.deployAge = 0; s.comboLevel = d.comboLevel || 1; s.fireAge = 999; s.targets.length = 0; s.scanAge = 0; s.collapseAge = 0; s.aimAngle = 0
+	}
+	function fireElectroVfx(d) {
+		var s = electroVfxState; if (!s.active) { return }
+		s.phase = 'firing'; s.fireAge = 0; s.targets.length = 0
+		for (var i = 0; i < electroImpacts.length; i++) { electroImpacts[i].active = false; electroImpacts[i].targetId = null; electroImpacts[i].age = 999 }
+		for (var j = 0; d.targets && j < d.targets.length && j < 3; j++) {
+			var target = d.targets[j]
+			s.targets.push({ id: target.id != null ? target.id : null, x: target.x, y: target.y })
+			electroImpacts[j].active = true; electroImpacts[j].targetId = target.id != null ? target.id : null; electroImpacts[j].x = target.x; electroImpacts[j].y = target.y; electroImpacts[j].age = 0
+		}
+		if (s.targets.length) { s.aimAngle = Math.atan2(s.targets[0].y - s.y, s.targets[0].x - s.x) }
+	}
+	function endElectroVfx(d) {
+		var s = electroVfxState; if (!s.active) { return }
+		s.phase = 'collapse'; s.fireAge = 999; s.targets.length = 0; s.collapseAge = 0
+		if (d && d.x != null) { s.x = d.x; s.y = d.y }
+	}
+	function electricDenseMode() {
+		var en = Registry.get('enemy'), count = en && en.countMobs ? en.countMobs() : 0
+		var tier = global.PerfTier && global.PerfTier.tier
+		var dense = count >= (ELECTRIC.denseEnemyMin || 28) || tier === 'LOW' || tier === 'POTATO'
+		DBG.denseElectricMode = dense ? 1 : 0
+		return dense
+	}
+	function electroLowMode(dense) {
+		var tier = global.PerfTier && global.PerfTier.tier
+		return !!dense || tier === 'LOW' || tier === 'POTATO'
+	}
+	function segmentPolyline(state, i) {
+		var a = state.chain[i], b = state.chain[i + 1], mid = state.kinks[i] || []
+		if (!a || !b) { return [] }
+		var pts = [a]
+		for (var m = 0; m < mid.length; m++) { pts.push(mid[m]) }
+		pts.push(b)
+		return pts
+	}
+	function traceChain(ctx, state, limit) {
+		var n = Math.min(limit, state.segmentCount)
+		ctx.beginPath()
+		for (var i = 0; i < n; i++) {
+			var pts = segmentPolyline(state, i)
+			if (pts.length < 2 || (pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y)) { continue }
+			ctx.moveTo(pts[0].x, pts[0].y)
+			for (var p = 1; p < pts.length; p++) { ctx.lineTo(pts[p].x, pts[p].y) }
+		}
+	}
+	function traceSegment(ctx, state, i) {
+		var pts = segmentPolyline(state, i)
+		if (pts.length < 2 || (pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y)) { return false }
+		ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y)
+		for (var p = 1; p < pts.length; p++) { ctx.lineTo(pts[p].x, pts[p].y) }
+		return true
+	}
+	function pointOnSegment(state, i, progress) {
+		var pts = segmentPolyline(state, i), t = clamp01(progress)
+		if (pts.length < 2) { return pts[0] || { x: 0, y: 0 } }
+		var lengths = [], total = 0
+		for (var p = 1; p < pts.length; p++) { var dx = pts[p].x - pts[p - 1].x, dy = pts[p].y - pts[p - 1].y, len = Math.sqrt(dx * dx + dy * dy); lengths.push(len); total += len }
+		if (!total) { return { x: pts[0].x, y: pts[0].y } }
+		var wanted = total * t, acc = 0
+		for (var q = 0; q < lengths.length; q++) {
+			if (wanted <= acc + lengths[q] || q === lengths.length - 1) {
+				var local = lengths[q] ? (wanted - acc) / lengths[q] : 0
+				return { x: pts[q].x + (pts[q + 1].x - pts[q].x) * local, y: pts[q].y + (pts[q + 1].y - pts[q].y) * local }
+			}
+			acc += lengths[q]
+		}
+		return pts[pts.length - 1]
+	}
+	function tracePartialSegment(ctx, state, i, progress) {
+		var pts = segmentPolyline(state, i), t = clamp01(progress)
+		if (pts.length < 2 || t <= 0) { return false }
+		var end = pointOnSegment(state, i, t), total = 0, lengths = []
+		for (var p = 1; p < pts.length; p++) { var dx = pts[p].x - pts[p - 1].x, dy = pts[p].y - pts[p - 1].y, len = Math.sqrt(dx * dx + dy * dy); lengths.push(len); total += len }
+		var wanted = total * t, acc = 0
+		ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y)
+		for (var q = 0; q < lengths.length; q++) {
+			if (wanted <= acc + lengths[q]) { ctx.lineTo(end.x, end.y); break }
+			ctx.lineTo(pts[q + 1].x, pts[q + 1].y); acc += lengths[q]
+		}
+		return true
+	}
+	function lightningRevealed(state) { return state.phase === 'propagate' ? Math.min(state.segmentCount, Math.floor(state.age / state.hopDelay)) : state.segmentCount }
+	function lightningFade(state) { return state.phase === 'fade' ? clamp01(1 - (state.age - state.impactEnd) / state.fadeDuration) : 1 }
+	function strokeLightningPath(ctx, s, fade, index, partialProgress) {
+		var partial = partialProgress != null
+		var ok = partial ? tracePartialSegment(ctx, s, index, partialProgress) : traceSegment(ctx, s, index)
+		if (!ok) { return }
+		ctx.globalAlpha = ELECTRIC_L.outerAlpha * fade; ctx.strokeStyle = LIGHTNING_COLOR; ctx.lineWidth = s.mainWidth * ELECTRIC_L.outerWidthRatio; ctx.stroke()
+		if (partial) { tracePartialSegment(ctx, s, index, partialProgress) } else { traceSegment(ctx, s, index) }
+		ctx.globalAlpha = (s.phase === 'fade' ? ELECTRIC_L.fadeMainAlpha * fade : ELECTRIC_L.mainAlpha); ctx.strokeStyle = LIGHTNING_COLOR; ctx.lineWidth = s.mainWidth; ctx.stroke()
+	}
+	function drawLightningWorld(ctx, dense) {
+		var s = lightningFxState; if (!s || s.segmentCount < 1) { return }
+		var fade = lightningFade(s)
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		if (s.phase === 'propagate') {
+			var completed = Math.min(s.segmentCount, Math.floor(s.age / s.hopDelay))
+			for (var i = 0; i < completed; i++) { strokeLightningPath(ctx, s, fade, i, null) }
+			if (completed < s.segmentCount) { var pp = clamp01((s.age - completed * s.hopDelay) / s.hopDelay); strokeLightningPath(ctx, s, fade, completed, pp) }
+		} else {
+			for (var j = 0; j < s.segmentCount; j++) { strokeLightningPath(ctx, s, fade, j, null) }
+		}
+		ctx.restore()
+	}
+	function strokeLightningCore(ctx, s, index, partialProgress, alpha) {
+		var partial = partialProgress != null
+		var ok = partial ? tracePartialSegment(ctx, s, index, partialProgress) : traceSegment(ctx, s, index)
+		if (!ok) { return }
+		ctx.globalAlpha = alpha; ctx.strokeStyle = ELECTRIC_WHITE
+		ctx.lineWidth = Math.max(0.9, s.mainWidth * (ELECTRIC_L.impactCoreWidthRatio || 0.28)); ctx.stroke()
+	}
+	function drawLightningNodePulse(ctx, s, nodeIndex, dense) {
+		var np = s.chain[nodeIndex]; if (!np) { return }
+		var life = ELECTRIC_L.nodePulseLifeSec || 0.095, localAge
+		if (s.phase === 'propagate') { localAge = s.age - nodeIndex * s.hopDelay }
+		else if (s.phase === 'impact') { localAge = s.age - s.propagateEnd }
+		else { return }
+		if (localAge < 0 || localAge > life) { return }
+		var p = clamp01(localAge / life), alpha = 1 - p
+		var radii = ELECTRIC_L.nodeImpactRadiusByLevel || [4.8, 5.3, 5.8, 6.4, 7.0]
+		var rr = radii[Math.max(0, Math.min(4, s.level - 1))], ring = rr * (0.72 + p * (ELECTRIC_L.nodeImpactRingMul || 1.55))
+		ctx.globalAlpha = alpha * 0.92; ctx.fillStyle = ELECTRIC_WHITE
+		ctx.beginPath(); ctx.arc(np.x, np.y, Math.max(1.5, rr * (0.40 - p * 0.10)), 0, M.PI2); ctx.fill()
+		if (!dense) {
+			ctx.globalAlpha = alpha * 0.58; ctx.strokeStyle = LIGHTNING_COLOR; ctx.lineWidth = 1
+			ctx.beginPath(); ctx.arc(np.x, np.y, ring, 0, M.PI2); ctx.stroke()
+		}
+	}
+	function drawLightningJointNodes(ctx, s, dense, fade) {
+		var radii = ELECTRIC_L.jointRadiusByLevel || [1.8, 2.0, 2.2, 2.5, 2.8]
+		var r = radii[Math.max(0, Math.min(4, s.level - 1))]
+		var maxNode = s.phase === 'propagate' ? Math.min(s.chain.length - 1, lightningRevealed(s)) : s.chain.length - 1
+		for (var i = 1; i <= maxNode; i++) {
+			var p = s.chain[i]; if (!p) { continue }
+			if (!dense) { ctx.globalAlpha = 0.34 * fade; ctx.fillStyle = LIGHTNING_COLOR; ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.75, 0, M.PI2); ctx.fill() }
+			ctx.globalAlpha = 0.74 * fade; ctx.fillStyle = ELECTRIC_WHITE; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, M.PI2); ctx.fill()
+		}
+	}
+	function drawLightningTravelTip(ctx, s, dense) {
+		if (s.phase !== 'propagate' || s.segmentCount < 1) { return }
+		var index = Math.min(s.segmentCount - 1, Math.floor(s.age / s.hopDelay))
+		var a = s.chain[index], b = s.chain[index + 1]; if (!a || !b) { return }
+		var p = clamp01((s.age - index * s.hopDelay) / s.hopDelay)
+		var x = M.lerp(a.x, b.x, p), y = M.lerp(a.y, b.y, p)
+		var radii = ELECTRIC_L.travelTipRadiusByLevel || [2.2, 2.4, 2.7, 3.0, 3.4], r = radii[Math.max(0, Math.min(4, s.level - 1))]
+		if (!dense) { ctx.globalAlpha = 0.32; ctx.fillStyle = LIGHTNING_COLOR; ctx.beginPath(); ctx.arc(x, y, r * 1.9, 0, M.PI2); ctx.fill() }
+		ctx.globalAlpha = 0.96; ctx.fillStyle = ELECTRIC_WHITE; ctx.beginPath(); ctx.arc(x, y, r, 0, M.PI2); ctx.fill()
+	}
+	function drawLightningOverlay(ctx, dense) {
+		var s = lightningFxState; if (!s || s.segmentCount < 1) { return }
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		var fade = lightningFade(s), coreAlpha
+		if (s.phase === 'impact') { coreAlpha = s.level >= 3 ? ELECTRIC_L.impactCoreAlphaHigh : ELECTRIC_L.impactCoreAlphaLow }
+		else if (s.phase === 'fade') { coreAlpha = (ELECTRIC_L.fadeCoreAlpha || 0.22) * fade }
+		else { coreAlpha = ELECTRIC_L.propagateCoreAlpha || 0.48 }
+		if (s.phase === 'propagate') {
+			var completed = Math.min(s.segmentCount, Math.floor(s.age / s.hopDelay))
+			for (var i = 0; i < completed; i++) { strokeLightningCore(ctx, s, i, null, coreAlpha) }
+			if (completed < s.segmentCount) {
+				var pp = clamp01((s.age - completed * s.hopDelay) / s.hopDelay)
+				strokeLightningCore(ctx, s, completed, pp, coreAlpha)
+			}
+		} else {
+			for (var j = 0; j < s.segmentCount; j++) { strokeLightningCore(ctx, s, j, null, coreAlpha) }
+		}
+		drawLightningJointNodes(ctx, s, dense, fade)
+		drawLightningTravelTip(ctx, s, dense)
+		var source = s.chain[0]
+		if (source && s.phase !== 'fade') {
+			ctx.globalAlpha = s.phase === 'impact' ? 0.72 : 0.46; ctx.fillStyle = ELECTRIC_WHITE
+			ctx.beginPath(); ctx.arc(source.x, source.y, s.level >= 4 ? 2.1 : 1.7, 0, M.PI2); ctx.fill()
+		}
+		for (var ni = 1; ni < s.chain.length; ni++) { drawLightningNodePulse(ctx, s, ni, dense) }
+		if (s.level === 5 && s.phase === 'impact' && s.age - s.propagateEnd <= s.finalBurstLife) {
+			var last = s.chain[s.chain.length - 1]; ctx.globalAlpha = 0.94; ctx.fillStyle = ELECTRIC_WHITE
+			ctx.beginPath(); ctx.arc(last.x, last.y, 2.4, 0, M.PI2); ctx.fill()
+		}
+		ctx.restore()
+	}
+	function easeOutCubic(v) { v = clamp01(v); return 1 - Math.pow(1 - v, 3) }
+	function electroLevelValue(name, level, fallback) {
+		var a = ELECTRIC_E[name] || fallback
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function electroSpriteWidth(level) { return electroLevelValue('spriteWidthByLevel', level, [62, 66, 70, 74, 78]) }
+	function electroAttackRadius(level) {
+		var a = ELECTRO_COMBO.attackRadiusByLevel || [170, 190, 220, 245, 270]
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function electroSalvoCount(level) {
+		var a = ELECTRO_COMBO.salvoCountByLevel || [3, 3, 4, 4, 4]
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function electroSalvoInterval(level) {
+		var a = ELECTRO_COMBO.salvoIntervalSecByLevel || [1.10, 1.05, 0.95, 0.90, 0.85]
+		return a[Math.max(0, Math.min(a.length - 1, level - 1))]
+	}
+	function electroNextScheduledShot(s) {
+		var first = ELECTRO_COMBO.firstShotSec || 0.28, interval = electroSalvoInterval(s.comboLevel), count = electroSalvoCount(s.comboLevel)
+		if (s.age < first) { return first }
+		var passed = Math.floor((s.age - first) / interval) + 1
+		return passed < count ? first + passed * interval : -1
+	}
+	function electroChargeProgress(s) {
+		if (!s.active || s.phase === 'collapse') { return 0 }
+		var next = electroNextScheduledShot(s), lead = ELECTRIC_E.chargeLeadSec || 0.12
+		if (next < 0) { return 0 }
+		var remain = next - s.age
+		return remain >= 0 && remain <= lead ? clamp01(1 - remain / lead) : 0
+	}
+	function electroSpriteMetrics(s) {
+		var baseW = electroSpriteWidth(s.comboLevel), baseH = baseW / (ELECTRIC_E.spriteAspect || 1.60)
+		var deploy = easeOutCubic(clamp01(s.age / (ELECTRO_COMBO.deploySec || 0.18)))
+		var collapse = s.phase === 'collapse' ? clamp01(s.collapseAge / (ELECTRO_COMBO.collapseSec || 0.18)) : 0
+		var phase = (s.age / (ELECTRIC_E.breathSec || 1.20)) * M.PI2
+		var breath = Math.sin(phase) * (ELECTRIC_E.breathScale || 0.020)
+		var hover = -(ELECTRIC_E.hoverLiftPx || 5) + Math.sin(phase * 0.82) * (ELECTRIC_E.hoverBobPx || 1.0)
+		var charge = electroChargeProgress(s)
+		var recoil = s.fireAge < (ELECTRIC_E.recoilRecoverSec || 0.18) ? 1 - clamp01(s.fireAge / (ELECTRIC_E.recoilRecoverSec || 0.18)) : 0
+		var baseScale = (0.82 + deploy * 0.18) * (1 - collapse * 0.18)
+		var sx = baseScale * (1 + breath) * (1 - charge * 0.045) * (1 + recoil * 0.090)
+		var sy = baseScale * (1 - breath * 0.48) * (1 - charge * 0.075) * (1 - recoil * 0.120)
+		var w = baseW * sx, h = baseH * sy, pivot = ELECTRIC_E.spritePivotY || 0.92
+		return { w: w, h: h, left: s.x - w * 0.5, top: s.y + hover - h * pivot, alpha: (0.20 + deploy * 0.80) * (1 - collapse), charge: charge, recoil: recoil, breath: breath }
+	}
+	function electroCore(s, m) {
+		return {
+			x: m.left + m.w * (ELECTRIC_E.coreXRatio || 0.50),
+			y: m.top + m.h * (ELECTRIC_E.coreYRatio || 0.49),
+			rx: m.w * (ELECTRIC_E.ringRadiusXRatio || 0.17),
+			ry: m.h * (ELECTRIC_E.ringRadiusYRatio || 0.105)
+		}
+	}
+	function electroBudPoints(m) {
+		var left = ELECTRIC_E.budLeft || [0.25, 0.31], right = ELECTRIC_E.budRight || [0.75, 0.31], front = ELECTRIC_E.budFront || [0.50, 0.74]
+		return [
+			{ x: m.left + m.w * left[0], y: m.top + m.h * left[1] },
+			{ x: m.left + m.w * right[0], y: m.top + m.h * right[1] },
+			{ x: m.left + m.w * front[0], y: m.top + m.h * front[1] }
+		]
+	}
+	function drawFallbackElectroTurret(ctx, s, m) {
+		var c = electroCore(s, m)
+		ctx.save(); ctx.globalAlpha = m.alpha; ctx.lineJoin = 'round'
+		ctx.fillStyle = COMBAT_E.dark; ctx.strokeStyle = COMBAT_E.edge; ctx.lineWidth = 1.4
+		ctx.beginPath(); ctx.ellipse(s.x, s.y - m.h * 0.42, m.w * 0.46, m.h * 0.36, 0, 0, M.PI2); ctx.fill(); ctx.stroke()
+		var buds = electroBudPoints(m)
+		for (var i = 0; i < buds.length; i++) {
+			ctx.fillStyle = COMBAT_E.body; ctx.beginPath()
+			ctx.moveTo(buds[i].x, buds[i].y - m.h * 0.14); ctx.lineTo(buds[i].x + m.w * 0.05, buds[i].y + m.h * 0.05)
+			ctx.lineTo(buds[i].x, buds[i].y + m.h * 0.09); ctx.lineTo(buds[i].x - m.w * 0.05, buds[i].y + m.h * 0.05); ctx.closePath(); ctx.fill(); ctx.stroke()
+		}
+		ctx.fillStyle = COMBAT_E.core; ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * 0.52, c.ry * 0.72, 0, 0, M.PI2); ctx.fill(); ctx.restore()
+	}
+	function drawElectroTurretWorld(ctx, s, dense) {
+		var m = electroSpriteMetrics(s), low = electroLowMode(dense)
+		ctx.save()
+		ctx.globalAlpha = (0.16 + Math.abs(m.breath || 0) * 1.8) * m.alpha; ctx.fillStyle = COMBAT_E.dark
+		ctx.beginPath(); ctx.ellipse(s.x, s.y + 1, m.w * (ELECTRIC_E.shadowScaleX || 0.40), m.h * (ELECTRIC_E.shadowScaleY || 0.115), 0, 0, M.PI2); ctx.fill()
+		if (!low && s.age <= (ELECTRIC_E.scanDurationSec || 0.26)) {
+			var p = clamp01(s.age / (ELECTRIC_E.scanDurationSec || 0.26)), rr = electroAttackRadius(s.comboLevel)
+			ctx.globalAlpha = Math.sin(Math.PI * p) * 0.15; ctx.strokeStyle = COMBAT_E.impactEdge || COMBAT_E.edge; ctx.lineWidth = 1.3
+			for (var q = 0; q < 4; q++) {
+				var a0 = q * M.PI / 2 + 0.20, a1 = a0 + 0.58
+				ctx.beginPath(); ctx.arc(s.x, s.y, rr * (0.20 + easeOutCubic(p) * 0.80), a0, a1); ctx.stroke()
+			}
+		}
+		ctx.restore()
+	}
+	function drawElectroTurretBodyOverlay(ctx, s, m) {
+		ctx.save()
+		// 最高战斗层可读性底托：遮住主体脚下的敌人纹理，避免透明 PNG 在怪群中产生“被淹没”错觉。
+		ctx.globalAlpha = (0.58 + m.charge * 0.08 + m.recoil * 0.10) * m.alpha
+		ctx.fillStyle = COMBAT_E.dark
+		ctx.beginPath(); ctx.ellipse(s.x, m.top + m.h * 0.57, m.w * 0.39, m.h * 0.24, 0, 0, M.PI2); ctx.fill()
+		ctx.globalAlpha = m.alpha
+		if (electroSpriteReady && electroSprite && electroSprite.naturalWidth) { ctx.drawImage(electroSprite, m.left, m.top, m.w, m.h) }
+		else { drawFallbackElectroTurret(ctx, s, m) }
+		ctx.restore()
+	}
+	function electroMuzzle(s, target, m, index, count) {
+		var c = electroCore(s, m), a = Math.atan2(target.y - c.y, target.x - c.x)
+		a += (index - (count - 1) * 0.5) * 0.035
+		return { x: c.x + Math.cos(a) * c.rx, y: c.y + Math.sin(a) * c.ry, core: c }
+	}
+	function drawElectroIdleEnergy(ctx, s, m, low) {
+		var c = electroCore(s, m), buds = electroBudPoints(m), pulse = 0.5 + 0.5 * Math.sin(s.age * M.PI2 / (ELECTRIC_E.breathSec || 1.15))
+		var idleAlpha = (ELECTRIC_E.idleBudAlpha || 0.22) * (1 - m.charge) * m.alpha
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		ctx.fillStyle = COMBAT_E.impactEdge || COMBAT_E.edge
+		for (var i = 0; i < buds.length; i++) {
+			ctx.globalAlpha = idleAlpha * (0.72 + pulse * 0.28)
+			ctx.beginPath(); ctx.arc(buds[i].x, buds[i].y, 1.05 + pulse * 0.45, 0, M.PI2); ctx.fill()
+			if (!low) {
+				ctx.globalAlpha = idleAlpha * 0.34; ctx.strokeStyle = COMBAT_E.edge; ctx.lineWidth = 0.75
+				ctx.beginPath(); ctx.moveTo(buds[i].x, buds[i].y); ctx.lineTo(c.x, c.y); ctx.stroke()
+			}
+		}
+		var orbitCount = low ? 1 : (ELECTRIC_E.idleOrbitCount || 3), orbitBase = s.age * 3.1
+		for (var oi = 0; oi < orbitCount; oi++) {
+			var oa = orbitBase + oi * M.PI2 / orbitCount
+			ctx.globalAlpha = (0.38 + pulse * 0.28) * m.alpha; ctx.fillStyle = oi % 2 ? COMBAT_E.core : (COMBAT_E.impactEdge || COMBAT_E.edge)
+			ctx.beginPath(); ctx.arc(c.x + Math.cos(oa) * c.rx * 1.02, c.y + Math.sin(oa) * c.ry * 1.08, low ? 1.0 : 1.25, 0, M.PI2); ctx.fill()
+		}
+		ctx.restore()
+	}
+	function drawElectroCharge(ctx, s, m, low) {
+		if (m.charge <= 0) { return }
+		var c = electroCore(s, m), buds = electroBudPoints(m), p = m.charge
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		ctx.strokeStyle = COMBAT_E.impactEdge || COMBAT_E.edge; ctx.lineWidth = low ? 0.85 : 1.15
+		for (var i = 0; i < buds.length; i++) {
+			var sx = buds[i].x + (c.x - buds[i].x) * p * 0.10, sy = buds[i].y + (c.y - buds[i].y) * p * 0.10
+			ctx.globalAlpha = ((low ? 0.22 : 0.32) + p * (low ? 0.30 : 0.46)) * m.alpha
+			ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(c.x, c.y); ctx.stroke()
+			var travel = clamp01(p * 1.10), bx = sx + (c.x - sx) * travel, by = sy + (c.y - sy) * travel
+			ctx.globalAlpha = (0.55 + p * 0.45) * m.alpha; ctx.fillStyle = COMBAT_E.core
+			ctx.beginPath(); ctx.arc(sx, sy, (ELECTRIC_E.chargeBudGlowPx || 3.4) * (0.48 + p * 0.32), 0, M.PI2); ctx.fill()
+			ctx.globalAlpha = (0.65 + p * 0.35) * m.alpha; ctx.beginPath(); ctx.arc(bx, by, low ? 1.2 : 1.55, 0, M.PI2); ctx.fill()
+		}
+		ctx.globalAlpha = (0.42 + p * 0.50) * m.alpha; ctx.strokeStyle = COMBAT_E.edge; ctx.lineWidth = low ? 1.15 : 1.65
+		ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * (0.76 + p * 0.10), c.ry * (0.76 + p * 0.10), 0, 0, M.PI2); ctx.stroke()
+		if (!low) {
+			ctx.globalAlpha = p * 0.50 * m.alpha; ctx.strokeStyle = COMBAT_E.core; ctx.lineWidth = 0.9
+			var arcs = ELECTRIC_E.chargeCoreArcCount || 3
+			for (var ai = 0; ai < arcs; ai++) {
+				var a0 = s.age * 5.4 + ai * M.PI2 / arcs
+				ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * 1.22, c.ry * 1.38, 0, a0, a0 + 0.58); ctx.stroke()
+			}
+			ctx.globalAlpha = p * 0.24 * m.alpha; ctx.strokeStyle = COMBAT_E.impactEdge || COMBAT_E.edge; ctx.lineWidth = 1
+			ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * (1.42 - p * 0.18), c.ry * (1.58 - p * 0.22), 0, 0, M.PI2); ctx.stroke()
+		}
+		ctx.restore()
+	}
+	function drawElectroFireAccent(ctx, s, m, low) {
+		var life = ELECTRIC_E.fireAccentLifeSec || 0.16
+		if (!(s.fireAge >= 0 && s.fireAge < life)) { return }
+		var c = electroCore(s, m), p = 1 - clamp01(s.fireAge / life), expand = 1 + (1 - p) * 0.46
+		ctx.save(); ctx.lineCap = 'round'
+		ctx.globalAlpha = p * 0.72 * m.alpha; ctx.strokeStyle = COMBAT_E.core; ctx.lineWidth = low ? 1.15 : 1.65
+		ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * expand, c.ry * expand, 0, 0, M.PI2); ctx.stroke()
+		ctx.globalAlpha = p * 0.48 * m.alpha; ctx.strokeStyle = COMBAT_E.impactEdge || COMBAT_E.edge; ctx.lineWidth = 1
+		var spokes = low ? 3 : (ELECTRIC_E.fireAccentSpokes || 6)
+		for (var i = 0; i < spokes; i++) {
+			var a = i * M.PI2 / spokes + 0.18, r1x = c.rx * 1.10, r1y = c.ry * 1.10
+			var r2x = c.rx * (1.42 + (1 - p) * 0.18), r2y = c.ry * (1.58 + (1 - p) * 0.18)
+			ctx.beginPath(); ctx.moveTo(c.x + Math.cos(a) * r1x, c.y + Math.sin(a) * r1y)
+			ctx.lineTo(c.x + Math.cos(a) * r2x, c.y + Math.sin(a) * r2y); ctx.stroke()
+		}
+		ctx.globalAlpha = p * 0.92 * m.alpha; ctx.fillStyle = COMBAT_E.coreHot || COMBAT_E.core
+		ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.max(2.0, c.rx * 0.34), Math.max(1.3, c.ry * 0.62), 0, 0, M.PI2); ctx.fill()
+		var sparks = low ? 1 : (ELECTRIC_E.fireSparkCount || 3), travel = 1 - p
+		for (var si = 0; si < sparks; si++) {
+			var sa = s.aimAngle + (si - (sparks - 1) * 0.5) * 0.70 + Math.sin(si * 2.17) * 0.20
+			var sr = c.rx * (1.10 + travel * 1.10)
+			ctx.globalAlpha = p * 0.70 * m.alpha; ctx.fillStyle = si % 2 ? COMBAT_E.impactEdge : COMBAT_E.core
+			ctx.beginPath(); ctx.arc(c.x + Math.cos(sa) * sr, c.y + Math.sin(sa) * c.ry * (1.10 + travel * 1.25), low ? 1.0 : 1.35, 0, M.PI2); ctx.fill()
+		}
+		ctx.restore()
+	}
+	function drawElectroBeam(ctx, s, target, low, index, count) {
+		var full = ELECTRIC_E.beamFullSec || 0.08, fade = ELECTRIC_E.beamFadeSec || 0.10
+		var visible = s.fireAge <= full ? 1 : clamp01(1 - (s.fireAge - full) / fade)
+		if (s.fireAge >= full + fade || visible <= 0) { return false }
+		var m = electroSpriteMetrics(s), mz = electroMuzzle(s, target, m, index, count)
+		var li = Math.max(0, Math.min(4, s.comboLevel - 1))
+		var main = (ELECTRIC_E.beamMainWidthByComboLevel || [5.0, 6.1, 7.3, 8.7, 10.2])[li]
+		var core = (ELECTRIC_E.beamCoreWidthByComboLevel || [1.45, 1.75, 2.10, 2.50, 2.95])[li]
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		if (!low) {
+			ctx.globalAlpha = visible * 0.22
+			ctx.beginPath(); ctx.moveTo(mz.x, mz.y); ctx.lineTo(target.x, target.y)
+			ctx.strokeStyle = COMBAT_E.edge; ctx.lineWidth = main * 1.82; ctx.stroke()
+		}
+		ctx.globalAlpha = visible
+		ctx.beginPath(); ctx.moveTo(mz.x, mz.y); ctx.lineTo(target.x, target.y)
+		ctx.strokeStyle = COMBAT_E.beam || COMBAT_E.edge; ctx.lineWidth = main; ctx.stroke()
+		ctx.beginPath(); ctx.moveTo(mz.x, mz.y); ctx.lineTo(target.x, target.y)
+		ctx.strokeStyle = COMBAT_E.beamCore || COMBAT_E.core; ctx.lineWidth = core; ctx.stroke()
+		ctx.fillStyle = COMBAT_E.coreHot || COMBAT_E.core; ctx.beginPath(); ctx.arc(mz.x, mz.y, low ? 1.8 : 2.4, 0, M.PI2); ctx.fill(); ctx.restore()
+		return true
+	}
+	function drawElectroImpact(ctx, impact, level, low) {
+		if (!impact.active) { return }
+		var life = ELECTRIC_E.impactLifeSec || 0.12, p = clamp01(impact.age / life), alpha = 1 - p
+		var outer = electroLevelValue('impactRadiusByLevel', level, [10, 12, 14, 16, 18])
+		ctx.save(); ctx.translate(impact.x, impact.y)
+		ctx.globalAlpha = alpha; ctx.fillStyle = COMBAT_E.impact; ctx.beginPath(); ctx.arc(0, 0, 4.5 + (1 - p) * 1.2, 0, M.PI2); ctx.fill()
+		if (!low) {
+			ctx.globalAlpha = alpha * 0.78; ctx.strokeStyle = COMBAT_E.impactEdge || COMBAT_E.edge; ctx.lineWidth = 1.2
+			ctx.beginPath(); ctx.arc(0, 0, outer * (0.82 + p * 0.18), 0, M.PI2); ctx.stroke()
+			ctx.strokeStyle = COMBAT_E.core; ctx.lineWidth = 1
+			for (var i = 0; i < 3; i++) {
+				var a = -M.PI / 2 + i * M.PI2 / 3, r1 = outer * 0.62, r2 = outer * 0.94
+				ctx.beginPath(); ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1); ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); ctx.stroke()
+			}
+		}
+		ctx.restore()
+	}
+	function drawElectroIcon(ctx, x, y, size, color) {
+		ctx.save(); ctx.translate(x, y); ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+		ctx.globalAlpha *= 0.92; ctx.fillStyle = COMBAT_E.iconBg || COMBAT_E.dark; ctx.beginPath(); ctx.arc(0, 0, size * 0.50, 0, M.PI2); ctx.fill()
+		ctx.strokeStyle = color || COMBAT_E.icon || COMBAT_E.edge; ctx.lineWidth = Math.max(1, size * 0.10)
+		for (var i = 0; i < 3; i++) {
+			var a = -M.PI / 2 + i * M.PI2 / 3, x2 = Math.cos(a) * size * 0.31, y2 = Math.sin(a) * size * 0.31
+			ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(x2, y2); ctx.stroke()
+			ctx.fillStyle = COMBAT_E.core; ctx.beginPath(); ctx.arc(x2, y2, Math.max(1.2, size * 0.095), 0, M.PI2); ctx.fill()
+		}
+		ctx.fillStyle = COMBAT_E.core; ctx.beginPath(); ctx.moveTo(0, -size * 0.16); ctx.lineTo(size * 0.13, 0); ctx.lineTo(0, size * 0.16); ctx.lineTo(-size * 0.13, 0); ctx.closePath(); ctx.fill(); ctx.restore()
+	}
+	function drawElectroOverlay(ctx, dense) {
+		var s = electroVfxState, low = electroLowMode(dense)
+		DBG.electroTurretActive = s.active ? 1 : 0; DBG.electroTurretFireAge = s.fireAge; DBG.electroBeamCount = 0
+		if (!s.active) { return }
+		syncElectroTargets(s)
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+		var m = electroSpriteMetrics(s), c = electroCore(s, m)
+		drawElectroTurretBodyOverlay(ctx, s, m)
+		drawElectroIdleEnergy(ctx, s, m, low)
+		drawElectroCharge(ctx, s, m, low)
+		drawElectroFireAccent(ctx, s, m, low)
+		var idlePulse = 1 + Math.sin((s.age / (ELECTRIC_E.breathSec || 1.15)) * M.PI2) * 0.042
+		var ringScale = idlePulse - m.charge * 0.12 + m.recoil * 0.16
+		ctx.globalAlpha = (0.50 + m.charge * 0.30 + m.recoil * 0.26) * m.alpha
+		ctx.strokeStyle = COMBAT_E.edge; ctx.lineWidth = 1.4
+		ctx.beginPath(); ctx.ellipse(c.x, c.y, c.rx * ringScale, c.ry * ringScale, 0, 0, M.PI2); ctx.stroke()
+		ctx.globalAlpha = (0.60 + m.charge * 0.30 + m.recoil * 0.32) * m.alpha
+		ctx.fillStyle = COMBAT_E.core
+		ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.max(1.9, c.rx * 0.28), Math.max(1.25, c.ry * 0.50), 0, 0, M.PI2); ctx.fill()
+		var count = Math.min(3, s.targets.length)
+		for (var i = 0; i < count; i++) { if (drawElectroBeam(ctx, s, s.targets[i], low, i, count)) { DBG.electroBeamCount++ } }
+		for (var j = 0; j < electroImpacts.length; j++) { drawElectroImpact(ctx, electroImpacts[j], s.comboLevel, low) }
+		ctx.restore()
+	}
+	function drawElectroGroundWorld(ctx, dense) {
+		var s = electroVfxState
+		if (s.active) { drawElectroTurretWorld(ctx, s, dense) }
+	}
+	function drawElectricWorld(ctx) { var dense = electricDenseMode(); drawElectroGroundWorld(ctx, dense) }
+	function drawElectricOverlay(ctx) {
+		var dense = electricDenseMode()
+		if (lightningFxState) { syncLightningAnchors(lightningFxState); drawLightningWorld(ctx, dense); drawLightningOverlay(ctx, dense) }
+		DBG.lightningActive = lightningFxState ? 1 : 0
+	}
+	function drawElectroTopOverlay(ctx) {
+		// 专用最后战斗层：在敌人、蛇、普通粒子和白闪核之后绘制炮台；仅伤害文字位于其上。
+		var dense = electricDenseMode(); drawElectroOverlay(ctx, dense)
+	}
+	function updateLightningPhase(state) {
+		if (state.age < state.propagateEnd) { state.phase = 'propagate'; state.currentSegment = Math.min(state.segmentCount - 1, Math.floor(state.age / state.hopDelay)) }
+		else if (state.age < state.impactEnd) { state.phase = 'impact'; state.currentSegment = -1 }
+		else if (state.age < state.fadeEnd) { state.phase = 'fade'; state.currentSegment = -1 }
+		else { state.phase = 'done'; state.currentSegment = -1 }
+	}
+	function electricTick(dt) {
+		if (lightningFxState) { lightningFxState.age += dt; updateLightningPhase(lightningFxState); if (lightningFxState.phase === 'done') { lightningFxState = null } }
+		var s = electroVfxState
+		if (s.active) {
+			s.age += dt; s.scanAge += dt; s.deployAge += dt
+			if (s.fireAge < 999) { s.fireAge += dt }
+			if (s.phase === 'collapse') { s.collapseAge += dt; if (s.collapseAge >= (ELECTRO_COMBO.collapseSec || 0.18)) { resetElectroVfx() } }
+		}
+		for (var i = 0; i < electroImpacts.length; i++) { if (electroImpacts[i].active) { electroImpacts[i].age += dt; if (electroImpacts[i].age >= (ELECTRIC_E.impactLifeSec || 0.12)) { electroImpacts[i].active = false } } }
+	}
 	var Particle = {
 		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
 		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
@@ -194,6 +736,7 @@
 		incIgnite: function () { DBG.ignite++ },   // b9-diag：灼烧弹幕点燃直计（替代 Bus 事件，免热路径观察者效应；零 gameplay）
 		update: function (dt) {
 			var i
+			electricTick(dt)
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
 			dotTextThisFrame = 0   // P2-10：DOT 飘字抽稀计数归零
 			spawnFireEmbers()   // 火墙余烬：按固定间隔沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
@@ -231,6 +774,7 @@
 		drawWorld: function (ctx, ra) {
 			if (ra == null) { ra = 1 }
 			var i
+			drawElectricWorld(ctx)
 			for (i = 0; i < particles.length; i++) {
 				var p = particles[i]
 				var a = p.life / p.maxLife
@@ -278,6 +822,7 @@
 		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
 		drawOverlay: function (ctx, ra) {
 			if (ra == null) { ra = 1 }
+			drawElectricOverlay(ctx)
 			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
 			if (!(RT('PERF.suppressWhiteBurst', (global.PerfTier && global.PerfTier.suppressWhiteBurst) ? 1 : 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字；回退源=PerfTier.suppressWhiteBurst(原写死 0→白爆永不关，本次接线)
 				for (var i = 0; i < flashCores.length; i++) {
@@ -288,19 +833,30 @@
 					ctx.beginPath(); ctx.arc(fc.x, fc.y, fc.radius * (1.25 - a * 0.25), 0, M.PI2); ctx.fill()
 				}
 			}
-			// 伤害飘字绘于白闪之上（永远不被白闪/实体遮挡）
+			// 电磁炮台专用最后战斗层：确保怪物、蛇和其他特效均不能覆盖主体与齐射束。
+			drawElectroTopOverlay(ctx)
+			// 伤害飘字绘于白闪和炮台之上（永远不被实体遮挡）
 			ctx.globalAlpha = 1
 			ctx.textAlign = 'center'
 			for (var ti = 0; ti < texts.length; ti++) {
 				var t = texts[ti]
 				ctx.globalAlpha = M.clamp(t.life / t.maxLife * 1.5, 0, 1)
 				ctx.fillStyle = t.color
-				ctx.font = '700 ' + t.size + 'px system-ui, sans-serif'
-				ctx.fillText(t.text, M.lerp(t.prevX, t.x, ra), M.lerp(t.prevY, t.y, ra))
+				ctx.font = (t.iconId === 'electro' ? '800 ' : '700 ') + t.size + 'px system-ui, sans-serif'
+				var tx = M.lerp(t.prevX, t.x, ra), ty = M.lerp(t.prevY, t.y, ra), textX = tx
+				if (t.iconId === 'electro') {
+					var iconSize = COMBAT_TEXT.iconSizePx || 15, iconGap = COMBAT_TEXT.iconGapPx || 4, numWidth = Math.max(t.size * 0.72, t.text.length * t.size * 0.58)
+					var totalWidth = iconSize + iconGap + numWidth, left = tx - totalWidth * 0.5
+					textX = left + iconSize + iconGap + numWidth * 0.5
+					drawElectroIcon(ctx, left + iconSize * 0.5, ty - t.size * 0.36, iconSize, t.iconColor || COMBAT_E.icon || COMBAT_E.edge)
+				}
+				if (t.strokeColor && t.strokeWidth > 0) { ctx.strokeStyle = t.strokeColor; ctx.lineWidth = t.strokeWidth; ctx.strokeText(t.text, textX, ty) }
+				ctx.fillText(t.text, textX, ty)
 			}
 			ctx.globalAlpha = 1
 		},
 		clear: function () {
+			lightningFxState = null; resetElectroVfx()
 			while (particles.length) { particlePool.release(particles.pop()) }
 			while (texts.length) { textPool.release(texts.pop()) }
 			while (beams.length) { beamPool.release(beams.pop()) }
@@ -321,10 +877,10 @@
 			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
 			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'high') }   // P2-10：DOT 飘字每帧抽稀（火墙 MULTI-敌齐爆不糊屏）；提权 high 满池不让位
 		} else {
-			var col = d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText)   // 暴击金优先，其次来源色
-			var lbl = st ? st.label : ''
-			spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3, 'low')
-			spawnText(d.x, ty, lbl + '-' + dmg, col, d.crit ? 20 : 14, 'high')   // 瞬伤/蒸汽飘字提权 high：满池时不让位 low 标签（冰减速等），确保伤害数字必现（修"假人无数字/蒸汽飘字不全"）
+			var electro = d.src === 'electro'
+			var col = electro ? COMBAT_E.text : (d.crit ? COLORS.critText : (st ? st.color : COLORS.damageText))
+			if (!electro) { spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3, 'low') }
+			spawnText(d.x, ty, (electro ? ((st && st.label) || '电磁 ') : (st ? st.label : '')) + dmg, col, electro ? (d.crit ? 20 : 16) : (d.crit ? 20 : 14), 'high', electro ? { strokeColor: COMBAT_E.textStroke, strokeWidth: COMBAT_TEXT.outlinePx || 2.5, customLife: COMBAT_TEXT.comboLifeSec || 0.72 } : null)   // 当前战斗标签体系保持一致：显示“电磁 数字”，图标系统留待专项统一
 		}
 	})
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || STYLE.enemy, 220, 4, 0.5) })   // 死亡爆花取威胁色（d.color 来自 07_enemy STYLE 色阶）
@@ -348,31 +904,11 @@
 	})
 	Bus.on('fx:lightning', function (d) {
 		if (!d || !d.chain || d.chain.length < 2) { return }
-		for (var i = 1; i < d.chain.length; i++) {
-			var a = d.chain[i - 1], b = d.chain[i]
-			spawnBeam(a.x, a.y, b.x, b.y, LIGHTNING_COLOR, LIGHTNING_W_PX, LIGHTNING_LIFE, LIGHTNING_JAG)  // 蓝白折线电链
-			spawnBurst(b.x, b.y, HIT_BURST_N, LIGHTNING_COLOR, 100, 3, 0.25)                               // 节点爆点
-		}
+		lightningFxState = makeLightningState(d)
 	})
-	// B-4 增强：电磁炮台连锁闪电视觉（紫 #c9a8ff）——
-	// 与基础蓝白 fx:lightning 的区分维度＝粗弧(ELECTRO_W_PX) + 节点多分叉(ELECTRO_BRANCH_N) + 命中残留辉光(ELECTRO_BRANCH_LIFE)；
-	// 基础闪电保持细/快/蓝白/单链/无残留，靠简洁对比；事件名全小写。零 gameplay（不改伤害/连锁/射程/冷却/判定）
-	Bus.on('fx:electroarc', function (d) {
-		if (!d || !d.chain || d.chain.length < 2) { return }
-		var h0 = d.chain[0]
-		spawnFlashCore(h0.x, h0.y, ELECTRO_GLOW_R + 4, 'rgba(201,168,255,0.55)', ELECTRO_BRANCH_LIFE + 0.05)  // 蛇头炮台紫辉光（实体之上，比基础闪电多一层残留）
-		for (var i = 1; i < d.chain.length; i++) {
-			var a = d.chain[i - 1], b = d.chain[i]
-			spawnBeam(a.x, a.y, b.x, b.y, STYLE.elite, ELECTRO_W_PX, ELECTRO_LIFE, ELECTRO_JAG)   // 紫色粗弧电链（STYLE.elite；比基础闪电粗、存活更久）
-			spawnBurst(b.x, b.y, HIT_BURST_N, STYLE.elite, 110, 3, 0.25)                          // 节点紫爆点
-			spawnFlashCore(b.x, b.y, ELECTRO_GLOW_R, 'rgba(201,168,255,0.5)', ELECTRO_BRANCH_LIFE)  // 命中残留紫辉光（~0.2s afterglow；基础闪电无，靠此拉开停留时长）
-			for (var r = 0; r < ELECTRO_BRANCH_N; r++) {                                        // 节点多分叉放射紫电芒（基础闪电无分叉）
-				var ra = (r / ELECTRO_BRANCH_N) * M.PI2 + Math.random() * 0.3, rl = 16 + Math.random() * 14
-				spawnBeam(b.x, b.y, b.x + Math.cos(ra) * rl, b.y + Math.sin(ra) * rl, STYLE.elite, 2, ELECTRO_BRANCH_LIFE, 0)
-			}
-		}
-	})
-	// 需求B：steamExplosion 等的周期爆闪（爆心由调用方传入真实坐标）
+	Bus.on('fx:electroturretdeploy', function (d) { if (d && d.x != null && d.y != null) { deployElectroVfx(d) } })
+	Bus.on('fx:electroturretfire', function (d) { if (d && d.x != null && d.y != null) { fireElectroVfx(d) } })
+	Bus.on('fx:electroturretend', function (d) { endElectroVfx(d) })
 	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
 		var steamFrame = Math.floor(((global.performance && global.performance.now) ? global.performance.now() : Date.now()) / (1000 / ((CONFIG.GAME && CONFIG.GAME.fps) || 60)))

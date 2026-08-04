@@ -30,7 +30,7 @@
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值）
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, flashKind: '', dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值）
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -80,7 +80,7 @@
 		e.color = colorByType[type] || '#fff'
 		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
 	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
-		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
+		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
 			e.phase = 1; e.invuln = 0; e.fireT = cfg.fireIntervalSec; e.kbImmune = true; e.senseRange = -1
@@ -111,7 +111,7 @@
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.burnT = 0; e.burnDps = 0; e.isDummy = false
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.flashT = 0; e.flashKind = ''; e.burnT = 0; e.burnDps = 0; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
@@ -133,7 +133,7 @@
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
-			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.dotMap = {}
+			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
 			list.push(e)
 		}
@@ -172,16 +172,19 @@
 	function applyDamage(e, amount, isCrit, isDot, src) {   // B-1：src=伤害来源标签（仅透传给飘字，不参与伤害计算）
 		if (!e || !e.active || e.type === 'bossBullet' || e.invuln > 0) { return }
 		e.hp -= amount
-		if (!isDot) {                                                // ⑥ 仅即时伤害产生物理反应：受击闪白 + 击退；DOT 不刷 stun/flashT、不击退
+		if (!isDot) {                                                // 即时伤害保留停顿/击退；整只怪闪色改为来源专属，普通飞镖不再白闪。
 			e.stun = Math.max(e.stun, CB.enemyHitStunFrames / GAME.fps)
-			e.flashT = Math.max(e.flashT, CB.hitFlashFrames / GAME.fps)   // ⑥ 受击闪白（render 读 flashT）
-			if (!e.kbImmune) {                                       // ⑥ 击退：远离蛇头 enemyKnockbackPx（精英/Boss 免疫）
+			if (src === 'electro') {
+				var electroFx = STYLE.combatFx && STYLE.combatFx.electro
+				e.flashT = Math.max(e.flashT, (electroFx && electroFx.hitFlashSec) || (CB.hitFlashFrames / GAME.fps))
+				e.flashKind = 'electro'
+			}
+			if (!e.kbImmune) {                                       // 击退：远离蛇头 enemyKnockbackPx（精英/Boss 免疫）
 				var sn = Registry.get('snake')
 				var hx = sn && sn.head ? sn.head.x : e.x, hy = sn && sn.head ? sn.head.y : e.y
 				var dx = e.x - hx, dy = e.y - hy, L = M.len(dx, dy) || 1
 				e.kbx = dx / L * CB.enemyKnockbackPx; e.kby = dy / L * CB.enemyKnockbackPx
 			}
-			if (src === 'lightning' || src === 'electro') { e.flashT = 0 }
 		}
 	if (isDot) {                                                  // ⑦ DOT 分源聚合飘字（B-4 衍生）：每来源独立累积/flush，互不混
 		if (!src) { src = '_dot' }                              // 兜底 key（所有 DOT 调用均应传 src；兜底防 dotMap[undefined]）
@@ -275,7 +278,7 @@
 		var hy = snake && snake.head ? snake.head.y : e.y
 		if (e.slowT > 0) { e.slowT -= dt }
 		if (e.steamCd > 0) { e.steamCd -= dt }   // ④ per-enemy 蒸汽引爆冷却（死亡经对象池复用复位）
-		if (e.flashT > 0) { e.flashT -= dt }   // ⑥ 闪白计时衰减
+		if (e.flashT > 0) { e.flashT -= dt; if (e.flashT <= 0) { e.flashT = 0; e.flashKind = '' } }   // 来源专属受击闪衰减
 		if (e.type === 'bossBullet') {
 			e.lifeT -= dt; e.x += e.vx * dt; e.y += e.vy * dt
 		if (e.lifeT <= 0 || !inWorld(e.x, e.y, -e.radius)) { e.active = false }

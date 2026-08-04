@@ -13,7 +13,7 @@
 		bossHpTotal: [1000, 40000, 500],
 		fireDot: [0, 60, 1], boltDmg: [0, 80, 1], lightningDmg: [0, 80, 1], shieldDmg: [0, 60, 1],
 		fireRadius: [20, 220, 2], icePoolR: [10, 120, 2], iceSeek: [50, 400, 5], iceFreezeCd: [0.5, 10, 0.25], icePoolLinger: [1, 12, 0.25], shieldOrbit: [20, 160, 2], iceSlow: [0, 1, 0.05],   // ⑥ 标定：冰池半径(px)/索敌射程(px)/冰冻CD(s)/冰池滞留(s) + 冰冻减速%
-		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], electroCd: [0.2, 1.5, 0.05], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10], alpha: [0, 1, 0.02], fireWidth: [0.9, 1.05, 0.01]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯渲染表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；electroCd=电磁冷却滑条范围(宽，终值只在0.4/0.5/0.8定)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
+		comboMul: [0, 10, 0.1], burnDps: [0, 40, 1], comboRadius: [20, 200, 5], steamCap: [1, 24, 1], earlyUpgradeGap12: [15, 30, 1], earlyUpgradeGap3: [20, 40, 1], maxBackW: [1000, 2880, 50], worldScale: [0.6, 1.0, 0.05], aggroRange: [200, 800, 10], alpha: [0, 1, 0.02], fireWidth: [0.9, 1.05, 0.01]   // b9-diag：蒸汽齐爆同帧上限滑条范围 + 画布上限W(render RT 桥，纯视觉表现) + 视图缩放(纯视觉,0.6–1.0 默认0.8)；earlyUpgradeGap12/3=前期(段①②)/割草(段③)升级间隔s 滑条范围；aggroRange=游荡aggro范围px 滑条[200,800,10]（段-scaled：成长期800/割草高潮450；min200=基线/关闭）
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
@@ -88,7 +88,6 @@
 		{ path: 'PLAYER.turnRateFloor', label: '转向下限°/s', rng: 'turnRateFloor', def: 120, dec: 0 },   // 满节不失控下限（真理源 100–150）
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
 		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' },   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
-		{ path: 'COMBO.electroTurret.cooldownSec', label: '电磁冷却s', rng: 'electroCd', def: 0.5, dec: 2 },   // P1 电磁 Combo 节奏主轴：RT 桥到 08_skill timer.electro（自动接线 rtSet）；def 由 config 推导=0.5（无裸数字）；P1 实测调 CD 无感(电磁与闪电视觉同质)→暂锚定 0.5、轴暂缓，滑条留作 infra 供未来可见性重做后再调
 		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
 		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 },   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
 		{ path: 'ENEMIES.wanderer.aggroRangeByStage.2', label: '游荡aggro·成长期(段②)px', rng: 'aggroRange', def: 800, dec: 0 },   // 段≥② 游荡型 aggro 圈（段-scaled）：成长期默认800覆盖刷怪环520-760，距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；min200=基线/关闭
@@ -680,10 +679,12 @@
 			Log.info('[预览] 蒸汽爆炸：白色蒸汽云 + 冰晶碎屑 + 实心白闪核')
 		} else if (id === 'electroTurret') {
 			var ds = spawnDummiesNearHead(3)
-			var chain = [{ x: h.x, y: h.y }]
-			for (var i = 0; i < ds.length; i++) { chain.push({ x: ds[i].x, y: ds[i].y }) }
-			Bus.emit('fx:electroarc', { chain: chain })
-			Log.info('[预览] 电磁炮台：紫电链 + 节点放射电芒 + 蛇头紫辉光')
+			var targets = []
+			for (var i = 0; i < ds.length && i < 3; i++) { targets.push({ id: ds[i].id, x: ds[i].x, y: ds[i].y }) }
+			Bus.emit('fx:electroturretdeploy', { x: h.x, y: h.y, comboLevel: 1, radius: CONFIG.VFX.electric.electro.radiusByLevel[0] })
+			Bus.emit('fx:electroturretfire', { x: h.x, y: h.y, comboLevel: 1, targets: targets })
+			global.setTimeout(function () { Bus.emit('fx:electroturretend', { x: h.x, y: h.y, comboLevel: 1 }) }, 900)
+			Log.info('[预览] 电磁炮台：悬浮三花瓣 + 青蓝束线 + 固定角命中反馈')
 		} else if (id === 'burningBarrage') {
 			var dn = spawnDummiesNearHead(3), En = Registry.get('enemy')
 			for (var k = 0; k < dn.length; k++) {

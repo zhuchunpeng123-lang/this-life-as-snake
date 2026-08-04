@@ -184,7 +184,13 @@
 
 		COMBO: {
 			steamExplosion: { parts: ['fire', 'ice'], damageMul: 2.5, radius: 90 },
-			electroTurret: { parts: ['bolt', 'lightning'], chains: 3, damageMul: 1.5, cooldownSec: 0.5 },
+			electroTurret: {
+				parts: ['bolt', 'lightning'], damageMul: 1.5,
+				redeployCooldownSec: 1.0, deploySec: 0.18, firstShotSec: 0.28, postFireHoldSec: 0.40, collapseSec: 0.18,
+				salvoCountByLevel: [3, 3, 4, 4, 4], salvoIntervalSecByLevel: [1.10, 1.05, 0.95, 0.90, 0.85],
+				targetsPerSalvoByLevel: [2, 2, 3, 3, 3], attackRadiusByLevel: [170, 190, 220, 245, 270],
+				preferredMinRange: 70, deployClearancePx: 12
+			},
 			burningBarrage: { parts: ['fire', 'bolt'], burnDps: 8, burnSec: 3 }
 		},
 
@@ -382,9 +388,22 @@
 				fire:      '#ff7a3c',   // 火焰
 				ice:       '#7fc4ff',   // 冰霜（比 ui 更冷更蓝）
 				shield:    '#bff0d8',   // 护盾（避开 food 黄）
-			lightning: '#7a9bff'    // 闪电（避开 elite 紫）
-		}
-	},
+			lightning: '#6fa8ff'    // 闪电：更偏冷蓝，与电磁紫青阵地束拉开
+			},
+			combatFx: {
+				electro: {
+					// 电磁阵地：冷蓝晶体主体 + 青白高能核心；避开敌方红/品红危险色域。
+					body: '#4F67D8', bodyHi: '#8A72E8', edge: '#A483FF', core: '#E9FFFF', coreHot: '#FFFFFF', dark: '#202B66',
+					ground: '#536FD8', beam: '#A06CFF', beamCore: '#E9FFFF', impact: '#F4FFFF', impactEdge: '#69E7FF',
+					boltAccent: '#D8FF7A', text: '#E3D6FF', textStroke: '#111830', icon: '#C0AFFF', iconBg: '#18234F', hitFlash: '#D9FFFF', hitFlashSec: 0.07
+				},
+				text: {
+					baseSize: 14, comboSize: 18, comboCritSize: 22, outlinePx: 2.5,
+					comboLifeSec: 0.72, iconSizePx: 15, iconGapPx: 4
+				},
+				statusIcon: { sizePx: 13, maxPerEnemy: 3 }
+			}
+		},
 
 	// —— UI（仅移动端表现值 · 非 §9 平衡真源） ——
 	// 仅控制 HUD/摇杆在手机上的缩放与下限，不牵动任何玩法强度/平衡。
@@ -453,9 +472,78 @@
 	},
 
 	// —— 音频（Web Audio 合成 · 资产豁免） ——
-		AUDIO: { enabled: true, masterVolume: 0.7, sfxVolume: 0.8, bgmVolume: 0.4 },
+		AUDIO: {
+			enabled: true, masterVolume: 0.7, sfxVolume: 0.8, bgmVolume: 0.4,
+			electric: {
+				// 电系音频结项：基础闪电=高频裂响/滋滋尾音；电磁炮台=低频炮击/能量回响。只控制表现，不参与玩法。
+				gateMs: 120,
+				lightning: {
+					crackleDurationByLevel: [0.09, 0.10, 0.11, 0.12, 0.13],
+					crackleGainByLevel: [0.075, 0.085, 0.095, 0.105, 0.115],
+					crackleHzByLevel: [2350, 2550, 2750, 3000, 3300], crackleQ: 0.75,
+					snapStartHzByLevel: [1080, 1140, 1210, 1290, 1380],
+					snapEndHzByLevel: [610, 640, 680, 730, 790],
+					snapDurationByLevel: [0.075, 0.080, 0.085, 0.090, 0.100],
+					snapGainByLevel: [0.100, 0.110, 0.120, 0.130, 0.140],
+					tailStartHzByLevel: [920, 980, 1040, 1120, 1220],
+					tailEndHzByLevel: [1380, 1480, 1600, 1740, 1900],
+					tailDurationByLevel: [0.10, 0.11, 0.12, 0.13, 0.14],
+					tailGainByLevel: [0.034, 0.038, 0.043, 0.048, 0.054],
+					pulseCountByLevel: [1, 1, 2, 2, 3], pulseSpacingSec: 0.026, pulseDurationSec: 0.034,
+					pulseGainByLevel: [0.028, 0.030, 0.032, 0.035, 0.038]
+				},
+				electro: {
+					deployStartHz: 180, deployEndHz: 560, deployDuration: 0.16, deployGain: 0.065,
+					deployBodyStartHz: 240, deployBodyEndHz: 330, deployBodyGain: 0.035,
+					fireBodyStartHzByLevel: [185, 180, 175, 170, 165], fireBodyEndHz: 72,
+					fireBodyDurationByLevel: [0.110, 0.115, 0.120, 0.130, 0.140],
+					fireBodyGainByLevel: [0.140, 0.150, 0.160, 0.175, 0.190],
+					fireClickStartHz: 560, fireClickEndHz: 220, fireClickDuration: 0.045,
+					fireClickGainByLevel: [0.055, 0.060, 0.065, 0.070, 0.075],
+					blastNoiseHz: 760, blastNoiseQ: 0.75, blastNoiseDuration: 0.065,
+					blastNoiseGainByLevel: [0.070, 0.078, 0.086, 0.095, 0.105],
+					energyStartHzByLevel: [720, 760, 810, 870, 940],
+					energyEndHzByLevel: [380, 410, 440, 480, 520], energyDuration: 0.085,
+					energyGainByLevel: [0.045, 0.050, 0.055, 0.060, 0.068],
+					endStartHz: 360, endEndHz: 130, endDuration: 0.12, endGain: 0.035
+				}
+			}
+		},
 
 		// —— Debug ——
+		VFX: {
+			electric: {
+				denseEnemyMin: 28, maxChainPoints: 8, residueDenseMul: 0.95, maxBeamsByTier: { HIGH: 32, MED: 24, LOW: 16, POTATO: 12 },
+				lightning: {
+					// V4.5：整条电链统一在实体上层绘制；一级即可读、五级明显成长，直连节点由小型关节电核收口。
+					widthByLevel: [3.8, 4.6, 5.5, 6.6, 7.8],
+					hopDelayByLevel: [0.055, 0.052, 0.049, 0.046, 0.043],
+					impactDurationByLevel: [0.065, 0.070, 0.078, 0.086, 0.098],
+					fadeDurationByLevel: [0.110, 0.120, 0.132, 0.145, 0.160],
+					outerWidthRatio: 1.78, outerAlpha: 0.18, mainAlpha: 0.96, fadeMainAlpha: 0.24,
+					impactCoreAlphaLow: 0.70, impactCoreAlphaHigh: 0.96, impactCoreWidthRatio: 0.34,
+					propagateCoreAlpha: 0.60, fadeCoreAlpha: 0.28, nodePulseLifeSec: 0.120,
+					nodeImpactRadiusByLevel: [5.8, 6.5, 7.3, 8.3, 9.5], nodeImpactRingMul: 1.68, levelFiveBurstLifeSec: 0.12,
+					travelTipRadiusByLevel: [2.2, 2.4, 2.7, 3.0, 3.4], jointRadiusByLevel: [1.8, 2.0, 2.2, 2.5, 2.8]
+				},
+				electro: {
+					// V4.5：低空悬浮炮台保持体量；紫青直线齐射进一步加粗，并实时追踪移动目标中心。
+					radiusByLevel: [28, 32, 36, 40, 44],
+					spriteSrc: 'assets/vfx/electro_turret_world_v4_final.png',
+					spriteWidthByLevel: [62, 66, 70, 74, 78], spriteAspect: 1.60, spritePivotY: 0.92,
+					coreXRatio: 0.50, coreYRatio: 0.49, ringRadiusXRatio: 0.17, ringRadiusYRatio: 0.105,
+					budLeft: [0.25, 0.31], budRight: [0.75, 0.31], budFront: [0.50, 0.74],
+					breathSec: 1.15, breathScale: 0.030, hoverLiftPx: 6, hoverBobPx: 1.25, chargeLeadSec: 0.26,
+					shadowScaleX: 0.40, shadowScaleY: 0.115, scanDurationSec: 0.26,
+					beamFullSec: 0.12, beamFadeSec: 0.13, recoilRecoverSec: 0.22, impactLifeSec: 0.15,
+					idleBudAlpha: 0.27, idleOrbitCount: 3, chargeBudGlowPx: 4.0, chargeCoreArcCount: 3,
+					fireAccentLifeSec: 0.18, fireAccentSpokes: 8, fireSparkCount: 4,
+					beamMainWidthByComboLevel: [5.0, 6.1, 7.3, 8.7, 10.2],
+					beamCoreWidthByComboLevel: [1.45, 1.75, 2.10, 2.50, 2.95],
+					impactRadiusByLevel: [10, 12, 14, 16, 18]
+				}
+			}
+		},
 		DEBUG: { enabled: true, showHitboxes: false, showSpatialGrid: false, showFps: true, editorEnabled: true }
 	}
 

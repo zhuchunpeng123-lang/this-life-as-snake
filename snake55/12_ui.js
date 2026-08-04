@@ -12,7 +12,7 @@
 	var SKILL_GLYPH = { fire: '火', ice: '冰', bolt: '镖', shield: '盾', lightning: '雷' }   // 技能栏单字徽标（文本，非 hex）
 	var COMBO_LABEL = { steamExplosion: '蒸汽爆炸', electroTurret: '电磁炮台', burningBarrage: '灼烧弹幕' }
 	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
-	var COMBO_COLOR = { steamExplosion: STYLE.playerGlow, electroTurret: STYLE.ui, burningBarrage: STYLE.enemyCalm }   // GATE B：接 STYLE 真源（禁新 hex）；校验与 skillFx 五色(#d8ff7a/#ff7a3c/#7fc4ff/#bff0d8/#7a9bff)不撞
+	var COMBO_COLOR = { steamExplosion: STYLE.playerGlow, electroTurret: STYLE.elite, burningBarrage: STYLE.enemyCalm }   // GATE B：接 STYLE 真源（禁新 hex）；电磁 Combo 复用 elite 紫
 var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
 var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
@@ -464,6 +464,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (_rotateHandler) { global.removeEventListener('orientationchange', _rotateHandler); global.removeEventListener('resize', _rotateHandler); _rotateHandler = null }
 		if (rotateChoiceEl) { rotateChoiceEl.style.display = 'none' }
 	}
+	function comboPreviewLines(skillId, nextLevel) {
+		var sk = Registry.get('skill'), lines = [], changes = sk && sk.previewComboChanges ? sk.previewComboChanges(skillId, nextLevel) : []
+		for (var i = 0; i < changes.length; i++) {
+			var ch = changes[i], label = COMBO_LABEL[ch.id] || ch.id
+			lines.push(ch.unlocks ? ('解锁：' + label + ' Lv' + ch.to) : ('联动：' + label + ' Lv' + ch.from + ' → Lv' + ch.to))
+		}
+		return lines
+	}
 	function renderChooseCards(choices) {
 		choiceChoices = choices
 		choose.innerHTML = ''
@@ -533,7 +541,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			(function (c, idx) {
 				var col = STYLE.skillFx[c.id] || STYLE.ui   // 读真源 skillFx[id]（守护力场=shield 薄荷绿、冰霜=ice 冰蓝，不撞色）
 				var name = SKILL_LABEL[c.id] || c.id
-				var desc = SKILL_DESC[c.id] || ''
+				var desc = SKILL_DESC[c.id] || '', comboLines = comboPreviewLines(c.id, c.level)
+				if (comboLines.length) { desc += '\n' + comboLines.join('\n') }
 				var lvlTxt = c.isNew ? '新技能' : ('升级 → Lv' + c.level)
 				var card = mk('button', '', cards)
 				card.type = 'button'
@@ -549,6 +558,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 				nameEl.textContent = name
 				var descEl = mk('div', '', card)
 				descEl.className = 'ui-v1-choice-desc'
+				descEl.style.whiteSpace = 'pre-line'
 				descEl.textContent = desc
 				var footer = mk('div', '', card)
 				footer.className = 'ui-v1-choice-footer'
@@ -590,12 +600,18 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			detail = level > 0 ? ('当前等级：Lv' + level + '\n状态：已获得') : '状态：尚未获得'
 			if (SKILL_DESC[id]) { detail += '\n' + SKILL_DESC[id] }
 		} else {
-			var combo = CONFIG.COMBO && CONFIG.COMBO[id], parts = combo && combo.parts ? combo.parts : [], active = parts.length >= 2 && (owned[parts[0]] || 0) > 0 && (owned[parts[1]] || 0) > 0
+			var combo = CONFIG.COMBO && CONFIG.COMBO[id], parts = combo && combo.parts ? combo.parts : [], skillApi = Registry.get('skill')
+			var comboLevel = skillApi && skillApi.getComboLevel ? skillApi.getComboLevel(id) : Math.min(owned[parts[0]] || 0, owned[parts[1]] || 0)
+			var comboTier = skillApi && skillApi.getComboTier ? skillApi.getComboTier(id) : (comboLevel >= 5 ? '高阶' : (comboLevel >= 3 ? '中阶' : (comboLevel > 0 ? '初阶' : '未激活')))
+			var active = comboLevel > 0
 			var comboName = COMBO_LABEL[id] || id, fallback = (SKILL_GLYPH[parts[0]] || '?') + '+' + (SKILL_GLYPH[parts[1]] || '?')
 			title = comboName
 			icon = v1IconMarkup(id, fallback, 'card')
 			detail = active ? '状态：已激活' : '状态：未激活'
-			if (parts.length >= 2) { detail += '\n构成：' + (SKILL_LABEL[parts[0]] || parts[0]) + ' + ' + (SKILL_LABEL[parts[1]] || parts[1]) }
+			detail += '\nCombo等级：Lv' + comboLevel + '\n阶段：' + comboTier
+			if (parts.length >= 2) { detail += '\n构成：' + (SKILL_LABEL[parts[0]] || parts[0]) + ' Lv' + (owned[parts[0]] || 0) + ' + ' + (SKILL_LABEL[parts[1]] || parts[1]) + ' Lv' + (owned[parts[1]] || 0) }
+			detail += '\n规则：Combo等级由较低的组成技能等级决定'
+			if (!active && parts.length >= 2) { detail += '\n缺少：' + (owned[parts[0]] > 0 ? '' : (SKILL_LABEL[parts[0]] || parts[0])) + (owned[parts[0]] > 0 || owned[parts[1]] <= 0 ? '' : '、') + (owned[parts[1]] > 0 ? '' : (SKILL_LABEL[parts[1]] || parts[1])) }
 		}
 		buildInfoBox.innerHTML = '<h3>' + iconText(title) + '</h3><div class="ui-v1-build-info-card"><div class="ui-v1-info-icon">' + icon + '</div><div class="ui-v1-build-info-detail">' + iconText(detail) + '</div></div><button type="button" class="ui-v1-build-info-close">关闭</button>'
 		var close = buildInfoBox.querySelector('.ui-v1-build-info-close')

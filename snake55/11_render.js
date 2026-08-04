@@ -341,13 +341,19 @@
 		ctx.restore()
 		return ok
 	}
-	// 受击白闪覆盖（套在贴图之上，不替换贴图）：白圆按视觉直径覆盖
+	// 来源专属受击覆盖：普通飞镖不触发；电磁只做短促冷青薄染+轮廓环，避免整只怪突兀白球闪。
+	function enemyFlashColor(e) {
+		var electro = STYLE.combatFx && STYLE.combatFx.electro
+		return e.flashKind === 'electro' && electro ? (electro.hitFlash || electro.core) : COL.damageText
+	}
 	function drawEnemyFlashOverlay(e, ix, iy) {
 		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
-		var vs = vsTab[e.type] || 1.2
+		var vs = vsTab[e.type] || 1.2, r = e.radius * vs, col = enemyFlashColor(e)
 		ctx.save()
-		ctx.globalAlpha = 0.6
-		ctx.beginPath(); ctx.arc(ix, iy, e.radius * vs, 0, M.PI2); ctx.fillStyle = COL.damageText; ctx.fill()
+		ctx.globalAlpha = e.flashKind === 'electro' ? 0.16 : 0.28
+		ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ix, iy, r, 0, M.PI2); ctx.fill()
+		ctx.globalAlpha = e.flashKind === 'electro' ? 0.72 : 0.55
+		ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.2, r * 0.06); ctx.beginPath(); ctx.arc(ix, iy, r * 0.98, 0, M.PI2); ctx.stroke()
 		ctx.restore()
 	}
 function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] != null) ? global.PerfTier[field] : def }   // 自适应分级：RT 回退源改读 PerfTier 当前档（GM 经 editor.rtSet 仍优先，零双份真相源）
@@ -551,8 +557,8 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, M.PI2)   // bossBullet/dummy/兜底：圆
 		}
 	}
-	function drawEnemyFlash(e, hx, hy, t) {   // ⑥ 受击白闪：本型轮廓涂白（插值位姿消 165Hz 跳）
-		ctx.beginPath(); addEnemyShape(e, e.type, t, hx, hy, 1); ctx.fillStyle = COL.damageText; ctx.fill()
+	function drawEnemyFlash(e, hx, hy, t) {   // 代码画兜底：仅来源专属短闪
+		ctx.save(); ctx.globalAlpha = e.flashKind === 'electro' ? 0.62 : 0.48; ctx.beginPath(); addEnemyShape(e, e.type, t, hx, hy, 1); ctx.fillStyle = enemyFlashColor(e); ctx.fill(); ctx.restore()
 	}
 	function drawChargerWindup(e, t) {   // ⑤ 冲锋蓄力 telegraph：梭形沿朝向拉长闪（scale 视觉，不改 e.radius/碰撞）+ 方向箭头
 		var x = _ix(e), y = _iy(e), r = e.radius
@@ -783,7 +789,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		}
 		ctx.restore()
 		// 受击浅闪 / 换阶段无敌白热闪（套在贴图之上，与随从敌一致）
-		if (b.flashT > 0) { ctx.globalAlpha = 0.5; circle(x, visualY, d * 0.5, '#ffdff0'); ctx.globalAlpha = 1 }
+		if (b.flashT > 0) { var hitCol = enemyFlashColor(b); ctx.globalAlpha = 0.16; circle(x, visualY, d * 0.5, hitCol); ctx.globalAlpha = 0.72; ctx.strokeStyle = hitCol; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, visualY, d * 0.49, 0, M.PI2); ctx.stroke(); ctx.globalAlpha = 1 }
 		else if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { ctx.globalAlpha = 0.5; circle(x, visualY, d * 0.5, '#ffffff'); ctx.globalAlpha = 1 }
 		// 释放瞬间：短促冲击环 + 近白紫闪动，完全由 fireT 重置跳变驱动。
 		if (releaseAge >= 0 && releaseAge < BOSS_VISUAL.releaseFlashSec) {
@@ -827,16 +833,16 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		var l = En.list, t = GS.timeSec
 		var sn = Registry.get('snake'), hx = sn && sn.head ? sn.head.x : 0, hy = sn && sn.head ? sn.head.y : 0
 	// 第一遍：boss 单独处理；其余先试守卫式贴图（成功→画贴图+光环+动画，并保留受击白闪套在贴图上），失败→走代码画兜底（逐字保留原分组填充优化）
-	var groups = {}, elites = [], bosses = []
+	var groups = {}, elites = [], bosses = [], fallbackFlashes = []
 	for (var i = 0; i < l.length; i++) {
 		var e = l[i]; if (!e.active) { continue }
 		if (e.type === 'boss') { bosses.push(e); continue }
 		// 守卫式贴图：成功 → 画贴图(+光环+动画)；受击白闪套在贴图之上（不替换贴图）；失败 → 走下方代码画兜底
 		if (drawEnemySpriteWithFx(e, t, _ix(e), _iy(e), hx, hy)) {
-			if (e.flashT > 0) { drawEnemyFlashOverlay(e, _ix(e), _iy(e)) }   // ⑥ 受击白闪（套在贴图之上）
+			if (e.flashT > 0) { drawEnemyFlashOverlay(e, _ix(e), _iy(e)) }   // ⑥ 电磁受击短闪（套在贴图之上）
 			continue
 		}
-		if (e.flashT > 0) { drawEnemyFlash(e, hx, hy, t); continue }   // ⑥ 受击白闪（代码画兜底分支）
+		if (e.flashT > 0) { fallbackFlashes.push(e) }   // 代码画兜底先正常绘制，随后叠加电磁短闪；不再用闪色替换敌人本体。
 		if (e.type === 'charger' && e.state === 'windup') { drawChargerWindup(e, t); continue }   // ⑤ 蓄力 telegraph
 		if (e.type === 'elite') { elites.push(e) }
 		var ty = e.type; if (!groups[ty]) { groups[ty] = [] }; groups[ty].push(e)
@@ -847,6 +853,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			for (var j = 0; j < arr.length; j++) { addEnemyShape(arr[j], gk, t, hx, hy, 1) }
 			ctx.fillStyle = enemyColorByType(gk); ctx.fill()
 		}
+		for (var fi = 0; fi < fallbackFlashes.length; fi++) { drawEnemyFlash(fallbackFlashes[fi], hx, hy, t) }
 		for (var ei = 0; ei < elites.length; ei++) { drawEliteAura(elites[ei], t) }   // 精英光环（少量）
 		for (var bi = 0; bi < bosses.length; bi++) { drawBossBody(bosses[bi], t) }     // Boss 专属
 		// 第二遍：标记 + 血条（单敌少量，保留原逻辑）
