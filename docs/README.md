@@ -5,6 +5,7 @@
 ## 正式入口
 
 - `PROJECT-BRIEF.md`：3 分钟项目简报，适合发给 ChatGPT 总控窗口。
+- `CHATGPT-CONTROL.md`：当前 ChatGPT 总控资料包入口，统筹优先级与任务分流。
 - `PROJECT-STATUS.md`：当前状态、阻塞、近期待办。
 - `DEBT.md`：当前开放问题台账。
 - `ARCHITECTURE.md`：架构和模块职责。
@@ -46,11 +47,12 @@
 
 总控规划任务：
 
-1. `docs/PROJECT-BRIEF.md`
-2. `docs/PROJECT-STATUS.md`
-3. `docs/DEBT.md`
-4. `docs/plans/STATUS.md`
-5. GDD 设计意图文档
+1. `docs/CHATGPT-CONTROL.md`
+2. `docs/PROJECT-BRIEF.md`
+3. `docs/PROJECT-STATUS.md`
+4. `docs/DEBT.md`
+5. `docs/plans/STATUS.md`
+6. GDD 设计意图文档
 
 视觉、UI、美术任务：
 

@@ -37,6 +37,7 @@
 ## 4. 真理源
 
 - `AGENTS.md`：工程权限和硬规则。
+- `CHATGPT-CONTROL.md`：总控窗口的当前项目摘要、分流规则和优先级入口。
 - `PROJECT-BRIEF.md`、`PROJECT-STATUS.md`、`DEBT.md`：项目事实、当前状态和开放问题。
 - GDD、`docs/design/`：设计、世界观和视觉规范。
 - `snake55/02_config.js`：运行时数值入口。
@@ -45,6 +46,8 @@
 发生冲突时按以下优先级处理：
 
 用户当前明确指令 → `AGENTS.md` → 当前专项真理源 → 当前状态文档 → 历史资料。
+
+总控窗口先读 `CHATGPT-CONTROL.md`，再按任务需要回读状态、债务、计划、GDD 或设计真理源；总控摘要不替代专项真理源。
 
 ## 5. 上下文与输出
 
