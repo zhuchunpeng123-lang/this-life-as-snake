@@ -7,7 +7,7 @@
 - `P0`：发布或接手硬阻塞，优先处理。
 - `P1`：明显 bug 或协作风险，进入近期计划。
 - `P2`：体验、表现或文档债，可排期。
-- 代码修复前仍按 `AGENTS.md` 先出《计划》，等待用户确认。
+- 普通、局部、低风险任务只需内部计划与自审；在授权范围内可连续执行。只有触发 `AGENTS.md` 高风险确认墙、跨模块长期任务或用户明确要求时，才创建正式计划文件或等待确认。本台账不额外增加执行暂停条件。
 
 ## 1. P1 确认 bug / 工程护栏
 
@@ -22,7 +22,7 @@
 
 | 项 | 状态 | 建议 |
 |---|---|---|
-| 边缘撞墙回正 | 已落地待用户实测 | 复验绿后归档；失败则重开计划 |
+| 边缘撞墙回正 | 已提交待用户实测 | 当前实现已在 HEAD；复验绿后归档，失败则重开计划 |
 | 铁壁蛇阵 | GDD 有规划，需动 `03_core.js` / `04_collision.js` | 属底层改动，必须先确认影响面 |
 | Boss 召唤小怪 | GDD 有规划，代码未实现 | 作为 Boss 玩法专项 |
 | Boss 子弹命中蛇头伤害 | 审查确认仍待处理 | 需要先定伤害/反馈，再计划 |
@@ -52,4 +52,4 @@
 
 | 项 | 结果 | 复验 |
 |---|---|---|
-| B-TUNE dev 工具隔离 | 已按两级门控处理：GM/假人走 `DEBUG.enabled && editorEnabled`，Profiler/SkillEcon 走 `DEBUG.enabled` | 按 `docs/plans/B-TUNE-dev-tools-gating-测试清单.md` 做三种 DEBUG 组合复验 |
+| B-TUNE dev 工具隔离 | 代码门控已进入当前 HEAD；Release 默认 `DEBUG.enabled=false`、`editorEnabled=false`，工作树的 DEBUG 开启只是未提交 WIP | 按 `docs/plans/B-TUNE-dev-tools-gating-测试清单.md` 做三种 DEBUG 组合用户复验 |

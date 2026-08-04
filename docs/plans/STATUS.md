@@ -14,12 +14,12 @@
 | 文件 | 状态 | 下一步 |
 |---|---|---|
 | [④-B-屏震打击感精修.md](./④-B-屏震打击感精修.md) | 🟡 待办 | 可被后续总控优化路线重新评估 |
-| [B-TUNE-dev-tools-gating.md](./B-TUNE-dev-tools-gating.md) | 🟡 已落地待用户验收 | 发布硬化第 1 项；按测试清单复验后归档 |
+| [B-TUNE-dev-tools-gating.md](./B-TUNE-dev-tools-gating.md) | 🟡 已提交待用户验收 | 代码门控已在 HEAD；Release 默认 DEBUG 关闭，工作树开启是 WIP；按清单完成三组合复验后归档 |
 | [B-TUNE-dev-tools-gating-测试清单.md](./B-TUNE-dev-tools-gating-测试清单.md) | 🟡 待复验清单 | 覆盖 Release/半开/Dev 三种 DEBUG 组合 |
 | [mobile-touch-optim.md](./mobile-touch-optim.md) | 🟡 部分落地 | 移动端窄屏/表现微调后置 |
-| [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 已落地待用户验收 | 用户浏览器复验，绿后归档 |
+| [需求B-边缘撞墙回正.md](./需求B-边缘撞墙回正.md) | 🟡 已提交待用户实测 | 实现已在 HEAD；用户浏览器复验，绿后归档 |
 | [需求B-边缘撞墙回正-测试清单.md](./需求B-边缘撞墙回正-测试清单.md) | 🟡 待实测清单 | 跟随需求B复验结果处理 |
-| [IOS-STANDALONE-CHECKLIST.md](../qa/IOS-STANDALONE-CHECKLIST.md) | 🟡 待真机执行 | 日常默认 A 级；B/C 级按改动或故障触发，不代表已验收 |
+| [IOS-STANDALONE-CHECKLIST.md](../qa/IOS-STANDALONE-CHECKLIST.md) | 🟡 基础对照已完成 / A 级待记录 | 基础 Safari/standalone 与静音条件已对照；A 级主流程待记录，B 级按音频/启动改动触发，C 级发布前或故障时执行 |
 
 ## 已归档
 
