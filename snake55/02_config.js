@@ -157,10 +157,10 @@
 
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
-			chaser: { hp: 20, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px(索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调);wanderRedirSec=游荡重定向间隔s(收编自硬编码 WANDER_REDIR_SEC)
-			charger: { hp: 25, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
-			elite: { hp: 200, atk: 1, speed: 60, senseRange: -1, radius: 24 },
+			chaser: { hp: 32, atk: 1, speed: 120, senseRange: -1, radius: 11 },
+			wanderer: { hp: 24, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px（索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调）；wanderRedirSec=游荡重定向间隔s（收编自硬编码 WANDER_REDIR_SEC）
+			charger: { hp: 48, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
+			elite: { hp: 300, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
 
@@ -193,8 +193,8 @@
 			// ✅ 确认 food.radius=10
 			food: { screenCap: 6, refreshIntervalSec: 2.5, segCap: 25, gainSegments: 1, safeDistance: 180, minSpacing: 80, radius: 10, maxSegScreenCap: 2, maxSegRefreshIntervalSec: 6, overflowScore: 10 },  // B：满节后食物稀疏化(屏上限2/刷新6s)+溢出转小分(🟡 TODO 候选[5/10/20] 终值待 §9；score 用途未定仅占位)
 			skill: { baseDropRate: 0.12, perOwnedPenalty: 0.02, floorRate: 0.03 },
-			skillPity: { killStreakGuarantee: 15, firstSkillGuaranteeSec: 5 },   // S5·首技能保底 9→5s（开局5s必出首个技能球；蛇头正前方 safeDistance 已落地，仅改值）；连杀15保底不变
-		upgradeMinGapSecBySeg: [20, 20, 30, 20, 20],   // 战线A：升级间隔地板按段取值（索引=stageId-1：1→20 / 2→20 / 3→30 / 4→0 / 5→0）；值0或null＝地板失效、恢复原掉率。段①②=设计下限20(终值待实测锁20/25)；段③=30锚(实测拍板25/30/35)；段④⑤=20(S4去零地板，killStreak保持15不动)
+			skillPity: { killStreakGuarantee: 12, firstSkillGuaranteeSec: 5 },   // 单局节奏调优：首技能5s保底；连杀12保底（保护期内仍暂停连杀保底）
+		upgradeMinGapSecBySeg: [16, 20, 24, 22, 60],   // 单局节奏调优：升级间隔地板按段取值（索引=stageId-1：1→16 / 2→20 / 3→24 / 4→22 / 5→60）；值0或null才表示地板失效
 			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 20, healStageCapByStage: [0, 2, 2, 1, 0], perRunMin: 2, perRunMax: 3, screenCap: 1 },   // S3·贪婪悖论：naturalRefreshSec 45→20(heal间冷却≥20s)；healStageCapByStage 索引=stageId-1（段①0/段②2/段③2/段④1/段⑤0 Boss纯决战）；满血(coreHp<maxHp)才出、偏敌簇勾引冒险
 			visualScale: { food: 1.3, heal: 1.8, skill: 1.8 },   // 拾取物【仅视觉】放大倍率(不动 o.radius 碰撞)；用户验收：heal/skill 定 1.8x，food(加节数) 1.3x；待实测量化回写 §9
 			dangerBias: { ringMin: 40, ringMax: 150 }   // 🟡 补给危险偏向：敌身周围偏移环带(px)，落点钳视野内且不贴脸；候选 ringMin 30/40 · ringMax 120/150/180，待实测量化回写 §9
@@ -203,17 +203,17 @@
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——
 		STAGE: {
 		segments: [
-			{ id: 1, name: '保护期', startSec: 0, endSec: 30, cap: 4, spawnRate: 0.5, pool: ['wanderer'] },   // S1·2026-07-24o：保护期 60→30s（整局前移30s；成长/割草时长不变）
-			{ id: 2, name: '成长期', startSec: 30, endSec: 150, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },   // S1：起60→30、止180→150
-			{ id: 3, name: '割草期', startSec: 150, endSec: 330, cap: 28, spawnRate: 7, pool: ['chaser', 'wanderer', 'charger', 'elite'] },   // S1：起180→150、止360→330
-			{ id: 4, name: '高潮期', startSec: 330, endSec: 450, cap: 50, spawnRate: 16, pool: ['chaser', 'wanderer', 'charger', 'elite'] },   // S1：起360→330、止480→450
-			{ id: 5, name: 'Boss期', startSec: 450, endSec: 570, cap: 8, spawnRate: 1.5, pool: ['chaser', 'elite'] }   // S1：起480→450、止600→570；整局 600→570s
+			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 5, spawnRate: 0.7, pool: ['wanderer'] },
+			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 14, spawnRate: 3.2, pool: ['wanderer', 'chaser'] },
+			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 30, spawnRate: 7.5, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
+			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 42, spawnRate: 13, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
+			{ id: 5, name: 'Boss期', startSec: 300, endSec: 420, cap: 6, spawnRate: 1.0, pool: ['chaser', 'elite'] }
 		],
 			rookieProtect: [
 				{ startSec: 0, endSec: 10, speedMul: 0.6, cap: 2 },
-				{ startSec: 10, endSec: 30, speedMul: 0.8, cap: 4 }
+				{ startSec: 10, endSec: 25, speedMul: 0.8, cap: 5 }
 			],
-			lethalProtectSec: 30,
+			lethalProtectSec: 25,
 			lethalProtectMinHp: 1,
 			waveSafeIntervalSec: 2.0,
 			waveNewElementMax: 2,
@@ -226,8 +226,8 @@
 			choiceCount: 3,
 			skillSlots: 5,
 			skillMaxLevel: 5,
-			newSkillWeight: 0.70,
-			upgradeWeight: 0.30,
+			newSkillWeight: 0.45,
+			upgradeWeight: 0.55,
 			guaranteeAttack: 1,
 			guaranteeSurvival: 1,
 			comboFindScore: 500,
