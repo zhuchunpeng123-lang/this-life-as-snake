@@ -282,7 +282,7 @@
 			_diag.dtHist = {}; _diag.headHist = {}; _diag.freeze = 0; _diag.prevHx = null; _diag.prevHy = null
 		}
 	}
-	var startEl = null, startStage = null, startButton = null
+	var startEl = null, startBgImage = null, startLogo = null, startButton = null
 	Bus.on('snake:hurt', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
 	Bus.on('enemy:phase', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
 	Bus.on('combo:found', function () { if (HITSTOP_SEC > hitStopSec) { hitStopSec = HITSTOP_SEC } })
@@ -334,34 +334,47 @@
 		}
 	}
 
-	function startPageTuning(key, fallback) {
+	function startPageTuning(mode, key, fallback) {
 		var ed = Registry.get('editor')
-		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet('UI.tuning.opening.' + key); if (v !== undefined && v !== null) { return v } }
-		var cfg = CONFIG.UI && CONFIG.UI.tuning && CONFIG.UI.tuning.opening
+		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet('UI.tuning.opening.' + mode + '.' + key); if (v !== undefined && v !== null) { return v } }
+		var cfg = CONFIG.UI && CONFIG.UI.tuning && CONFIG.UI.tuning.opening && CONFIG.UI.tuning.opening[mode]
 		return cfg && cfg[key] != null ? cfg[key] : fallback
 	}
-	function refreshStartButtonVisual() {
+	function startPageMode() {
+		var page = CONFIG.UI && CONFIG.UI.openingPage || {}, breakpoint = Number(page.wideAspectBreakpoint) || 1.95
+		return (global.innerWidth / Math.max(1, global.innerHeight)) > breakpoint ? 'wide' : 'standard'
+	}
+	function startPageValue(mode, key, fallback) {
+		var page = CONFIG.UI && CONFIG.UI.openingPage || {}, preset = page[mode] && page[mode][key]
+		var value = Number(startPageTuning(mode, key, preset != null ? preset : fallback))
+		return isFinite(value) ? value : fallback
+	}
+	function refreshStartButtonVisual(mode) {
 		if (!startButton) { return }
-		var base = Number(startPageTuning('buttonScale', 1)); if (!isFinite(base)) { base = 1 }
+		mode = mode || startPageMode()
+		var base = startPageValue(mode, 'buttonScale', 1)
 		var factor = startButton._visualState === 'active' ? 0.98 : (startButton._visualState === 'hover' ? 1.02 : 1)
 		startButton.style.transform = 'scale(' + (base * factor) + ')'
 	}
 	function refreshStartPageLayout() {
-		if (!startStage || !startButton) { return }
-		var page = CONFIG.UI && CONFIG.UI.openingPage || {}
-		var w = Number(page.logicalWidth) || 1280, h = Number(page.logicalHeight) || 720
-		var b = page.button || { x: 134, y: 423, width: 500, height: 150 }
-		var unit = (startStage.clientWidth || w) / w
-		var ox = Number(startPageTuning('offsetX', 0)), oy = Number(startPageTuning('offsetY', 0)), os = Number(startPageTuning('scale', 1))
-		if (!isFinite(ox)) { ox = 0 }; if (!isFinite(oy)) { oy = 0 }; if (!isFinite(os) || os <= 0) { os = 1 }
-		startStage.style.transform = 'translate(' + (ox * unit) + 'px,' + (oy * unit) + 'px) scale(' + os + ')'
-		var bx = Number(startPageTuning('buttonOffsetX', 0)), by = Number(startPageTuning('buttonOffsetY', 0))
-		if (!isFinite(bx)) { bx = 0 }; if (!isFinite(by)) { by = 0 }
-		startButton.style.left = (((Number(b.x) || 134) + bx) / w * 100) + '%'
-		startButton.style.top = (((Number(b.y) || 423) + by) / h * 100) + '%'
-		startButton.style.width = ((Number(b.width) || 500) / w * 100) + '%'
-		startButton.style.height = ((Number(b.height) || 150) / h * 100) + '%'
-		refreshStartButtonVisual()
+		if (!startEl || !startLogo || !startButton) { return }
+		var page = CONFIG.UI && CONFIG.UI.openingPage || {}, mode = startPageMode(), preset = page[mode] || {}, logo = preset.logo || {}, button = preset.button || {}
+		var logoScale = startPageValue(mode, 'logoScale', 1), buttonScale = startPageValue(mode, 'buttonScale', 1)
+		var logoLeft = Number(logo.left) || 0, logoTop = Number(logo.top) || 0, logoWidth = Number(logo.width) || 40
+		var buttonLeft = Number(button.left) || 0, buttonTop = Number(button.top) || 0, buttonWidth = Number(button.width) || 30
+		var logoOffsetX = startPageValue(mode, 'logoOffsetX', 0), logoOffsetY = startPageValue(mode, 'logoOffsetY', 0)
+		var buttonOffsetX = startPageValue(mode, 'buttonOffsetX', 0), buttonOffsetY = startPageValue(mode, 'buttonOffsetY', 0)
+		var focusX = Math.max(0, Math.min(100, startPageValue(mode, 'bgFocusX', Number(preset.bgFocusX) || 50)))
+		startEl.dataset.openingMode = mode
+		if (startBgImage) { startBgImage.style.objectPosition = focusX + '% 50%' }
+		startLogo.style.left = 'calc(' + (logoLeft + logoOffsetX) + '% + env(safe-area-inset-left))'
+		startLogo.style.top = 'calc(' + (logoTop + logoOffsetY) + '% + env(safe-area-inset-top))'
+		startLogo.style.width = logoWidth + '%'
+		startLogo.style.transform = 'scale(' + logoScale + ')'
+		startButton.style.left = 'calc(' + (buttonLeft + buttonOffsetX) + '% + env(safe-area-inset-left))'
+		startButton.style.top = 'calc(' + (buttonTop + buttonOffsetY) + '% + env(safe-area-inset-top))'
+		startButton.style.width = buttonWidth + '%'
+		refreshStartButtonVisual(mode)
 	}
 	Bus.on('ui:tuning_changed', refreshStartPageLayout)
 
@@ -491,29 +504,43 @@
 	function buildStart(wrap) {
 		startEl = document.createElement('div')
 		startEl.setAttribute('aria-label', '开局页')
-		startEl.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden;background:#11162a;z-index:15;opacity:1;transition:opacity .18s ease;pointer-events:none'
+		startEl.style.cssText = 'position:fixed;inset:0;width:100dvw;height:100dvh;min-width:0;max-width:none;display:block;box-sizing:border-box;overflow:hidden;background:#11162a;z-index:15;opacity:1;transition:opacity .18s ease;pointer-events:none'
 		var page = CONFIG.UI && CONFIG.UI.openingPage || {}
-		var backdrop = document.createElement('div')
-		backdrop.setAttribute('aria-hidden', 'true')
-		backdrop.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#11162a;z-index:0'
-		var backdropImage = document.createElement('div')
-		backdropImage.style.cssText = 'position:absolute;inset:-32px;background:#11162a url("' + (page.backgroundSrc || 'assets/ui_hud_v1_refined/opening_background_1280x720.png') + '") center/cover no-repeat;filter:blur(24px) brightness(.55) saturate(.8);transform:scale(1.08);transform-origin:center center'
-		var backdropShade = document.createElement('div')
-		backdropShade.style.cssText = 'position:absolute;inset:0;background:rgba(5,12,32,.25)'
-		backdrop.appendChild(backdropImage); backdrop.appendChild(backdropShade); startEl.appendChild(backdrop)
-		startStage = document.createElement('div')
-		startStage.style.cssText = 'position:relative;width:min(100vw,177.7777777778vh);height:min(56.25vw,100vh);aspect-ratio:16/9;background:#11162a url("' + (page.backgroundSrc || 'assets/ui_hud_v1_refined/opening_background_1280x720.png') + '") center/100% 100% no-repeat;transform-origin:center center;overflow:visible;z-index:1'
+		var picture = document.createElement('picture')
+		picture.setAttribute('aria-hidden', 'true')
+		picture.style.cssText = 'position:absolute;inset:0;display:block;width:100%;height:100%;overflow:hidden;pointer-events:none;z-index:0'
+		var wideSource = document.createElement('source')
+		wideSource.media = '(min-aspect-ratio: 1.950001/1)'
+		wideSource.srcset = page.wideBackgroundSrc || 'assets/ui_hud_v1_refined/opening_background_wide_2560x1170.png'
+		startBgImage = document.createElement('img')
+		startBgImage.src = page.standardBackgroundSrc || 'assets/ui_hud_v1_refined/opening_background_standard_2560x1440.png'
+		startBgImage.alt = ''
+		startBgImage.draggable = false
+		startBgImage.style.cssText = 'position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;object-fit:cover;object-position:50% 50%;pointer-events:none;user-select:none'
+		picture.appendChild(wideSource); picture.appendChild(startBgImage); startEl.appendChild(picture)
+		startLogo = document.createElement('img')
+		startLogo.src = page.logoSrc || 'assets/ui_hud_v1_refined/this_life_as_snake_logo_night_garden_final_2400.png'
+		startLogo.alt = '此生为蛇'
+		startLogo.draggable = false
+		startLogo.style.cssText = 'position:absolute;display:block;height:auto;max-width:none;transform-origin:left top;pointer-events:none;user-select:none;z-index:1'
 		startButton = document.createElement('button')
 		startButton.type = 'button'; startButton.tabIndex = 0; startButton.setAttribute('aria-label', '开始蛇生')
-		startButton.style.cssText = 'position:absolute;display:block;margin:0;padding:0;border:0;background:transparent url("' + (page.buttonSrc || 'assets/ui_hud_v1_refined/start_snake_life_button.png') + '") center/100% 100% no-repeat;cursor:pointer;pointer-events:auto;transform-origin:center center;transition:filter .15s ease,transform .15s ease;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;touch-action:manipulation'
+		startButton.style.cssText = 'position:absolute;display:block;margin:0;padding:0;border:0;width:auto;height:auto;overflow:visible;background:transparent;cursor:pointer;pointer-events:auto;transform-origin:center center;transition:filter .15s ease,transform .15s ease;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;touch-action:manipulation;z-index:2'
+		var buttonImage = document.createElement('img')
+		buttonImage.src = page.buttonSrc || 'assets/ui_hud_v1_refined/start_snake_life_button_2x.png'
+		buttonImage.alt = ''
+		buttonImage.draggable = false
+		buttonImage.style.cssText = 'display:block;width:100%;height:auto;max-width:none;pointer-events:none;user-select:none'
+		startButton.appendChild(buttonImage)
 		startButton._visualState = 'idle'
 		startButton.addEventListener('pointerenter', function () { startButton._visualState = 'hover'; startButton.style.filter = 'brightness(1.08)'; refreshStartButtonVisual() })
 		startButton.addEventListener('pointerleave', function () { startButton._visualState = 'idle'; startButton.style.filter = ''; refreshStartButtonVisual() })
 		startButton.addEventListener('pointerdown', function (e) { startButton._visualState = 'active'; refreshStartButtonVisual(); e.stopPropagation(); startIfMenu(true) })
 		startButton.addEventListener('pointerup', function () { if (GS.status === 'menu') { startButton._visualState = 'hover'; refreshStartButtonVisual() } })
 		startButton.addEventListener('pointercancel', function () { startButton._visualState = 'idle'; refreshStartButtonVisual() })
+		startButton.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); startIfMenu(true) } })
 		startButton.addEventListener('click', function () { startIfMenu(true) })
-		startStage.appendChild(startButton); startEl.appendChild(startStage)
+		startEl.appendChild(startLogo); startEl.appendChild(startButton)
 		wrap.appendChild(startEl)
 		refreshStartPageLayout()
 		try { startButton.focus({ preventScroll: true }) } catch (_) { startButton.focus() }

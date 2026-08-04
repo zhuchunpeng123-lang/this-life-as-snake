@@ -17,7 +17,7 @@
 	}
 	// 怪物属性（每种类型一组 slider）；boss 的 hp 字段名为 hpTotal，单独映射
 	var UI_RANGE = {
-		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], choiceWidth: [120, 1200, 1], choiceHeight: [120, 500, 1], choiceOffset: [-160, 160, 1], openingOffset: [-360, 360, 1], openingScale: [0.5, 1.5, 0.01], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.20, 0.01], alpha: [0, 1, 0.02],
+		scale: [0.65, 1.35, 0.01], width: [16, 44, 1], px: [0, 64, 1], choiceWidth: [120, 1200, 1], choiceHeight: [120, 500, 1], choiceOffset: [-160, 160, 1], openingOffset: [-20, 20, 0.1], openingScale: [0.5, 1.5, 0.01], bgFocus: [0, 100, 1], offset: [-80, 80, 1], normOffset: [-0.2, 0.2, 0.01], normPos: [0, 1, 0.01], progressWidth: [0.3, 0.8, 0.01], progressHeight: [0.03, 0.20, 0.01], alpha: [0, 1, 0.02],
 		font: [9, 28, 1], slot: [20, 56, 1], icon: [16, 48, 1], badge: [9, 24, 1],
 		bossWidth: [0.3, 0.9, 0.01], bossMax: [220, 760, 10], system: [0.5, 1.4, 0.05]
 	}
@@ -106,12 +106,20 @@
 		{ group: '布局', path: 'UI.tuning.layout.statusOffsetY', label: '状态 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.buildOffsetY', label: '构筑区 Y 偏移', rng: 'offset' },
 		{ group: '布局', path: 'UI.tuning.layout.systemOffsetY', label: '系统按钮 Y 偏移', rng: 'offset' },
-		{ group: '开局页', path: 'UI.tuning.opening.offsetX', label: '开局界面整体左右位置', rng: 'openingOffset' },
-		{ group: '开局页', path: 'UI.tuning.opening.offsetY', label: '开局界面整体上下位置', rng: 'openingOffset' },
-		{ group: '开局页', path: 'UI.tuning.opening.scale', label: '开局界面整体缩放', rng: 'openingScale' },
-		{ group: '开局页', path: 'UI.tuning.opening.buttonOffsetX', label: '开始蛇生按钮左右位置', rng: 'openingOffset' },
-		{ group: '开局页', path: 'UI.tuning.opening.buttonOffsetY', label: '开始蛇生按钮上下位置', rng: 'openingOffset' },
-		{ group: '开局页', path: 'UI.tuning.opening.buttonScale', label: '开始蛇生按钮缩放', rng: 'openingScale' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.logoOffsetX', label: '标准横屏 Logo 左右位置', rng: 'openingOffset' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.logoOffsetY', label: '标准横屏 Logo 上下位置', rng: 'openingOffset' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.logoScale', label: '标准横屏 Logo 缩放', rng: 'openingScale' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.buttonOffsetX', label: '标准横屏按钮左右位置', rng: 'openingOffset' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.buttonOffsetY', label: '标准横屏按钮上下位置', rng: 'openingOffset' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.buttonScale', label: '标准横屏按钮缩放', rng: 'openingScale' },
+		{ group: '开局页 · 标准横屏', path: 'UI.tuning.opening.standard.bgFocusX', label: '标准横屏背景水平焦点', rng: 'bgFocus' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.logoOffsetX', label: '宽屏横屏 Logo 左右位置', rng: 'openingOffset' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.logoOffsetY', label: '宽屏横屏 Logo 上下位置', rng: 'openingOffset' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.logoScale', label: '宽屏横屏 Logo 缩放', rng: 'openingScale' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.buttonOffsetX', label: '宽屏横屏按钮左右位置', rng: 'openingOffset' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.buttonOffsetY', label: '宽屏横屏按钮上下位置', rng: 'openingOffset' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.buttonScale', label: '宽屏横屏按钮缩放', rng: 'openingScale' },
+		{ group: '开局页 · 宽屏横屏', path: 'UI.tuning.opening.wide.bgFocusX', label: '宽屏横屏背景水平焦点', rng: 'bgFocus' },
 		{ group: '三选一 UI', path: 'UI.tuning.choice.overallScale', label: '三选一整体倍率', rng: 'scale' },
 		{ group: '三选一 UI', path: 'UI.tuning.choice.cardOffsetYPx', label: '卡牌框整体 Y', rng: 'choiceOffset' },
 		{ group: '三选一 UI', path: 'UI.tuning.choice.titleOffsetYPx', label: '三选一标题 Y', rng: 'choiceOffset' },
