@@ -9,6 +9,9 @@
 - 状态/排期任务：加读 `docs/PROJECT-STATUS.md`、`docs/plans/STATUS.md`。
 - Git、调参、多窗口或文档治理：加读 `docs/workflow.md`。
 - 世界观/美术/设计任务：加读相关 GDD、`docs/design/` 文档。
+- 技能、Combo、投射物、范围、受击或战场 VFX 实现任务：读取 `docs/design/SKILL-VFX-GUIDE.md`，并调用 `$this-life-as-snake-vfx-implementation`。
+- 技能音效、Web Audio、音频事件、节流或混音任务：读取 `docs/audio/SKILL-AUDIO-GUIDE.md`，并调用 `$this-life-as-snake-audio-implementation`。
+- 美术方向和最终素材默认由 ChatGPT 美术窗口冻结；方向未确认时，Codex 不自行替换最终素材。
 - `DEBT`、`RETRO`、`HANDOFF`、`RELEASE`、`archive` 只在问题相关时读取，不默认全文扫描。
 
 ## 1. 执行权限与硬规则
@@ -49,3 +52,5 @@
 
 - Git、代理、认证、提交和推送流程见 `docs/workflow.md` 与 `docs/AI-COLLABORATION.md`；禁止 `push -f` / `push --all`。
 - 修改任意 `snake55/*.js` 后，必须统一 bump `snake55/index.html` 中全部脚本的 `?v=` 缓存戳，避免线上假更新。
+- ChatGPT 提供精确补丁时，Codex 只做基线核对、`git apply --check`、应用、检查和 Git 闭环；禁止同时重新设计或自行重写。
+- 基线不一致时停止，不使用 `--3way`、`--reject` 或猜测覆盖。

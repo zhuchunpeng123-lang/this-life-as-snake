@@ -473,7 +473,65 @@
 
 	// —— 音频（Web Audio 合成 · 资产豁免） ——
 		AUDIO: {
-			enabled: true, masterVolume: 0.7, sfxVolume: 0.8, bgmVolume: 0.4,
+			enabled: true,
+			masterVolume: 0.72,
+			sfxVolume: 0.78,
+			uiVolume: 0.68,
+			bgmVolume: 0.34,
+			mix: {
+				// 全局混音：SFX 最多 16 声部；技能、受击、死亡分子总线，避免同频互相遮蔽。
+				maxSfxVoices: 16, maxUiVoices: 12,
+				skillBusGain: 0.94, impactBusGain: 0.72, deathBusGain: 0.82,
+				densityWindowMs: 220, densityThreshold: 5, densityDuckMul: 0.70, densityReleaseMs: 260,
+				lightDuckMul: 0.78, lightDuckSec: 0.16, majorDuckMul: 0.54, majorDuckSec: 0.28,
+				chooseDuckMul: 0.50, pauseRampSec: 0.06, deathSilenceSec: 0.12,
+				limiterThresholdDb: -8, limiterKneeDb: 12, limiterRatio: 4, limiterAttackSec: 0.003, limiterReleaseSec: 0.16,
+				bgmPressureStart: 1.15, bgmPressureEnd: 2.70, bgmPressureFloor: 0.80,
+				layerExploreGain: 0.90, layerBattlePadGain: 0.70, layerBattleGain: 0.80, layerBossGain: 0.82
+			},
+			hit: {
+				// 同一次伤害只保留一个主要音效所有者：专属技能事件拥有声音时，通用命中音静音。
+				genericThrottleMs: 85,
+				genericNoiseDuration: 0.040, genericNoiseGain: 0.040, genericNoiseHz: 980,
+				genericBodyStartHz: 270, genericBodyEndHz: 165, genericBodyDuration: 0.055, genericBodyGain: 0.052,
+				critBodyStartHz: 360, critBodyEndHz: 125, critBodyDuration: 0.090, critBodyGain: 0.085,
+				fireThrottleMs: 190, fireDuration: 0.150, fireNoiseGain: 0.066, fireNoiseMinHz: 760, fireNoiseMaxHz: 1040,
+				fireBodyStartHz: 235, fireBodyEndHz: 155, fireBodyGain: 0.032,
+				shieldThrottleMs: 210, shieldStartHz: 430, shieldEndHz: 250, shieldDuration: 0.075, shieldGain: 0.050,
+				burnThrottleMs: 250, burnNoiseHz: 1450, burnNoiseGain: 0.040, burnDuration: 0.090,
+				burnBodyStartHz: 390, burnBodyEndHz: 230, burnBodyGain: 0.035
+			},
+			death: {
+				// 同一小时间窗内的群怪死亡聚合为一次“塌落”，数量增加层次而不是线性叠音量。
+				clusterMs: 55, maxClusterCount: 6,
+				noiseDuration: 0.095, noiseGain: 0.080, noiseHz: 620,
+				bodyDuration: 0.110, bodyGain: 0.060,
+				kindStartHz: { wanderer: 245, chaser: 225, charger: 195, elite: 145, dummy: 245 },
+				eliteLowStartHz: 105, eliteLowEndHz: 48, eliteLowDuration: 0.180, eliteLowGain: 0.100
+			},
+			skills: {
+				bolt: {
+					throttleMs: 95, noiseDuration: 0.040, noiseGainByLevel: [0.032, 0.035, 0.038, 0.042, 0.046], noiseHz: 1750,
+					startHzByLevel: [820, 850, 890, 940, 1000], endHzByLevel: [480, 500, 525, 555, 590],
+					durationByLevel: [0.065, 0.068, 0.072, 0.076, 0.082], gainByLevel: [0.070, 0.074, 0.078, 0.083, 0.089]
+				},
+				ice: {
+					throwThrottleMs: 130, throwStartHzByLevel: [980, 1030, 1090, 1160, 1240], throwEndHz: 520,
+					throwDuration: 0.105, throwGainByLevel: [0.055, 0.059, 0.064, 0.070, 0.077],
+					poolThrottleMs: 190, poolStartHzByLevel: [410, 430, 455, 485, 520], poolEndHzByLevel: [760, 810, 870, 940, 1020],
+					poolDuration: 0.170, poolGainByLevel: [0.045, 0.049, 0.054, 0.060, 0.067], poolAirGain: 0.032
+				},
+				steam: {
+					throttleMs: 210, noiseDuration: 0.145, noiseGain: 0.075, noiseHz: 1100,
+					bodyStartHz: 185, bodyEndHz: 78, bodyDuration: 0.155, bodyGain: 0.105,
+					ventStartHz: 720, ventEndHz: 1180, ventDuration: 0.120, ventGain: 0.036
+				},
+				burnDart: {
+					throttleMs: 125, noiseDuration: 0.070, noiseGain: 0.052, noiseHz: 1320,
+					bodyStartHz: 460, bodyEndHz: 205, bodyDuration: 0.095, bodyGain: 0.064,
+					emberStartHz: 980, emberEndHz: 610, emberDuration: 0.060, emberGain: 0.030
+				}
+			},
 			electric: {
 				// 电系音频结项：基础闪电=高频裂响/滋滋尾音；电磁炮台=低频炮击/能量回响。只控制表现，不参与玩法。
 				gateMs: 120,

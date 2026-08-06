@@ -155,7 +155,7 @@
 		return s
 	}
 
-	function die(e) {
+	function die(e, source, isDot, isCrit) {
 		if (e.isDummy) { e.hp = e.maxHp; return }   // B-GM 训练假人：不秒、不计入击杀/分数/掉落；始终回满血，可无限反复测 DOT/减速/击退（避免血条卡死 1/maxHp 失观测意义）
 		e.active = false
 		GS.kills++
@@ -164,7 +164,7 @@
 		// §7 击杀计分：GS.score += scorePerKill[type] × 连杀倍率（自增后取倍率→第10连杀达封顶2.0；取整）
 		var sb = (ECON.scorePerKill && typeof ECON.scorePerKill[e.type] === 'number') ? ECON.scorePerKill[e.type] : 0
 		GS.score += Math.round(sb * Formula.killStreakMul(GS.killStreak))
-		Bus.emit('enemy:die', { x: e.x, y: e.y, color: e.color, kind: e.type })   // kind=怪种（计分/掉落/统计用）
+		Bus.emit('enemy:die', { x: e.x, y: e.y, color: e.color, kind: e.type, source: source || '', isDot: !!isDot, crit: !!isCrit })   // 音频只读击杀来源做材质收口；不参与计分/掉落/伤害
 		if (e.type === 'boss') { Bus.emit('boss:defeated', { x: e.x, y: e.y }) }   // §7.4 击败 Boss = 通关结算（ui 走通关屏，非死亡屏）
 	}
 	// 外部（技能）受击入口。isDot=持续伤害（火光环/护盾接触/燃烧）：不逐帧飘字、不逐帧击退，累计到可读整数再飘（⑥⑦）
@@ -191,7 +191,7 @@
 		e.dotMap[src] = (e.dotMap[src] || 0) + amount
 		if (e.hp <= 0) {                                        // 死亡：各来源残留 DOT 分别 flush（≥1 才出，杜绝「0」）
 			for (var dk in e.dotMap) { if (e.dotMap[dk] >= 1) { Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: e.dotMap[dk], crit: false, color: e.color, isDot: true, src: dk, r: e.radius }) } }
-			die(e); return
+			die(e, src, true, false); return
 		}
 		for (var dk in e.dotMap) {                              // 周期 flush：各来源独立达 DOT_TEXT_MIN 即出独立飘字并清零该来源
 			if (e.dotMap[dk] >= DOT_TEXT_MIN) {
@@ -202,7 +202,7 @@
 		return
 	}
 	Bus.emit('enemy:hit', { x: e.x, y: e.y, damage: amount, crit: !!isCrit, color: e.color, isDot: !!isDot, src: src, r: e.radius })   // r=命中体半径：飘字偏移到精灵上方，防大体型（boss）盖住数字
-	if (e.hp <= 0) { die(e) }
+	if (e.hp <= 0) { die(e, src, false, !!isCrit) }
 	}
 	function applySlow(e, pct, dur) {
 		if (!e || !e.active || e.type === 'bossBullet') { return }
