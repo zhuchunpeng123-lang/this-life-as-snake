@@ -36,6 +36,9 @@ Baseline: `ed316f8` (`feat: apply dart v5.2 battle cohesion`). Evidence includes
 | `snake55/11_render.js` fire, ice, shield sprites | Uses existing fire/shield art and generated ice art instead of large generic shapes | Yes | Draw-only; asset-load fallback is safe | Keep |
 | `snake55/assets/vfx/ice/vfx_ice_crystal_bloom_v1.png` | Generated chroma-keyed ice burst, alpha validated visually | Yes | New binary asset | Keep |
 | `snake55/index.html` cache stamp | Uniformly reloads every script after JS change | Yes | Loading order unchanged | Keep |
+| `snake55/02_config.js` `combatFx.skillVfx.ranged`, `VFX.electric` | Presentation-only tail, impact, deterministic lightning-kink, and electro-readability parameters | Yes | Does not overlap `CONFIG.SKILL` or `CONFIG.COMBO` gameplay values | Keep |
+| `snake55/05_particle.js` ranged/electric draw paths | Fixed short target-following lightning kinks; bounded projectile tail/impact and turret backing-plate rendering | Yes | `fx:bolt`, `fx:burndart`, `fx:lightning`, and electro events retain their existing timing and payloads | Keep |
+| `snake55/index.html` cache stamp + `docs/reports/RANGED-SKILL-VFX-ADVERSARIAL-REVIEW.md` | Reload guarantee and evidence-based review of bolt, burning barrage, electro turret, and lightning | Yes | Script loading order unchanged | Keep |
 
 The temporary raw green-screen copy was removed after alpha processing; the source generated image remains outside the repository.
 
@@ -51,6 +54,7 @@ The temporary raw green-screen copy was removed after alpha processing; the sour
 ### EXPECTED PRESENTATION CHANGE
 
 - Combat text, HP-bar visibility, status-mark placement, field opacity, sprite drawing, steam/ice/fire/shield visual effects, narrative display flow, and cache stamps changed.
+- The final ranged VFX audit changes only Canvas draw parameters and fixed visual geometry: bolt, burning barrage, electro turret, and lightning retain their gameplay event contracts and `CONFIG.SKILL` / `CONFIG.COMBO` values.
 - Local controlled runs exercised five skills, single fire, single ice, single shield, steam preview, and mobile landscape startup. No fatal console errors were captured.
 
 ### UNEXPECTED GAMEPLAY CHANGE

@@ -42,3 +42,12 @@ Use a normal browser at `snake55/index.html`; for mobile, use landscape. Spend 1
 | steamExplosion | Fire hits ice-slowed enemy | Short orange/cyan trigger burst | GM five skills + dummies; use VFX preview for timing | Trigger is visibly distinct without white-out | No trigger, white-out, or changed damage/radius/cooldown |
 
 If any FAIL changes gameplay strength, stop and report it before changing numbers.
+
+## D — Ranged Skill VFX Audit (gameplay strength must not change)
+
+| Skill | Trigger | PASS | FAIL |
+|---|---|---|---|
+| Bolt | GM: only bolt Lv1, then Lv5, against a dummy or a small group | Lime crystal leaf, direction, short two-layer tail, and leaf-cut impact remain readable; Lv5 adds intensity without a permanent beam | Reads as a generic laser; tail/impact disappear in light combat; damage, fire rate, target count, or range differs |
+| Burning barrage | GM: activate `burningBarrage` preview, then repeat in a small group | Crystal leaf is still recognizable; warm flame tail, hot core, and embered impact clearly distinguish it from bolt without an opaque orange field | Only a color swap; large opaque field; fire/bolt behavior, Combo trigger, or damage differs |
+| Electro turret | GM: activate `electroTurret` preview with 2–3 targets | Crystal ring stays visible in the cluster, has a brief charge/recoil, and the purple/cyan salvo lands with short cold impacts | Turret body vanishes beneath units; impact covers player/HUD; number/range/timing of actual shots changes |
+| Lightning | GM: only lightning Lv1, then Lv5, against at least two targets | Cold blue/white chain reaches actual targets with one or two stable short bends per segment; nodes and endpoint impact remain clear | Straight laser geometry, random per-frame wobble, missed visual endpoints, or altered chain count/damage/interval |

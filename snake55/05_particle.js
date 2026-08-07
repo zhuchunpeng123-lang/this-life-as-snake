@@ -4,7 +4,7 @@
 	var M = Core.M
 	var COLORS = CONFIG.COLORS
 	var STYLE = CONFIG.STYLE, SKFX = CONFIG.STYLE.skillFx   // §5.5 视觉真源 + 五技能标志色（键=代码技能 id）
-	var COMBAT_FX = STYLE.combatFx || {}, COMBAT_E = COMBAT_FX.electro || {}, COMBAT_TEXT = COMBAT_FX.text || {}, COMBAT_TIERS = COMBAT_TEXT.tiers || {}, SKILL_VFX = COMBAT_FX.skillVfx || {}
+	var COMBAT_FX = STYLE.combatFx || {}, COMBAT_E = COMBAT_FX.electro || {}, COMBAT_TEXT = COMBAT_FX.text || {}, COMBAT_TIERS = COMBAT_TEXT.tiers || {}, SKILL_VFX = COMBAT_FX.skillVfx || {}, RANGED_VFX = SKILL_VFX.ranged || {}, BOLT_VFX = RANGED_VFX.bolt || {}, BURNING_VFX = RANGED_VFX.burning || {}
 
 	// —— 表现债：技能视效参数（🟡 纯表现层，待 ~ 调参器定稿，候选见 TODO；不动 §9）——
 	var BOLT_COLOR = SKFX.bolt      // §5.5：飞镖/射击标志色（原白黄 #fff1a8 → STYLE.skillFx.bolt，避开 ui 青）
@@ -27,7 +27,7 @@
 	var FIRE_HIT_SPRITE_SRC = 'assets/vfx/fire/vfx_fire_hit_burst_v1.png'
 	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
 	var BURN_TRAIL = '#ff6f26', BURN_TRAIL_HOT = '#ffd36a'
-	var DART_IMPACT_LIFE = 0.14, DART_LAUNCH_LIFE = 0.06
+	var DART_LAUNCH_LIFE = 0.06
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
 	var DOT_TEXT_SIZE = 10            // P2-10：DOT 飘字缩小字号（候选 10/12）；与瞬伤 12/16 区分，别糊屏
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
@@ -257,7 +257,8 @@
 	}
 	function finishDart(da) {
 		var ang = Math.atan2(da.y2 - da.y1, da.x2 - da.x1)
-		spawnDartAccent('impact', da.x2, da.y2, da.burning, ang, DART_IMPACT_LIFE)
+		var vfx = da.burning ? BURNING_VFX : BOLT_VFX
+		spawnDartAccent('impact', da.x2, da.y2, da.burning, ang, vfx.impactLifeSec || 0.14)
 		if (dartDenseMode()) { return }
 		spawnBurst(da.x2, da.y2, da.burning ? 2 : 1, da.burning ? BURN_TRAIL : BOLT_COLOR, da.burning ? 95 : 70, da.burning ? 2.2 : 1.7, 0.18, 'low')
 		if (da.burning) { spawnBurst(da.x2, da.y2, 1, BURN_TRAIL_HOT, 70, 1.8, 0.16, 'low') }
@@ -312,7 +313,16 @@
 		for (var i = 0; i < list.length && out.length < max; i++) {
 			if (list[i] && list[i].x != null && list[i].y != null) { out.push({ id: list[i].id != null ? list[i].id : null, x: list[i].x, y: list[i].y }) }
 		}
-		for (var c = 1; c < out.length; c++) { kinks.push([]) }
+		var li = Math.max(0, Math.min(4, level - 1)), countList = ELECTRIC_L.kinkCountByLevel, ampList = ELECTRIC_L.kinkAmplitudeByLevel
+		for (var c = 1; c < out.length; c++) {
+			var a = out[c - 1], b = out[c], dx = b.x - a.x, dy = b.y - a.y, span = Math.sqrt(dx * dx + dy * dy)
+			var count = countList[li] || 1, amp = Math.min(ampList[li] || 0, span * (ELECTRIC_L.kinkMaxSegmentRatio || 0.14)), segmentKinks = []
+			for (var k = 0; k < count; k++) {
+				// 固定参数化折点：随端点更新，绝不逐帧随机，避免电链看成激光或抖动软管。
+				segmentKinks.push({ t: (k + 1) / (count + 1), offset: amp * (((c + k + level) % 2) ? -1 : 1) })
+			}
+			kinks.push(segmentKinks)
+		}
 		return { points: out, kinks: kinks }
 	}
 	function makeLightningState(d) {
@@ -386,7 +396,11 @@
 		var a = state.chain[i], b = state.chain[i + 1], mid = state.kinks[i] || []
 		if (!a || !b) { return [] }
 		var pts = [a]
-		for (var m = 0; m < mid.length; m++) { pts.push(mid[m]) }
+		var dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy) || 1, nx = -dy / len, ny = dx / len
+		for (var m = 0; m < mid.length; m++) {
+			var knot = mid[m]
+			pts.push(knot && knot.t != null ? { x: a.x + dx * knot.t + nx * knot.offset, y: a.y + dy * knot.t + ny * knot.offset } : knot)
+		}
 		pts.push(b)
 		return pts
 	}
@@ -627,9 +641,9 @@
 	function drawElectroTurretBodyOverlay(ctx, s, m) {
 		ctx.save()
 		// 最高战斗层可读性底托：遮住主体脚下的敌人纹理，避免透明 PNG 在怪群中产生“被淹没”错觉。
-		ctx.globalAlpha = (0.58 + m.charge * 0.08 + m.recoil * 0.10) * m.alpha
+		ctx.globalAlpha = ((ELECTRIC_E.bodyBackplateAlpha || 0.58) + m.charge * 0.08 + m.recoil * 0.10) * m.alpha
 		ctx.fillStyle = COMBAT_E.dark
-		ctx.beginPath(); ctx.ellipse(s.x, m.top + m.h * 0.57, m.w * 0.39, m.h * 0.24, 0, 0, M.PI2); ctx.fill()
+		ctx.beginPath(); ctx.ellipse(s.x, m.top + m.h * 0.57, m.w * (ELECTRIC_E.bodyBackplateWidthScale || 0.39), m.h * (ELECTRIC_E.bodyBackplateHeightScale || 0.24), 0, 0, M.PI2); ctx.fill()
 		ctx.globalAlpha = m.alpha
 		if (electroSpriteReady && electroSprite && electroSprite.naturalWidth) { ctx.drawImage(electroSprite, m.left, m.top, m.w, m.h) }
 		else { drawFallbackElectroTurret(ctx, s, m) }
@@ -855,14 +869,14 @@
 			var trail = DART_TRAIL_PX + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0) + (da.burning ? 10 : 0), tx = x - ca * trail, ty = y - sa * trail
 			var nx = -sa, ny = ca, bend = da.burning ? Math.sin((GS.timeSec || 0) * 28 + da.shotIndex * 1.3) * 4.0 : ((da.shotIndex % 2 ? 1 : -1) * 2.0)
 			if (da.burning) {
-				ctx.globalAlpha = alpha * 0.34; ctx.strokeStyle = BURN_TRAIL; ctx.lineWidth = 3.6
+				ctx.globalAlpha = alpha * (BURNING_VFX.trailOuterAlpha || 0.34); ctx.strokeStyle = BURN_TRAIL; ctx.lineWidth = BURNING_VFX.trailOuterWidthPx || 3.6
 				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo((tx + x) * 0.5 + nx * bend, (ty + y) * 0.5 + ny * bend, x, y); ctx.stroke()
-				ctx.globalAlpha = alpha * 0.58; ctx.strokeStyle = BURN_TRAIL_HOT; ctx.lineWidth = 1.35
+				ctx.globalAlpha = alpha * (BURNING_VFX.trailCoreAlpha || 0.58); ctx.strokeStyle = BURN_TRAIL_HOT; ctx.lineWidth = BURNING_VFX.trailCoreWidthPx || 1.35
 				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.62, y - sa * trail * 0.62); ctx.quadraticCurveTo(x - ca * trail * 0.3 + nx * bend * 0.35, y - sa * trail * 0.3 + ny * bend * 0.35, x, y); ctx.stroke()
 			} else {
-				ctx.globalAlpha = alpha * 0.12; ctx.strokeStyle = BOLT_COLOR; ctx.lineWidth = 2.2
+				ctx.globalAlpha = alpha * (BOLT_VFX.trailOuterAlpha || 0.12); ctx.strokeStyle = BOLT_COLOR; ctx.lineWidth = BOLT_VFX.trailOuterWidthPx || 2.2
 				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo((tx + x) * 0.5 + nx * bend, (ty + y) * 0.5 + ny * bend, x, y); ctx.stroke()
-				ctx.globalAlpha = alpha * 0.20; ctx.strokeStyle = '#efffc7'; ctx.lineWidth = 0.7
+				ctx.globalAlpha = alpha * (BOLT_VFX.trailCoreAlpha || 0.20); ctx.strokeStyle = '#efffc7'; ctx.lineWidth = BOLT_VFX.trailCoreWidthPx || 0.7
 				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.46, y - sa * trail * 0.46); ctx.lineTo(x, y); ctx.stroke()
 			}
 			drawDartBody(ctx, da, x, y, ang, alpha)
@@ -879,16 +893,17 @@
 				ctx.strokeStyle = a.burning ? BURN_TRAIL : BOLT_COLOR; ctx.lineWidth = 1
 				ctx.beginPath(); ctx.moveTo(-4.5 * life, 0); ctx.lineTo(4.5 * life, 0); ctx.moveTo(0, -3.5 * life); ctx.lineTo(0, 3.5 * life); ctx.stroke()
 			} else {
-				var len = (a.burning ? 11.5 : 10.0) * (0.90 + p * 0.16), col = a.burning ? BURN_TRAIL_HOT : BOLT_COLOR
+				var impactVfx = a.burning ? BURNING_VFX : BOLT_VFX, len = (impactVfx.impactArcPx || (a.burning ? 11.5 : 10.0)) * (0.90 + p * 0.16), col = a.burning ? BURN_TRAIL_HOT : BOLT_COLOR
 				ctx.globalAlpha = life * 0.92; ctx.strokeStyle = col; ctx.lineCap = 'round'
 				ctx.lineWidth = a.burning ? 2.3 : 1.9
 				ctx.beginPath(); ctx.arc(0, 0, len, -0.82, 0.72); ctx.stroke()
 				ctx.globalAlpha = life * 0.75; ctx.lineWidth = a.burning ? 1.8 : 1.45
 				ctx.beginPath(); ctx.moveTo(-len * 0.56, len * 0.38); ctx.lineTo(len * 0.62, -len * 0.45); ctx.stroke()
-				ctx.globalAlpha = life * 0.88; ctx.fillStyle = a.burning ? '#ffe19a' : '#efffc7'; ctx.beginPath(); ctx.arc(0, 0, a.burning ? 2.5 : 2.0, 0, M.PI2); ctx.fill()
+				ctx.globalAlpha = life * 0.88; ctx.fillStyle = a.burning ? '#ffe19a' : '#efffc7'; ctx.beginPath(); ctx.arc(0, 0, impactVfx.impactCorePx || (a.burning ? 2.5 : 2.0), 0, M.PI2); ctx.fill()
 				if (a.burning) {
 					ctx.fillStyle = BURN_TRAIL; ctx.globalAlpha = life * 0.72
-					for (var sp = 0; sp < 3; sp++) { var sa2 = -1.25 + sp * 1.15; ctx.beginPath(); ctx.arc(Math.cos(sa2) * (8 + sp * 1.5), Math.sin(sa2) * (8 + sp * 1.5), 1.2, 0, M.PI2); ctx.fill() }
+					var emberCount = BURNING_VFX.emberCount || 3
+					for (var sp = 0; sp < emberCount; sp++) { var sa2 = -1.25 + sp * 1.15; ctx.beginPath(); ctx.arc(Math.cos(sa2) * (8 + sp * 1.5), Math.sin(sa2) * (8 + sp * 1.5), 1.2, 0, M.PI2); ctx.fill() }
 				}
 			}
 			ctx.restore()

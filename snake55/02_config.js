@@ -425,7 +425,12 @@
 					fire: { anchorStep: 2, maxAnchors: 6, flameSizePx: 34, flameAlpha: 0.92, flickerHz: 8, flickerAmount: 0.12, yOffsetPx: 10 },
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
 					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },
-					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 }
+					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 },
+					// 远程技能共用节奏：保持晶叶投射物的清爽方向感，燃烧弹幕只加强暖色层与命中余韵，不扩张判定或伤害。
+					ranged: {
+						bolt: { trailOuterAlpha: 0.16, trailCoreAlpha: 0.44, trailOuterWidthPx: 2.7, trailCoreWidthPx: 1.1, impactLifeSec: 0.17, impactArcPx: 10, impactCorePx: 2.2 },
+						burning: { trailOuterAlpha: 0.38, trailCoreAlpha: 0.78, trailOuterWidthPx: 4.2, trailCoreWidthPx: 1.6, impactLifeSec: 0.20, impactArcPx: 13, impactCorePx: 2.8, emberCount: 3 }
+					}
 				},
 				hpBar: { normalMode: 'recent-hit', normalRecentHitSec: 0.7, eliteMode: 'damaged', dummyMode: 'always', heightPx: 3, offsetYPx: 9 },
 				statusIcon: { sizePx: 13, maxPerEnemy: 3, offsetYPx: 23, pairGapPx: 9, burn: { outer: '#ff632f', core: '#ffd36b' }, slow: { ring: '#8ceaff', core: '#dff3ff' } }
@@ -620,11 +625,12 @@
 			electric: {
 				denseEnemyMin: 28, maxChainPoints: 8, residueDenseMul: 0.95, maxBeamsByTier: { HIGH: 32, MED: 24, LOW: 16, POTATO: 12 },
 				lightning: {
-					// V4.5：整条电链统一在实体上层绘制；一级即可读、五级明显成长，直连节点由小型关节电核收口。
+					// V4.6：整条电链统一在实体上层绘制；使用固定的短折点保持“跳链”身份，不逐帧随机、不重算伤害。
 					widthByLevel: [3.8, 4.6, 5.5, 6.6, 7.8],
 					hopDelayByLevel: [0.055, 0.052, 0.049, 0.046, 0.043],
 					impactDurationByLevel: [0.065, 0.070, 0.078, 0.086, 0.098],
 					fadeDurationByLevel: [0.110, 0.120, 0.132, 0.145, 0.160],
+					kinkCountByLevel: [1, 1, 1, 2, 2], kinkAmplitudeByLevel: [4.5, 5.5, 6.5, 7.5, 8.5], kinkMaxSegmentRatio: 0.14,
 					outerWidthRatio: 1.78, outerAlpha: 0.18, mainAlpha: 0.96, fadeMainAlpha: 0.24,
 					impactCoreAlphaLow: 0.70, impactCoreAlphaHigh: 0.96, impactCoreWidthRatio: 0.34,
 					propagateCoreAlpha: 0.60, fadeCoreAlpha: 0.28, nodePulseLifeSec: 0.120,
@@ -632,7 +638,7 @@
 					travelTipRadiusByLevel: [2.2, 2.4, 2.7, 3.0, 3.4], jointRadiusByLevel: [1.8, 2.0, 2.2, 2.5, 2.8]
 				},
 				electro: {
-					// V4.5：低空悬浮炮台保持体量；紫青直线齐射进一步加粗，并实时追踪移动目标中心。
+					// V4.6：低空悬浮炮台在怪群中由克制的深蓝承托稳住本体；成长仍交给齐射和命中，不改变攻击范围或次数。
 					radiusByLevel: [28, 32, 36, 40, 44],
 					spriteSrc: 'assets/vfx/electro_turret_world_v4_final.png',
 					spriteWidthByLevel: [62, 66, 70, 74, 78], spriteAspect: 1.60, spritePivotY: 0.92,
@@ -645,7 +651,7 @@
 					fireAccentLifeSec: 0.18, fireAccentSpokes: 8, fireSparkCount: 4,
 					beamMainWidthByComboLevel: [5.0, 6.1, 7.3, 8.7, 10.2],
 					beamCoreWidthByComboLevel: [1.45, 1.75, 2.10, 2.50, 2.95],
-					impactRadiusByLevel: [10, 12, 14, 16, 18]
+					impactRadiusByLevel: [12, 14, 16, 19, 22], impactLifeSec: 0.19, bodyBackplateAlpha: 0.64, bodyBackplateWidthScale: 0.50, bodyBackplateHeightScale: 0.34
 				}
 			}
 		},
