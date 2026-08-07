@@ -62,6 +62,11 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		var value = getUiTuning('choice.' + key)
 		return value !== undefined ? value : fallback
 	}
+	function getMobileUiTuning(key, fallback) {
+		if (!isTouch) { return fallback }
+		var value = getUiTuning('mobile.' + key)
+		return value !== undefined ? value : fallback
+	}
 	function uiVar(name, value, unit) { if (hud) { hud.style.setProperty(name, String(value) + (unit || '')) } }
 	function ensureHudStyle() {
 		if (document.getElementById('snake-ui-v1-style')) { return }
@@ -123,7 +128,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		uiVar('--ui-status-x', getUiTuning('layout.statusOffsetX'), 'px'); uiVar('--ui-status-y', getUiTuning('layout.statusOffsetY'), 'px'); uiVar('--ui-build-x', getUiTuning('layout.buildOffsetX'), 'px'); uiVar('--ui-build-y', getUiTuning('layout.buildOffsetY'), 'px'); uiVar('--ui-system-x', getUiTuning('layout.systemOffsetX'), 'px'); uiVar('--ui-system-y', getUiTuning('layout.systemOffsetY'), 'px')
 		uiVar('--ui-life-stats-gap', getUiTuning('playerLife.statsGap'), 'px')
 		uiVar('--ui-life-scale', getUiTuning('playerLife.overallScale')); uiVar('--ui-life-width-vw', getUiTuning('playerLife.widthVw'), ''); uiVar('--ui-life-x', getUiTuning('playerLife.offsetX'), 'px'); uiVar('--ui-life-y', getUiTuning('playerLife.offsetY'), 'px')
-		uiVar('--ui-life-content-scale', getUiTuning('playerLife.contentScale')); uiVar('--ui-life-content-x', getUiTuning('playerLife.contentOffsetX'), 'px'); uiVar('--ui-life-content-y', getUiTuning('playerLife.contentOffsetY'), 'px'); uiVar('--ui-life-heart-size', getUiTuning('playerLife.heartSize'), 'px'); uiVar('--ui-life-heart-gap', getUiTuning('playerLife.heartGap'), 'px')
+		uiVar('--ui-life-content-scale', getMobileUiTuning('lifeContentScale', getUiTuning('playerLife.contentScale'))); uiVar('--ui-life-content-x', getUiTuning('playerLife.contentOffsetX'), 'px'); uiVar('--ui-life-content-y', getUiTuning('playerLife.contentOffsetY'), 'px'); uiVar('--ui-life-heart-size', getUiTuning('playerLife.heartSize'), 'px'); uiVar('--ui-life-heart-gap', getUiTuning('playerLife.heartGap'), 'px')
 		uiVar('--ui-stats-scale', getUiTuning('playerStats.overallScale')); uiVar('--ui-stats-width-vw', getUiTuning('playerStats.widthVw'), ''); uiVar('--ui-stats-x', getUiTuning('playerStats.offsetX'), 'px'); uiVar('--ui-stats-y', getUiTuning('playerStats.offsetY'), 'px'); uiVar('--ui-stats-content-scale', getUiTuning('playerStats.contentScale')); uiVar('--ui-stats-content-x', getUiTuning('playerStats.contentOffsetX'), 'px'); uiVar('--ui-stats-content-y', getUiTuning('playerStats.contentOffsetY'), 'px'); uiVar('--ui-stats-label-size', getUiTuning('playerStats.labelSize'), 'px'); uiVar('--ui-stats-value-size', getUiTuning('playerStats.valueSize'), 'px'); uiVar('--ui-stats-label-value-gap', getUiTuning('playerStats.labelValueGap'), 'px')
 		uiVar('--ui-stage-scale', getUiTuning('stage.overallScale')); uiVar('--ui-stage-width-vw', getUiTuning('stage.widthVw'), ''); uiVar('--ui-stage-x', getUiTuning('stage.offsetX'), 'px'); uiVar('--ui-stage-y', getUiTuning('stage.offsetY'), 'px'); uiVar('--ui-stage-content-scale', getUiTuning('stage.contentScale')); uiVar('--ui-stage-content-x', getUiTuning('stage.contentOffsetX') * 100, '%'); uiVar('--ui-stage-content-y', getUiTuning('stage.contentOffsetY') * 100, '%'); uiVar('--ui-stage-title-size', getUiTuning('stage.titleSize'), 'px'); uiVar('--ui-stage-title-y', getUiTuning('stage.titleOffsetY') * 100, '%'); uiVar('--ui-stage-timer-size', getUiTuning('stage.timerSize'), 'px'); uiVar('--ui-stage-timer-y', getUiTuning('stage.timerOffsetY') * 100, '%'); uiVar('--ui-stage-progress-width', getUiTuning('stage.progressWidth') * 100, '%'); uiVar('--ui-stage-progress-height', getUiTuning('stage.progressHeight') * 100, '%'); uiVar('--ui-stage-progress-x', getUiTuning('stage.progressOffsetX') * 100, '%'); uiVar('--ui-stage-progress-y', getUiTuning('stage.progressOffsetY') * 100, '%')
 		uiVar('--ui-title', getUiTuning('type.titlePx'), 'px'); uiVar('--ui-value', getUiTuning('type.valuePx'), 'px'); uiVar('--ui-body', getUiTuning('type.bodyPx'), 'px'); uiVar('--ui-meta', getUiTuning('type.metaPx'), 'px')
@@ -132,7 +137,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 		uiVar('--ui-system-gap', getUiTuning('system.gapPx'), 'px'); uiVar('--ui-system-text-size', getUiTuning('system.textSize'), 'px')
 		uiVar('--ui-skills-scale', getUiTuning('skills.overallScale')); uiVar('--ui-skills-width-vw', getUiTuning('skills.widthVw'), ''); uiVar('--ui-skills-x', getUiTuning('skills.offsetX'), 'px'); uiVar('--ui-skills-y', getUiTuning('skills.offsetY'), 'px')
 		uiVar('--ui-combo-scale', getUiTuning('combo.overallScale')); uiVar('--ui-combo-width-vw', getUiTuning('combo.widthVw'), ''); uiVar('--ui-combo-x', getUiTuning('combo.offsetX'), 'px'); uiVar('--ui-combo-y', getUiTuning('combo.offsetY'), 'px')
-		uiVar('--ui-system-local-x', getUiTuning('system.offsetX'), 'px'); uiVar('--ui-system-local-y', getUiTuning('system.offsetY'), 'px')
+		uiVar('--ui-system-local-x', getUiTuning('system.offsetX'), 'px'); uiVar('--ui-system-local-y', getMobileUiTuning('systemLocalOffsetY', getUiTuning('system.offsetY')), 'px')
 		uiVar('--ui-shadow', hexA(STYLE.bg, 0.6)); uiVar('--ui-text', STYLE.textMain); uiVar('--ui-text-dim', STYLE.textDim); uiVar('--ui-accent', STYLE.ui); uiVar('--ui-track', hexA(STYLE.ui, 0.18)); uiVar('--ui-boss', STYLE.boss); uiVar('--ui-boss-border', hexA(STYLE.boss, 0.62)); uiVar('--ui-boss-track', hexA(STYLE.boss, 0.18)); uiVar('--ui-icon-pad', UI_ICONS.paddingPx != null ? UI_ICONS.paddingPx : 2, 'px')
 		var skinKeys = ['life', 'stats', 'stage', 'boss', 'skills', 'combo', 'system']
 		for (var si = 0; si < skinKeys.length; si++) { var sk = skinKeys[si], spec = UI_HUD_SKIN[sk]; if (spec && spec.ratio) { uiVar('--ui-' + sk + '-ratio', spec.ratio) } }
@@ -957,7 +962,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (hudStatus) { hudStatus.style.transformOrigin = 'top left'; hudStatus.style.transform = 'scale(' + s + ')' }
 		// 右上簇（系统按钮/技能栏/Combo）：top-right 缩放，保持贴右
 		// 右上簇（系统按钮/技能栏/Combo）：桌面 top-right 缩放；移动端系统按钮已移左下(bottom-left)、combo 入右簇(row2)→top-right
-		if (hudSys) { hudSys.style.transformOrigin = 'bottom left'; hudSys.style.transform = 'translate(var(--ui-system-local-x),var(--ui-system-local-y)) scale(' + (s * getUiTuning('system.buttonScale')) + ')' }
+		if (hudSys) { hudSys.style.transformOrigin = 'bottom left'; hudSys.style.transform = 'translate(var(--ui-system-local-x),var(--ui-system-local-y)) scale(' + (s * getMobileUiTuning('systemButtonScale', getUiTuning('system.buttonScale'))) + ')' }
 		if (hudBuild) { hudBuild.style.transformOrigin = 'top right'; hudBuild.style.transform = 'scale(' + s + ')' }
 		// 顶部居中簇：中心缩放 + 保留 translateX(-50%) 居中
 		if (hudCenter) { hudCenter.style.transformOrigin = 'top center'; hudCenter.style.transform = 'translateX(-50%) scale(' + s + ')' }

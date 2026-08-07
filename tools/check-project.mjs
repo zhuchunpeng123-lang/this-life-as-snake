@@ -463,6 +463,27 @@ function checkPresentationFoundation() {
   if (!render.includes('function shouldDrawHpBar(')) report('presentation foundation', 'missing HP bar presentation policy resolver', renderFile);
 }
 
+function checkMobileHudSafety() {
+  const configFile = path.join(SNAKE_DIR, '02_config.js');
+  const uiFile = path.join(SNAKE_DIR, '12_ui.js');
+  const indexFile = path.join(SNAKE_DIR, 'index.html');
+  const config = readText(configFile);
+  const ui = readText(uiFile);
+  const index = readText(indexFile);
+
+  if (!config.includes('mobile: { lifeContentScale: 1.12, systemButtonScale: 0.80, systemLocalOffsetY: 0 }')) {
+    report('mobile HUD', 'missing the touch-only life/system layout tuning', configFile);
+  }
+  if (!ui.includes('function getMobileUiTuning(')) report('mobile HUD', 'missing touch-only tuning resolver', uiFile);
+  if (!ui.includes("getMobileUiTuning('lifeContentScale'")) report('mobile HUD', 'life content does not use touch-only tuning', uiFile);
+  if (!ui.includes("getMobileUiTuning('systemButtonScale'")) report('mobile HUD', 'system button scale does not use touch-only tuning', uiFile);
+  if (!ui.includes("getMobileUiTuning('systemLocalOffsetY'")) report('mobile HUD', 'system vertical position does not use touch-only tuning', uiFile);
+  if (!ui.includes('env(safe-area-inset-left)') || !ui.includes('env(safe-area-inset-bottom)')) {
+    report('mobile HUD', 'HUD anchors are missing left or bottom safe-area support', uiFile);
+  }
+  if (!index.includes('viewport-fit=cover')) report('mobile HUD', 'viewport is missing viewport-fit=cover for iPhone safe areas', indexFile);
+}
+
 function runCheck(label, callback) {
   try {
     callback();
@@ -477,6 +498,7 @@ runCheck('module syntax', () => checkForbiddenModuleSyntax(scripts));
 runCheck('index.html scripts', checkHtmlScripts);
 runCheck('markdown links', checkMarkdownLinks);
 runCheck('presentation foundation', checkPresentationFoundation);
+runCheck('mobile HUD', checkMobileHudSafety);
 
 if (errors.length === 0) {
   console.log('Project static check passed: JavaScript, module syntax, script loading contract, cache stamps, and Markdown links.');
