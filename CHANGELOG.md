@@ -1,5 +1,12 @@
 # CHANGELOG · 5.5 好玩基因融合版贪吃蛇
 
+## 2026-08-08 · tune: restore run pacing and fire-field readability
+
+- Rebalanced regular enemy HP and the first four wave segments so the growth phase is less sponge-like, the mowing phase is readable, and the climax restores pressure through density rather than inflated health. Boss values, player damage formula, pickup rates, and upgrade-gap economy remain unchanged.
+- Burning Barrage now scales its burn DPS with the shared Fire/Bolt Combo level (`8/12/17/23/30`) while keeping its existing three-second duration and no length multiplier.
+- Replaced the pasted flame-on-snake sprite treatment with a low-opacity field band plus sparse, pulse-driven boundary arcs drawn from the exact fire damage radius; no new art asset or collision/damage logic was introduced.
+- Added `tools/simulate-balance.mjs` and `docs/reports/BALANCE-AND-FIRE-ACCEPTANCE-CHECKLIST.md` for reproducible economy inspection and focused human acceptance.
+
 ## 2026-08-06 · docs: 分层沉淀技能美术与音频协作规范
 - 新增技能美术、技能音频协作规范及仓库级实现 Skill，沉淀电系专项的表现、音频和交付方法。
 - 同步当前状态、债务台账、艺术规范、音频指南和电系迭代复盘；仅修改文档与协作入口，不改变运行时玩法和数值。

@@ -317,10 +317,10 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			fired++
 		}
 	}
-	function queueBurn(target, at) {
+	function queueBurn(target, at, burnDps) {
 		if (!target) { return }
-		for (var i = 0; i < burnPending.length; i++) { if (burnPending[i].targetId === target.id) { burnPending[i].at = Math.min(burnPending[i].at, at); return } }
-		burnPending.push({ targetId: target.id, at: at })
+		for (var i = 0; i < burnPending.length; i++) { if (burnPending[i].targetId === target.id) { burnPending[i].at = Math.min(burnPending[i].at, at); burnPending[i].burnDps = Math.max(burnPending[i].burnDps, burnDps); return } }
+		burnPending.push({ targetId: target.id, at: at, burnDps: burnDps })
 	}
 	function resolveBurnPending() {
 		if (!burnPending.length) { return }
@@ -330,7 +330,7 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			var target = null
 			if (list) { for (var k = 0; k < list.length; k++) { if (list[k].active && list[k].id === q.targetId) { target = list[k]; break } } }
 			if (target) {
-				En.ignite(target, CO.burningBarrage.burnSec, CO.burningBarrage.burnDps)
+				En.ignite(target, CO.burningBarrage.burnSec, q.burnDps)
 				var _p = Registry.get('particle'); if (_p && _p.incIgnite) { _p.incIgnite() }
 			}
 			burnPending.splice(i, 1)
@@ -350,7 +350,7 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		}
 		if (!targets.length) { timer.burningBarrage = 0.25; return }
 		timer.burningBarrage = BURN_BARRAGE_INTERVAL_SEC
-		var cl = Math.max(1, comboLevelFor('burningBarrage'))
+		var cl = Math.max(1, comboLevelFor('burningBarrage')), burnDps = CO.burningBarrage.burnDpsByLevel[cl - 1]
 		for (var shot = 0; shot < BURN_BARRAGE_DARTS; shot++) {
 			var target = targets[shot % targets.length]
 			var dx = target.x - tail.x, dy = target.y - tail.y, L = Math.sqrt(dx * dx + dy * dy) || 1, nx = -dy / L, ny = dx / L
@@ -363,7 +363,7 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			})
 			var already = false
 			for (var q = 0; q < shot; q++) { if (targets[q % targets.length].id === target.id) { already = true; break } }
-			if (!already) { queueBurn(target, GS.timeSec + delay + BURN_BARRAGE_TRAVEL_SEC) }
+			if (!already) { queueBurn(target, GS.timeSec + delay + BURN_BARRAGE_TRAVEL_SEC, burnDps) }
 		}
 	}
 

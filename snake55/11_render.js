@@ -6,12 +6,10 @@
 	var GAME = CONFIG.GAME, PLAYER = CONFIG.PLAYER, CAM = PLAYER.camera, COL = CONFIG.COLORS, SHK = CONFIG.COMBAT.shake
 	var STYLE = CONFIG.STYLE   // §5.5 视觉真源（唯一引用；全文件禁再写 CONFIG.STYLE 或散色）
 	var SKILL_VFX = (STYLE.combatFx && STYLE.combatFx.skillVfx) || {}
-	var FIRE_FLAME_SPRITE_SRC = 'assets/vfx/fire/vfx_fire_flame_a_v1.png'
 	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
 	var SHIELD_ORB_SPRITE_SRC = 'assets/skill_shield_v1.png'
-	var fireFlameSprite = null, fireFlameSpriteReady = false, iceBloomSprite = null, iceBloomSpriteReady = false, shieldOrbSprite = null, shieldOrbSpriteReady = false
+	var iceBloomSprite = null, iceBloomSpriteReady = false, shieldOrbSprite = null, shieldOrbSpriteReady = false
 	if (global.Image) {
-		fireFlameSprite = new global.Image(); fireFlameSprite.onload = function () { fireFlameSpriteReady = true }; fireFlameSprite.onerror = function () { fireFlameSpriteReady = false }; fireFlameSprite.src = FIRE_FLAME_SPRITE_SRC
 		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
 		shieldOrbSprite = new global.Image(); shieldOrbSprite.onload = function () { shieldOrbSpriteReady = true }; shieldOrbSprite.onerror = function () { shieldOrbSpriteReady = false }; shieldOrbSprite.src = SHIELD_ORB_SPRITE_SRC
 	}
@@ -1097,12 +1095,14 @@ function drawSnake() {
 			if (fieldFx.fireFillAlpha > 0) { ctx.lineWidth = fr * 2; ctx.globalAlpha = fieldFx.fireFillAlpha; ctx.strokeStyle = '#ff5f1e'; ctx.stroke(); ctx.globalAlpha = 1 }
 			ctx.restore()
 			var fireStyle = SKILL_VFX.fire || {}, fireStride = Math.max(fireStyle.anchorStep, Math.ceil(segs.length / fireStyle.maxAnchors))
-			if (!T3 && fireFlameSpriteReady && fireFlameSprite && fireFlameSprite.naturalWidth) {
-				ctx.save(); ctx.globalCompositeOperation = 'lighter'
+			if (!T3) {
+				ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round'
 				for (var fireIndex = 0; fireIndex < segs.length; fireIndex += fireStride) {
 					var fireSeg = segs[fireIndex], fireX = (fireSeg.px != null) ? M.lerp(fireSeg.px, fireSeg.x, _ra) : fireSeg.x, fireY = (fireSeg.py != null) ? M.lerp(fireSeg.py, fireSeg.y, _ra) : fireSeg.y
-					var firePulse = 1 + Math.sin(GS.timeSec * fireStyle.flickerHz + fireIndex) * fireStyle.flickerAmount, fireSize = fireStyle.flameSizePx * firePulse
-					ctx.globalAlpha = fireStyle.flameAlpha; ctx.drawImage(fireFlameSprite, fireX - fireSize / 2, fireY - fireStyle.yOffsetPx - fireSize / 2, fireSize, fireSize)
+					var fireNext = segs[Math.min(segs.length - 1, fireIndex + 1)], nextX = (fireNext.px != null) ? M.lerp(fireNext.px, fireNext.x, _ra) : fireNext.x, nextY = (fireNext.py != null) ? M.lerp(fireNext.py, fireNext.y, _ra) : fireNext.y
+					var fireAngle = Math.atan2(nextY - fireY, nextX - fireX), firePulse = 1 + Math.sin(GS.timeSec * fireStyle.pulseHz + fireIndex) * fireStyle.pulseAmount
+					ctx.globalAlpha = fireStyle.rangeEdgeAlpha * firePulse; ctx.strokeStyle = '#ffb05a'; ctx.lineWidth = fireStyle.rangeEdgeWidthPx
+					ctx.beginPath(); ctx.arc(fireX, fireY, fr, fireAngle + fireStyle.rangeArcGapRad, fireAngle + M.PI2 - fireStyle.rangeArcGapRad); ctx.stroke()
 				}
 				ctx.restore()
 			}

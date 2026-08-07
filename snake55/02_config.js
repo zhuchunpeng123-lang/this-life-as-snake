@@ -157,10 +157,10 @@
 
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
-			chaser: { hp: 32, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 24, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px（索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调）；wanderRedirSec=游荡重定向间隔s（收编自硬编码 WANDER_REDIR_SEC）
-			charger: { hp: 48, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
-			elite: { hp: 300, atk: 1, speed: 60, senseRange: -1, radius: 24 },
+			chaser: { hp: 28, atk: 1, speed: 120, senseRange: -1, radius: 11 },
+			wanderer: { hp: 20, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px（索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调）；wanderRedirSec=游荡重定向间隔s（收编自硬编码 WANDER_REDIR_SEC）
+			charger: { hp: 42, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
+			elite: { hp: 260, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
 
@@ -191,7 +191,8 @@
 				targetsPerSalvoByLevel: [2, 2, 3, 3, 3], attackRadiusByLevel: [170, 190, 220, 245, 270],
 				preferredMinRange: 70, deployClearancePx: 12
 			},
-			burningBarrage: { parts: ['fire', 'bolt'], burnDps: 8, burnSec: 3 }
+			// Burning Barrage remains length-independent; shared Fire/Bolt level controls its late-run contribution.
+			burningBarrage: { parts: ['fire', 'bolt'], burnDpsByLevel: [8, 12, 17, 23, 30], burnSec: 3 }
 		},
 
 		// —— §5 PICKUP ——
@@ -209,10 +210,10 @@
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——
 		STAGE: {
 		segments: [
-			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 5, spawnRate: 0.7, pool: ['wanderer'] },
-			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 14, spawnRate: 3.2, pool: ['wanderer', 'chaser'] },
-			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 30, spawnRate: 7.5, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
-			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 42, spawnRate: 13, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
+			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 4, spawnRate: 0.6, pool: ['wanderer'] },
+			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },
+			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 28, spawnRate: 7.0, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
+			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 46, spawnRate: 15.0, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
 			{ id: 5, name: 'Boss期', startSec: 300, endSec: 420, cap: 6, spawnRate: 1.0, pool: ['chaser', 'elite'] }
 		],
 			rookieProtect: [
@@ -420,9 +421,9 @@
 				},
 				priority: { low: 0, normal: 1, high: 2, danger: 3 },
 				// 范围底色只作弱提示；技能本体由下方 skillVfx 的精灵和短时爆点承担，避免大面积色块吞掉战场。
-				fieldReadability: { fireFillAlpha: 0, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
+				fieldReadability: { fireFillAlpha: 0.035, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
 				skillVfx: {
-					fire: { anchorStep: 2, maxAnchors: 6, flameSizePx: 34, flameAlpha: 0.92, flickerHz: 8, flickerAmount: 0.12, yOffsetPx: 10 },
+					fire: { anchorStep: 2, maxAnchors: 5, rangeEdgeAlpha: 0.62, rangeEdgeWidthPx: 1.5, rangeArcGapRad: 0.62, pulseHz: 3.2, pulseAmount: 0.14 },
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
 					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },
 					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 },
