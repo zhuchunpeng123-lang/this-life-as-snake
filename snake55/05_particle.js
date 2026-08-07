@@ -15,8 +15,16 @@
 	var BLAST_LIFE = 0.4            // TODO: 爆环存活 0.4s（候选 0.3 / 0.5）
 	var BLAST_RING_W = 4            // TODO: 爆环线宽 4px（候选 3 / 6）
 	var HIT_BURST_N = 6             // TODO: 命中爆点 6颗（候选 4 / 8）
-	var BOLT_FLY_SEC = 0.14           // TODO: 飞镖视觉飞行时长（候选 0.12 / 0.18）；伤害仍即时判定，纯视觉飞行镖
-	var DART_TRAIL_PX = 10            // TODO: 飞镖拖尾占比（候选 8 / 14）
+	// 飞镖技能族 V4：世界实体保持小而扁平；强度来自齐射节奏/轨迹/命中，不靠 PNG 巨型化。伤害仍即时判定。
+	var BOLT_FLY_MIN_SEC = 0.14, BOLT_FLY_MAX_SEC = 0.22   // V4.3：按距离自适应视觉飞行；近距利落，远距不再像瞬移
+	var BOLT_KILL_FLY_MIN_SEC = 0.11, BOLT_KILL_FLY_MAX_SEC = 0.13   // 即时击杀目标仍保留可读短飞行
+	var DART_TRAIL_PX = 11            // V4.3：沿用 V4.2 拖尾长度，通过降 Alpha 让本体优先
+	var BOLT_WORLD_PX = 23, BURN_DART_WORLD_PX = 24
+	var DART_BODY_HEIGHT_SCALE = 1.18  // V4.3：横向加厚 18%，提升高速状态下叶刃识别
+	var BOLT_SPRITE_SRC = 'assets/vfx/bolt_world_v4_leafblade.png'
+	var BURN_DART_SPRITE_SRC = 'assets/vfx/burning_bolt_world_v4_leafblade.png'
+	var BURN_TRAIL = '#ff7a3c', BURN_TRAIL_HOT = '#ffd27a'
+	var DART_IMPACT_LIFE = 0.15, DART_LAUNCH_LIFE = 0.06
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
 	var DOT_TEXT_SIZE = 10            // P2-10：DOT 飘字缩小字号（候选 10/12）；与瞬伤 12/16 区分，别糊屏
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
@@ -51,6 +59,18 @@
 		electroSprite.onerror = function () { electroSpriteReady = false }
 		electroSprite.src = ELECTRIC_E.spriteSrc
 	}
+	// 飞镖 V4.2 世界素材：UI 图标继续走原 skill_bolt/combo_burningBarrage；战斗实体按等级 22~25px 轻成长。
+	var boltWorldSprite = null, boltWorldReady = false, burnDartWorldSprite = null, burnDartWorldReady = false
+	if (global.Image) {
+		boltWorldSprite = new global.Image()
+		boltWorldSprite.onload = function () { boltWorldReady = true }
+		boltWorldSprite.onerror = function () { boltWorldReady = false }
+		boltWorldSprite.src = BOLT_SPRITE_SRC
+		burnDartWorldSprite = new global.Image()
+		burnDartWorldSprite.onload = function () { burnDartWorldReady = true }
+		burnDartWorldSprite.onerror = function () { burnDartWorldReady = false }
+		burnDartWorldSprite.src = BURN_DART_SPRITE_SRC
+	}
 
 	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
 	function resetParticle(p) { p.active = false }
@@ -64,8 +84,10 @@
 	function resetBeam(b) { b.active = false }
 	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
 	function resetBlast(b) { b.active = false }
-	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, color: '#fff' } }
-	function resetDart(b) { b.active = false }
+	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, delay: 0, color: '#fff', burning: false, level: 1, shotIndex: 0, shotCount: 1, targetId: null } }
+	function resetDart(b) { b.active = false; b.targetId = null }
+	function newDartAccent() { return { active: false, kind: 'impact', x: 0, y: 0, life: 0, maxLife: 1, burning: false, angle: 0 } }
+	function resetDartAccent(a) { a.active = false }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
 	var blastPool = Core.createPool(newBlast, resetBlast, 96)   // b9：爆环池 32→96（蒸汽齐爆峰值）
 	var particles = []
@@ -74,6 +96,8 @@
 	var blasts = []
 	var dartPool = Core.createPool(newDart, resetDart, 32)
 	var darts = []
+	var dartAccentPool = Core.createPool(newDartAccent, resetDartAccent, 48)
+	var dartAccents = []   // 发射闪点/命中叶切：绘于实体之上，寿命极短，不参与 gameplay
 	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 96)   // b9：闪核池 32→96（蒸汽白闪/电磁辉光峰值）
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
 	var DBG = { ignite: 0, fireDot: 0, flashDrawn: 0, steamBlasts: 0, steamAoeCmp: 0, electricDecorDowngradeMode: 'cumulative' }   // b9-diag/measure：诊断计数器（仅 HUD，零 gameplay；不进 caps/伤害管线）；steamBlasts=本帧真引爆次数(未被 steamFxCap 门控)、steamAoeCmp=蒸汽 AOE 邻居比较总次数
@@ -172,12 +196,45 @@
 		b.life = b.maxLife = life
 		blasts.push(b); frameSpawn++
 	}
-	function spawnDart(x1, y1, x2, y2, color, life) {   // 飞行镖：从 head 沿弹道插值飞向目标，纯视觉
-		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平飞镖尖峰
-		var b = dartPool.acquire()
+	function spawnDartAccent(kind, x, y, burning, angle, life) {
+		if (frameSpawn >= spawnBudget()) { return false }
+		var a = dartAccentPool.acquire()
+		a.active = true; a.kind = kind; a.x = x; a.y = y; a.burning = !!burning; a.angle = angle || 0; a.life = a.maxLife = life
+		dartAccents.push(a); frameSpawn++; return true
+	}
+	function spawnDart(x1, y1, x2, y2, color, life, opts) {   // 飞行镖：视觉层插值；支持多目标错峰/移动目标追踪/抵达后命中
+		if (frameSpawn >= spawnBudget()) { return }
+		var b = dartPool.acquire(); opts = opts || {}
 		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.color = color
-		b.life = b.maxLife = life
+		b.life = b.maxLife = life; b.delay = Math.max(0, opts.delay || 0); b.burning = !!opts.burning
+		b.level = Math.max(1, Math.min(5, opts.level || 1)); b.shotIndex = opts.shotIndex || 0; b.shotCount = opts.shotCount || 1; b.targetId = opts.targetId != null ? opts.targetId : null
 		darts.push(b); frameSpawn++
+		if (b.shotIndex === 0) { spawnDartAccent('launch', x1, y1, b.burning, Math.atan2(y2 - y1, x2 - x1), DART_LAUNCH_LIFE) }
+	}
+	function syncDartTarget(da) {
+		if (da.targetId == null) { return }
+		var enemy = Registry.get('enemy'), list = enemy && enemy.list
+		if (!list) { return }
+		for (var i = 0; i < list.length; i++) {
+			var e = list[i]
+			if (e.active && e.id === da.targetId) { da.x2 = e.x; da.y2 = e.y; return }
+		}
+	}
+	function dartDenseMode() {
+		var tier = global.PerfTier && global.PerfTier.tier ? global.PerfTier.tier : 'HIGH'
+		return tier === 'LOW' || tier === 'POTATO' || fxLow() || darts.length >= 9 || particles.length >= maxParticles() * 0.7
+	}
+	function dartFlightSec(from, to, killed) {
+		var dx = to.x - from.x, dy = to.y - from.y, dist = Math.sqrt(dx * dx + dy * dy)
+		var t = clamp01((dist - 70) / 190)
+		return killed ? (BOLT_KILL_FLY_MIN_SEC + (BOLT_KILL_FLY_MAX_SEC - BOLT_KILL_FLY_MIN_SEC) * t) : (BOLT_FLY_MIN_SEC + (BOLT_FLY_MAX_SEC - BOLT_FLY_MIN_SEC) * t)
+	}
+	function finishDart(da) {
+		var ang = Math.atan2(da.y2 - da.y1, da.x2 - da.x1)
+		spawnDartAccent('impact', da.x2, da.y2, da.burning, ang, DART_IMPACT_LIFE)
+		if (dartDenseMode()) { return }
+		spawnBurst(da.x2, da.y2, da.burning ? 2 : 1, da.burning ? BURN_TRAIL : BOLT_COLOR, da.burning ? 95 : 70, da.burning ? 2.2 : 1.7, 0.18, 'low')
+		if (da.burning) { spawnBurst(da.x2, da.y2, 1, BURN_TRAIL_HOT, 70, 1.8, 0.16, 'low') }
 	}
 
 	function spawnBurst(x, y, count, color, speed, size, life, prio) {   // prio 默认 high；仅 enemy:hit 逐次命中火花传 'low'，满上限时优先丢弃
@@ -729,9 +786,73 @@
 		}
 		for (var i = 0; i < electroImpacts.length; i++) { if (electroImpacts[i].active) { electroImpacts[i].age += dt; if (electroImpacts[i].age >= (ELECTRIC_E.impactLifeSec || 0.12)) { electroImpacts[i].active = false } } }
 	}
+	function drawFallbackDart(ctx, burning, worldPx) {
+		var w = worldPx, h = worldPx * 0.42
+		ctx.fillStyle = burning ? BURN_TRAIL : BOLT_COLOR
+		ctx.beginPath(); ctx.moveTo(w * 0.55, 0); ctx.lineTo(-w * 0.15, -h * 0.46); ctx.lineTo(-w * 0.50, 0); ctx.lineTo(-w * 0.15, h * 0.46); ctx.closePath(); ctx.fill()
+		ctx.fillStyle = '#65a83d'; ctx.beginPath(); ctx.moveTo(w * 0.42, 0); ctx.lineTo(-w * 0.12, 0); ctx.lineTo(-w * 0.42, h * 0.30); ctx.lineTo(-w * 0.08, h * 0.36); ctx.closePath(); ctx.fill()
+	}
+	function drawDartBody(ctx, da, x, y, ang, alpha) {
+		var burning = da.burning, sprite = burning ? burnDartWorldSprite : boltWorldSprite, ready = burning ? burnDartWorldReady : boltWorldReady
+		var worldPx = (burning ? BURN_DART_WORLD_PX : BOLT_WORLD_PX) + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0)
+		ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha = Math.min(1, alpha * 1.05)
+		if (ready && sprite && sprite.naturalWidth) {
+			var h = worldPx * (sprite.naturalHeight / sprite.naturalWidth) * DART_BODY_HEIGHT_SCALE
+			ctx.drawImage(sprite, -worldPx * 0.5, -h * 0.5, worldPx, h)
+			ctx.globalAlpha = alpha * (burning ? 0.32 : 0.38); ctx.strokeStyle = '#efffc7'; ctx.lineWidth = burning ? 1.05 : 1.0; ctx.lineCap = 'round'
+			ctx.beginPath(); ctx.moveTo(-worldPx * 0.28, 0); ctx.lineTo(worldPx * 0.34, 0); ctx.stroke()
+		} else { ctx.scale(1, DART_BODY_HEIGHT_SCALE); drawFallbackDart(ctx, burning, worldPx) }
+		ctx.restore()
+	}
+	function drawDartsOverlay(ctx) {
+		var dense = dartDenseMode(); ctx.lineCap = 'round'
+		for (var i = 0; i < darts.length; i++) {
+			var da = darts[i]; if (da.delay > 0) { continue }
+			var p = 1 - da.life / da.maxLife; p = clamp01(p)
+			var x = da.x1 + (da.x2 - da.x1) * p, y = da.y1 + (da.y2 - da.y1) * p
+			var ang = Math.atan2(da.y2 - da.y1, da.x2 - da.x1), ca = Math.cos(ang), sa = Math.sin(ang)
+			var alpha = Math.min(1, da.life / Math.min(0.055, da.maxLife))
+			var trail = DART_TRAIL_PX + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0) + (da.burning ? 3 : 0), tx = x - ca * trail, ty = y - sa * trail
+			if (da.burning) {
+				ctx.globalAlpha = alpha * 0.38; ctx.strokeStyle = BURN_TRAIL; ctx.lineWidth = 3.2
+				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.60; ctx.strokeStyle = BURN_TRAIL_HOT; ctx.lineWidth = 1.1
+				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.62, y - sa * trail * 0.62); ctx.lineTo(x, y); ctx.stroke()
+			} else {
+				ctx.globalAlpha = alpha * 0.28; ctx.strokeStyle = BOLT_COLOR; ctx.lineWidth = 2.4
+				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.62; ctx.strokeStyle = '#efffc7'; ctx.lineWidth = 0.85
+				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.58, y - sa * trail * 0.58); ctx.lineTo(x, y); ctx.stroke()
+			}
+			if (!dense && !da.burning && da.level >= 3) { drawDartBody(ctx, da, x - ca * 7.5, y - sa * 7.5, ang, alpha * (da.level >= 5 ? 0.18 : 0.12)) }
+			drawDartBody(ctx, da, x, y, ang, alpha)
+		}
+		ctx.globalAlpha = 1
+	}
+	function drawDartAccents(ctx) {
+		for (var i = 0; i < dartAccents.length; i++) {
+			var a = dartAccents[i], life = clamp01(a.life / a.maxLife), p = 1 - life
+			ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.angle)
+			if (a.kind === 'launch') {
+				ctx.globalAlpha = life * 0.85; ctx.fillStyle = a.burning ? BURN_TRAIL_HOT : '#efffc7'
+				ctx.beginPath(); ctx.arc(0, 0, 2.1 + p * 1.7, 0, M.PI2); ctx.fill()
+				ctx.strokeStyle = a.burning ? BURN_TRAIL : BOLT_COLOR; ctx.lineWidth = 1
+				ctx.beginPath(); ctx.moveTo(-4.5 * life, 0); ctx.lineTo(4.5 * life, 0); ctx.moveTo(0, -3.5 * life); ctx.lineTo(0, 3.5 * life); ctx.stroke()
+			} else {
+				var len = (a.burning ? 9.5 : 8.5) * (0.88 + p * 0.18), col = a.burning ? BURN_TRAIL_HOT : BOLT_COLOR
+				ctx.globalAlpha = life * 0.92; ctx.strokeStyle = col; ctx.lineWidth = a.burning ? 2.0 : 1.7; ctx.lineCap = 'round'
+				ctx.rotate(0.68); ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(len, 0); ctx.stroke()
+				ctx.rotate(-1.36); ctx.beginPath(); ctx.moveTo(-len * 0.78, 0); ctx.lineTo(len * 0.78, 0); ctx.stroke()
+				if (a.burning) { ctx.globalAlpha = life * 0.75; ctx.fillStyle = BURN_TRAIL; ctx.beginPath(); ctx.arc(0, 0, 2.2 * life + 0.6, 0, M.PI2); ctx.fill() }
+			}
+			ctx.restore()
+		}
+		ctx.globalAlpha = 1
+	}
+
 	var Particle = {
-		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
-		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
+		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, dartAccents: dartAccents, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
+		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + dartAccents.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
 		DBG: DBG,   // b9-diag：诊断计数器暴露给 render HUD 读取
 		incIgnite: function () { DBG.ignite++ },   // b9-diag：灼烧弹幕点燃直计（替代 Bus 事件，免热路径观察者效应；零 gameplay）
 		update: function (dt) {
@@ -761,9 +882,20 @@
 			var bl = blasts[i]; bl.life -= dt
 			if (bl.life <= 0) { blastPool.release(bl); blasts.splice(i, 1) }
 		}
+		// 先老化上一帧 accent，再推进飞镖；本帧新生成的命中叶切不会被同一个 dt 立即吃掉寿命。
+		for (i = dartAccents.length - 1; i >= 0; i--) {
+			var dac = dartAccents[i]; dac.life -= dt
+			if (dac.life <= 0) { dartAccentPool.release(dac); dartAccents.splice(i, 1) }
+		}
 		for (i = darts.length - 1; i >= 0; i--) {
-			var da = darts[i]; da.life -= dt
-			if (da.life <= 0) { dartPool.release(da); darts.splice(i, 1) }
+			var da = darts[i], activeDt = dt
+			if (da.delay > 0) {
+				da.delay -= dt
+				if (da.delay > 0) { continue }
+				activeDt = Math.max(0, -da.delay); da.delay = 0
+			}
+			syncDartTarget(da); da.life -= activeDt
+			if (da.life <= 0) { finishDart(da); dartPool.release(da); darts.splice(i, 1) }
 		}
 		for (i = flashCores.length - 1; i >= 0; i--) {
 			var fc = flashCores[i]; fc.life -= dt
@@ -795,19 +927,6 @@
 				ctx.globalAlpha = ba * 0.35; ctx.strokeStyle = b.color; ctx.lineWidth = b.width * 3; ctx.stroke()
 			ctx.globalAlpha = ba; ctx.strokeStyle = b.color; ctx.lineWidth = b.width; ctx.stroke()
 		}
-		// 飞行镖（fx:bolt）：沿弹道插值飞行 + 拖尾，纯视觉（伤害即时判定）
-		ctx.lineCap = 'round'
-		for (i = 0; i < darts.length; i++) {
-			var da = darts[i]
-			var dtp = 1 - da.life / da.maxLife; if (dtp < 0) { dtp = 0 }
-			var dax = da.x1 + (da.x2 - da.x1) * dtp, day = da.y1 + (da.y2 - da.y1) * dtp
-			var daa = da.life / da.maxLife; if (daa < 0) { daa = 0 }
-			var tb = Math.max(0, dtp - 0.35), tx2 = da.x1 + (da.x2 - da.x1) * tb, ty2 = da.y1 + (da.y2 - da.y1) * tb
-			ctx.globalAlpha = daa * 0.5; ctx.strokeStyle = da.color; ctx.lineWidth = 3
-			ctx.beginPath(); ctx.moveTo(tx2, ty2); ctx.lineTo(dax, day); ctx.stroke()
-			ctx.globalAlpha = daa; ctx.fillStyle = da.color
-			ctx.beginPath(); ctx.arc(dax, day, 4 * daa + 2, 0, M.PI2); ctx.fill()
-		}
 		// 爆环：随寿命从中心扩张并淡出（p=1→0 进度）
 			for (i = 0; i < blasts.length; i++) {
 				var bl = blasts[i]
@@ -819,10 +938,12 @@
 			}
 			ctx.globalAlpha = 1
 		},
-		// 叠加层：实心闪核（蒸汽白闪/电磁辉光）绘于实体之上；伤害飘字绘于白闪之后，永远不被白闪/实体遮挡
+		// 叠加层：飞镖本体/命中叶切压在敌人实体上方；V4.2 以 22~25px 轻成长提高怪海可读性。
 		drawOverlay: function (ctx, ra) {
 			if (ra == null) { ra = 1 }
 			drawElectricOverlay(ctx)
+			drawDartsOverlay(ctx)
+			drawDartAccents(ctx)
 			DBG.flashDrawn = flashCores.length   // b9-diag：本帧白爆/闪核 draw 数（= 活跃闪核，每帧全绘）
 			if (!(RT('PERF.suppressWhiteBurst', (global.PerfTier && global.PerfTier.suppressWhiteBurst) ? 1 : 0) > 0)) {   // b9-diag T1：关白爆 overlay 仅挡白闪核，不挡伤害飘字；回退源=PerfTier.suppressWhiteBurst(原写死 0→白爆永不关，本次接线)
 				for (var i = 0; i < flashCores.length; i++) {
@@ -862,6 +983,7 @@
 			while (beams.length) { beamPool.release(beams.pop()) }
 			while (blasts.length) { blastPool.release(blasts.pop()) }
 			while (darts.length) { dartPool.release(darts.pop()) }
+			while (dartAccents.length) { dartAccentPool.release(dartAccents.pop()) }
 			while (flashCores.length) { flashPool.release(flashCores.pop()) }
 		}
 	}
@@ -892,15 +1014,12 @@
 	// 需求B 技能视效接收（🟡 参数见顶部表现债常量块 TODO+候选，不动 §9）
 	Bus.on('fx:bolt', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, BOLT_FLY_SEC)   // 飞行镖（纯视觉，伤害仍即时判定）
-		spawnBurst(d.to.x, d.to.y, HIT_BURST_N, BOLT_COLOR, 90, 3, 0.25)                     // 少量命中爆点
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, d.killed), { delay: d.visualDelay, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId })
 	})
-	// B-3：灼烧弹幕飞镖视觉（橙 #ff7a3c，与基础白黄 fx:bolt 区分；事件名全小写）
+	// 灼烧弹幕：同一晶叶核心 + 火焰强化层。事件仍在发射时 emit（音效时序不变）；命中叶切/火星由投射物抵达后产生。
 	Bus.on('fx:burndart', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, SKFX.fire, BOLT_FLY_SEC)
-		spawnBurst(d.to.x, d.to.y, 10, SKFX.fire, 170, 4, 0.3)
-		spawnBurst(d.to.x, d.to.y, 5, '#ffd27a', 120, 3, 0.22)
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, d.killed), { delay: d.visualDelay, burning: true, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId })
 	})
 	Bus.on('fx:lightning', function (d) {
 		if (!d || !d.chain || d.chain.length < 2) { return }
@@ -960,3 +1079,5 @@
 	// 2026-07-20 · 性能根治第六轮(还原) · 回退第五轮 spawnFlashCore 并发上限 FLASH_CORE_CAP 与 fx:steamblast 白闪核半径/alpha 收窄；还原 round6 闪核表现；余烬门控(round6 FPS 主修复)保留；不动 §9/伤害管线/判定
 
 })(typeof window !== 'undefined' ? window : this)
+
+// 2026-08-07 · 飞镖技能族 V4 · 18~19px 有机晶叶世界实体 + 多目标纯视觉错峰 + 移动目标追踪 + 抵达后叶切/火星命中 + 灼烧同核火焰强化 + 怪海降噪；伤害/射程/频率/目标数/音频事件时点零修改。

@@ -299,13 +299,18 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var h = headPos(), es = _enemySnap.slice(), maxR2 = SK.bolt.maxRange[i] * SK.bolt.maxRange[i]   // #4 修复：拷贝快照本地排序，避免污染共享 _enemySnap；P1-1 射程门控
 		es.sort(function (a, b) { return M.distSq(h.x, h.y, a.x, a.y) - M.distSq(h.x, h.y, b.x, b.y) })
 		var n = Math.min(SK.bolt.nodes[i], es.length), fired = 0
+		// V4.2 视觉节奏：Gameplay 射速/伤害不变；Lv2~5 仅将同轮多目标 VFX 依次错峰 16/18/20/22ms，减少机关枪式重叠。
+		var visualStep = i >= 4 ? 0.022 : (i === 3 ? 0.020 : (i === 2 ? 0.018 : (i === 1 ? 0.016 : 0)))
 		for (var k = 0; k < es.length && fired < n; k++) {
-			if (M.distSq(h.x, h.y, es[k].x, es[k].y) > maxR2) { break }   // 已按距离排序，后续只会更远
-			var boltSrc = foundCombo.burningBarrage ? 'burning' : 'bolt'   // P1 修复：飞镖命中即飞镖伤害，标 'bolt' 青「飞镖」；电磁标签只留给连锁(doLightningChain 用 'electro')，不再误贴到 bolt 命中（曾误把每次飞镖伤害全贴『电磁』掩盖真连锁）；仅飘字前缀、零 gameplay；灼烧弹幕仍标 'burning' 橙
-		hurt(es[k], SK.bolt.damage[i], false, boltSrc)
-			Bus.emit(foundCombo.burningBarrage ? 'fx:burndart' : 'fx:bolt', { from: { x: h.x, y: h.y }, to: { x: es[k].x, y: es[k].y } })   // P1-5 弹道视效（灼烧弹幕走 fx:burndart 橙，其余白黄）
-			if (foundCombo.burningBarrage) { Registry.get('enemy').ignite(es[k], CO.burningBarrage.burnSec, CO.burningBarrage.burnDps); var _p = Registry.get('particle'); if (_p && _p.incIgnite) { _p.incIgnite() } }   // 灼烧弹幕：飞镖命中点燃 + b9-diag 直计（零 Bus、零 gameplay）
-			if (foundCombo.electroTurret) { deployElectroTurretAtHit(es[k]) }
+			if (M.distSq(h.x, h.y, es[k].x, es[k].y) > maxR2) { break }
+			var target = es[k], boltSrc = foundCombo.burningBarrage ? 'burning' : 'bolt'
+			hurt(target, SK.bolt.damage[i], false, boltSrc)
+			Bus.emit(foundCombo.burningBarrage ? 'fx:burndart' : 'fx:bolt', {
+				from: { x: h.x, y: h.y }, to: { x: target.x, y: target.y }, targetId: target.id,
+				level: i + 1, shotIndex: fired, shotCount: n, visualDelay: fired * visualStep, killed: !target.active
+			})
+			if (foundCombo.burningBarrage) { Registry.get('enemy').ignite(target, CO.burningBarrage.burnSec, CO.burningBarrage.burnDps); var _p = Registry.get('particle'); if (_p && _p.incIgnite) { _p.incIgnite() } }
+			if (foundCombo.electroTurret) { deployElectroTurretAtHit(target) }
 			fired++
 		}
 	}
@@ -530,3 +535,5 @@ function tickCombos(dt) {
 // 2026-07-15 · ⑥ 两处修复 · ①蒸汽误炸冰圈外：tickCombos 蒸汽触发 e.slowT>0 → e.inIce（仅本帧真在冰池内才引爆，排除离开冰池后 slowT 残留的误触发；tickIce 先于 tickCombos，inIce 新鲜）；②触发节奏不稳：dropIcePool 改返回 bool，无目标时不空耗整轮 CD、改 ICE_RETRY_SEC(0.5🟡) 短间隔重试，敌群进射程即落、有目标仍严格每 freezeCd。07_enemy/core/collision/config 不动、无新裸数字
 // 2026-07-15 · ⑥ 系统性调整（大范围·持续控制场·首测后一次到位）· 数值(02_config SKILL.ice)：poolLingerSec 4.0 flat → 按等级[4,5,6,7,8]（冰池存续拉长·聚怪+火墙多次扫爆）；新增 maxActivePools=2（并发上限）；poolRadius [55..95]→[90,110,130,150,170]（全等级≥蒸汽90px·冰圈≥爆圈）；freezeCd=3.0/slowPct/Lv5冻结1s不动；蒸汽radius=90不动(选A·仅e.inIce防冰圈外凭空引爆)。机制(08_skill dropIcePool/tickIce)：索敌改为「射程内未被现有冰池覆盖的最密敌群」(isCovered 辅助·与判定一致)；未达并发上限→spawnIcePool 新增；已达上限→刷新「距新目标最近」那片并重定位(2片稳定大控制场跟敌群走·不新增第三片)；slowWin 按等级取 poolLingerSec[i]。表现(11_render)：冰池撒布霜点(沿 pr 半径·铺满大范围)+外环强调边界。无新致死源/不预调其它系统；放大后 DPS/密度平衡留 ③ 校验。config/core/collision 不动、无新裸数字
 // 2026-07-15 · b9 性能/屏震专项 · ❷蒸汽齐爆 VFX 同帧上限(PERF.steamBurstCapPerFrame·仅门控视觉 Bus.emit，伤害 hurtCombo 始终结算、steamCd 先置位)；任务2 屏震分档节流由 render addTrauma(T1 轻档)承接，本文件不动屏震。core/collision 不动、无新裸数字
+
+// 2026-08-07 · 飞镖技能族 V4 · tickBolt 仅增加 level/targetId/shotIndex/visualDelay/killed 表现元数据；伤害、点燃、电磁联动与所有 gameplay 数值保持原时点。
