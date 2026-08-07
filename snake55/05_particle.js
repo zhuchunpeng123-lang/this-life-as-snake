@@ -16,15 +16,16 @@
 	var BLAST_RING_W = 4            // TODO: 爆环线宽 4px（候选 3 / 6）
 	var HIT_BURST_N = 6             // TODO: 命中爆点 6颗（候选 4 / 8）
 	// 飞镖技能族 V4：世界实体保持小而扁平；强度来自齐射节奏/轨迹/命中，不靠 PNG 巨型化。伤害仍即时判定。
-	var BOLT_FLY_MIN_SEC = 0.14, BOLT_FLY_MAX_SEC = 0.22   // V4.3：按距离自适应视觉飞行；近距利落，远距不再像瞬移
-	var BOLT_KILL_FLY_MIN_SEC = 0.11, BOLT_KILL_FLY_MAX_SEC = 0.13   // 即时击杀目标仍保留可读短飞行
-	var DART_TRAIL_PX = 11            // V4.3：沿用 V4.2 拖尾长度，通过降 Alpha 让本体优先
-	var BOLT_WORLD_PX = 23, BURN_DART_WORLD_PX = 24
-	var DART_BODY_HEIGHT_SCALE = 1.18  // V4.3：横向加厚 18%，提升高速状态下叶刃识别
-	var BOLT_SPRITE_SRC = 'assets/vfx/bolt_world_v4_leafblade.png'
-	var BURN_DART_SPRITE_SRC = 'assets/vfx/burning_bolt_world_v4_leafblade.png'
-	var BURN_TRAIL = '#ff7a3c', BURN_TRAIL_HOT = '#ffd27a'
-	var DART_IMPACT_LIFE = 0.15, DART_LAUNCH_LIFE = 0.06
+	var BOLT_FLY_MIN_BY_LEVEL = [0.30, 0.285, 0.27, 0.25, 0.23]
+	var BOLT_FLY_MAX_BY_LEVEL = [0.42, 0.40, 0.37, 0.34, 0.31]   // V5.1：增加在屏时间；仍保留前慢后快
+	var BOLT_KILL_FLY_MIN_SEC = 0.12, BOLT_KILL_FLY_MAX_SEC = 0.17
+	var DART_TRAIL_PX = 14
+	var BOLT_WORLD_PX = 34, BURN_DART_WORLD_PX = 44
+	var DART_BODY_HEIGHT_SCALE = 1.0
+	var BOLT_SPRITE_SRC = 'assets/vfx/bolt_world_v5_2_battletone.png'
+	var BURN_DART_SPRITE_SRC = 'assets/vfx/burning_barrage_dart_v5_2_tailfire.png'
+	var BURN_TRAIL = '#ff6f26', BURN_TRAIL_HOT = '#ffd36a'
+	var DART_IMPACT_LIFE = 0.14, DART_LAUNCH_LIFE = 0.06
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
 	var DOT_TEXT_SIZE = 10            // P2-10：DOT 飘字缩小字号（候选 10/12）；与瞬伤 12/16 区分，别糊屏
 	// —— B-1 伤害来源标签（🟡 纯表现：飘字前缀+专属色，一眼分清谁打了多少；只读伤害值不碰计算，色板 TODO 待 ~ 定稿）——
@@ -202,14 +203,26 @@
 		a.active = true; a.kind = kind; a.x = x; a.y = y; a.burning = !!burning; a.angle = angle || 0; a.life = a.maxLife = life
 		dartAccents.push(a); frameSpawn++; return true
 	}
-	function spawnDart(x1, y1, x2, y2, color, life, opts) {   // 飞行镖：视觉层插值；支持多目标错峰/移动目标追踪/抵达后命中
+	function dartWorldPx(da) {
+		return (da.burning ? BURN_DART_WORLD_PX : BOLT_WORLD_PX) + (da.burning ? 0 : ((da.level >= 3 ? 1 : 0) + (da.level >= 4 ? 1 : 0) + (da.level >= 5 ? 1 : 0)))
+	}
+	function setDartTargetSurface(da, tx, ty, radius) {
+		var dx = tx - da.x1, dy = ty - da.y1, dist = Math.sqrt(dx * dx + dy * dy)
+		if (!radius || !isFinite(dist) || dist < 0.001) { da.x2 = tx; da.y2 = ty; return }
+		var tipPad = dartWorldPx(da) * (da.burning ? 0.36 : 0.34)
+		var stop = Math.max(0, radius + tipPad)
+		da.x2 = tx - dx / dist * stop
+		da.y2 = ty - dy / dist * stop
+	}
+	function spawnDart(x1, y1, x2, y2, color, life, opts) {   // 飞行镖：视觉层插值；支持多目标错峰/移动目标追踪/表面命中
 		if (frameSpawn >= spawnBudget()) { return }
 		var b = dartPool.acquire(); opts = opts || {}
 		b.active = true; b.x1 = x1; b.y1 = y1; b.x2 = x2; b.y2 = y2; b.color = color
 		b.life = b.maxLife = life; b.delay = Math.max(0, opts.delay || 0); b.burning = !!opts.burning
 		b.level = Math.max(1, Math.min(5, opts.level || 1)); b.shotIndex = opts.shotIndex || 0; b.shotCount = opts.shotCount || 1; b.targetId = opts.targetId != null ? opts.targetId : null
+		if (opts.targetRadius) { setDartTargetSurface(b, x2, y2, opts.targetRadius) }
 		darts.push(b); frameSpawn++
-		if (b.shotIndex === 0) { spawnDartAccent('launch', x1, y1, b.burning, Math.atan2(y2 - y1, x2 - x1), DART_LAUNCH_LIFE) }
+		if (b.shotIndex === 0) { spawnDartAccent('launch', x1, y1, b.burning, Math.atan2(b.y2 - y1, b.x2 - x1), DART_LAUNCH_LIFE) }
 	}
 	function syncDartTarget(da) {
 		if (da.targetId == null) { return }
@@ -217,17 +230,19 @@
 		if (!list) { return }
 		for (var i = 0; i < list.length; i++) {
 			var e = list[i]
-			if (e.active && e.id === da.targetId) { da.x2 = e.x; da.y2 = e.y; return }
+			if (e.active && e.id === da.targetId) { setDartTargetSurface(da, e.x, e.y, e.radius || 0); return }
 		}
 	}
 	function dartDenseMode() {
 		var tier = global.PerfTier && global.PerfTier.tier ? global.PerfTier.tier : 'HIGH'
 		return tier === 'LOW' || tier === 'POTATO' || fxLow() || darts.length >= 9 || particles.length >= maxParticles() * 0.7
 	}
-	function dartFlightSec(from, to, killed) {
+	function dartFlightSec(from, to, killed, level, travelOverride) {
+		if (travelOverride != null) { return travelOverride }
 		var dx = to.x - from.x, dy = to.y - from.y, dist = Math.sqrt(dx * dx + dy * dy)
-		var t = clamp01((dist - 70) / 190)
-		return killed ? (BOLT_KILL_FLY_MIN_SEC + (BOLT_KILL_FLY_MAX_SEC - BOLT_KILL_FLY_MIN_SEC) * t) : (BOLT_FLY_MIN_SEC + (BOLT_FLY_MAX_SEC - BOLT_FLY_MIN_SEC) * t)
+		var p = clamp01((dist - 70) / 190), li = Math.max(0, Math.min(4, (level || 1) - 1))
+		if (killed) { return BOLT_KILL_FLY_MIN_SEC + (BOLT_KILL_FLY_MAX_SEC - BOLT_KILL_FLY_MIN_SEC) * p }
+		return BOLT_FLY_MIN_BY_LEVEL[li] + (BOLT_FLY_MAX_BY_LEVEL[li] - BOLT_FLY_MIN_BY_LEVEL[li]) * p
 	}
 	function finishDart(da) {
 		var ang = Math.atan2(da.y2 - da.y1, da.x2 - da.x1)
@@ -794,13 +809,20 @@
 	}
 	function drawDartBody(ctx, da, x, y, ang, alpha) {
 		var burning = da.burning, sprite = burning ? burnDartWorldSprite : boltWorldSprite, ready = burning ? burnDartWorldReady : boltWorldReady
-		var worldPx = (burning ? BURN_DART_WORLD_PX : BOLT_WORLD_PX) + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0)
+		var worldPx = (burning ? BURN_DART_WORLD_PX : BOLT_WORLD_PX) + (burning ? 0 : ((da.level >= 3 ? 1 : 0) + (da.level >= 4 ? 1 : 0) + (da.level >= 5 ? 1 : 0)))
 		ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha = Math.min(1, alpha * 1.05)
 		if (ready && sprite && sprite.naturalWidth) {
 			var h = worldPx * (sprite.naturalHeight / sprite.naturalWidth) * DART_BODY_HEIGHT_SCALE
-			ctx.drawImage(sprite, -worldPx * 0.5, -h * 0.5, worldPx, h)
-			ctx.globalAlpha = alpha * (burning ? 0.32 : 0.38); ctx.strokeStyle = '#efffc7'; ctx.lineWidth = burning ? 1.05 : 1.0; ctx.lineCap = 'round'
-			ctx.beginPath(); ctx.moveTo(-worldPx * 0.28, 0); ctx.lineTo(worldPx * 0.34, 0); ctx.stroke()
+			if (burning) {
+				var flicker = 1 + Math.sin((GS.timeSec || 0) * 34 + da.shotIndex * 1.7) * 0.025
+				ctx.scale(flicker, 1 + (flicker - 1) * 0.45)
+				ctx.drawImage(sprite, -worldPx * 0.5, -h * 0.5, worldPx, h)
+				ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha * 0.16
+				ctx.drawImage(sprite, -worldPx * 0.52, -h * 0.52, worldPx * 1.04, h * 1.04)
+				ctx.globalCompositeOperation = 'source-over'
+			} else {
+				ctx.drawImage(sprite, -worldPx * 0.5, -h * 0.5, worldPx, h)
+			}
 		} else { ctx.scale(1, DART_BODY_HEIGHT_SCALE); drawFallbackDart(ctx, burning, worldPx) }
 		ctx.restore()
 	}
@@ -812,19 +834,19 @@
 			var x = da.x1 + (da.x2 - da.x1) * p, y = da.y1 + (da.y2 - da.y1) * p
 			var ang = Math.atan2(da.y2 - da.y1, da.x2 - da.x1), ca = Math.cos(ang), sa = Math.sin(ang)
 			var alpha = Math.min(1, da.life / Math.min(0.055, da.maxLife))
-			var trail = DART_TRAIL_PX + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0) + (da.burning ? 3 : 0), tx = x - ca * trail, ty = y - sa * trail
+			var trail = DART_TRAIL_PX + (da.level >= 3 ? 1 : 0) + (da.level >= 5 ? 1 : 0) + (da.burning ? 10 : 0), tx = x - ca * trail, ty = y - sa * trail
+			var nx = -sa, ny = ca, bend = da.burning ? Math.sin((GS.timeSec || 0) * 28 + da.shotIndex * 1.3) * 4.0 : ((da.shotIndex % 2 ? 1 : -1) * 2.0)
 			if (da.burning) {
-				ctx.globalAlpha = alpha * 0.38; ctx.strokeStyle = BURN_TRAIL; ctx.lineWidth = 3.2
-				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke()
-				ctx.globalAlpha = alpha * 0.60; ctx.strokeStyle = BURN_TRAIL_HOT; ctx.lineWidth = 1.1
-				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.62, y - sa * trail * 0.62); ctx.lineTo(x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.34; ctx.strokeStyle = BURN_TRAIL; ctx.lineWidth = 3.6
+				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo((tx + x) * 0.5 + nx * bend, (ty + y) * 0.5 + ny * bend, x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.58; ctx.strokeStyle = BURN_TRAIL_HOT; ctx.lineWidth = 1.35
+				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.62, y - sa * trail * 0.62); ctx.quadraticCurveTo(x - ca * trail * 0.3 + nx * bend * 0.35, y - sa * trail * 0.3 + ny * bend * 0.35, x, y); ctx.stroke()
 			} else {
-				ctx.globalAlpha = alpha * 0.28; ctx.strokeStyle = BOLT_COLOR; ctx.lineWidth = 2.4
-				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke()
-				ctx.globalAlpha = alpha * 0.62; ctx.strokeStyle = '#efffc7'; ctx.lineWidth = 0.85
-				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.58, y - sa * trail * 0.58); ctx.lineTo(x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.12; ctx.strokeStyle = BOLT_COLOR; ctx.lineWidth = 2.2
+				ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo((tx + x) * 0.5 + nx * bend, (ty + y) * 0.5 + ny * bend, x, y); ctx.stroke()
+				ctx.globalAlpha = alpha * 0.20; ctx.strokeStyle = '#efffc7'; ctx.lineWidth = 0.7
+				ctx.beginPath(); ctx.moveTo(x - ca * trail * 0.46, y - sa * trail * 0.46); ctx.lineTo(x, y); ctx.stroke()
 			}
-			if (!dense && !da.burning && da.level >= 3) { drawDartBody(ctx, da, x - ca * 7.5, y - sa * 7.5, ang, alpha * (da.level >= 5 ? 0.18 : 0.12)) }
 			drawDartBody(ctx, da, x, y, ang, alpha)
 		}
 		ctx.globalAlpha = 1
@@ -839,11 +861,17 @@
 				ctx.strokeStyle = a.burning ? BURN_TRAIL : BOLT_COLOR; ctx.lineWidth = 1
 				ctx.beginPath(); ctx.moveTo(-4.5 * life, 0); ctx.lineTo(4.5 * life, 0); ctx.moveTo(0, -3.5 * life); ctx.lineTo(0, 3.5 * life); ctx.stroke()
 			} else {
-				var len = (a.burning ? 9.5 : 8.5) * (0.88 + p * 0.18), col = a.burning ? BURN_TRAIL_HOT : BOLT_COLOR
-				ctx.globalAlpha = life * 0.92; ctx.strokeStyle = col; ctx.lineWidth = a.burning ? 2.0 : 1.7; ctx.lineCap = 'round'
-				ctx.rotate(0.68); ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(len, 0); ctx.stroke()
-				ctx.rotate(-1.36); ctx.beginPath(); ctx.moveTo(-len * 0.78, 0); ctx.lineTo(len * 0.78, 0); ctx.stroke()
-				if (a.burning) { ctx.globalAlpha = life * 0.75; ctx.fillStyle = BURN_TRAIL; ctx.beginPath(); ctx.arc(0, 0, 2.2 * life + 0.6, 0, M.PI2); ctx.fill() }
+				var len = (a.burning ? 11.5 : 10.0) * (0.90 + p * 0.16), col = a.burning ? BURN_TRAIL_HOT : BOLT_COLOR
+				ctx.globalAlpha = life * 0.92; ctx.strokeStyle = col; ctx.lineCap = 'round'
+				ctx.lineWidth = a.burning ? 2.3 : 1.9
+				ctx.beginPath(); ctx.arc(0, 0, len, -0.82, 0.72); ctx.stroke()
+				ctx.globalAlpha = life * 0.75; ctx.lineWidth = a.burning ? 1.8 : 1.45
+				ctx.beginPath(); ctx.moveTo(-len * 0.56, len * 0.38); ctx.lineTo(len * 0.62, -len * 0.45); ctx.stroke()
+				ctx.globalAlpha = life * 0.88; ctx.fillStyle = a.burning ? '#ffe19a' : '#efffc7'; ctx.beginPath(); ctx.arc(0, 0, a.burning ? 2.5 : 2.0, 0, M.PI2); ctx.fill()
+				if (a.burning) {
+					ctx.fillStyle = BURN_TRAIL; ctx.globalAlpha = life * 0.72
+					for (var sp = 0; sp < 3; sp++) { var sa2 = -1.25 + sp * 1.15; ctx.beginPath(); ctx.arc(Math.cos(sa2) * (8 + sp * 1.5), Math.sin(sa2) * (8 + sp * 1.5), 1.2, 0, M.PI2); ctx.fill() }
+				}
 			}
 			ctx.restore()
 		}
@@ -1014,12 +1042,12 @@
 	// 需求B 技能视效接收（🟡 参数见顶部表现债常量块 TODO+候选，不动 §9）
 	Bus.on('fx:bolt', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, d.killed), { delay: d.visualDelay, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId })
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, d.killed, d.level, d.travel), { delay: d.visualDelay, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId, targetRadius: d.targetRadius })
 	})
 	// 灼烧弹幕：同一晶叶核心 + 火焰强化层。事件仍在发射时 emit（音效时序不变）；命中叶切/火星由投射物抵达后产生。
 	Bus.on('fx:burndart', function (d) {
 		if (!d || !d.from || !d.to) { return }
-		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, d.killed), { delay: d.visualDelay, burning: true, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId })
+		spawnDart(d.from.x, d.from.y, d.to.x, d.to.y, BOLT_COLOR, dartFlightSec(d.from, d.to, false, d.level, d.travel), { delay: d.visualDelay, burning: true, level: d.level, shotIndex: d.shotIndex, shotCount: d.shotCount, targetId: d.targetId, targetRadius: d.targetRadius })
 	})
 	Bus.on('fx:lightning', function (d) {
 		if (!d || !d.chain || d.chain.length < 2) { return }
