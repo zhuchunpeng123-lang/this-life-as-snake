@@ -477,17 +477,37 @@
 			masterVolume: 0.72,
 			sfxVolume: 0.78,
 			uiVolume: 0.68,
-			bgmVolume: 0.34,
+			bgmVolume: 0.37,
 			mix: {
-				// 全局混音：SFX 最多 16 声部；技能、受击、死亡分子总线，避免同频互相遮蔽。
-				maxSfxVoices: 16, maxUiVoices: 12,
-				skillBusGain: 0.94, impactBusGain: 0.72, deathBusGain: 0.82,
-				densityWindowMs: 220, densityThreshold: 5, densityDuckMul: 0.70, densityReleaseMs: 260,
-				lightDuckMul: 0.78, lightDuckSec: 0.16, majorDuckMul: 0.54, majorDuckSec: 0.28,
-				chooseDuckMul: 0.50, pauseRampSec: 0.06, deathSilenceSec: 0.12,
+				// Phase 1：声音先分语义、再竞争声部。高优先级反馈可以替换低优先级噪声，不能靠所有声音一起变响。
+				maxSfxVoices: 16, maxUiVoices: 10,
+				voiceBudget: { skill: 6, combo: 5, player: 4, impact: 4, death: 4, boss: 5, ui: 6 },
+				skillBusGain: 0.88, comboBusGain: 0.98, playerBusGain: 1.00, impactBusGain: 0.62, deathBusGain: 0.72, bossBusGain: 1.00,
+				densityWindowMs: 220, densityThreshold: 5, densityDuckMul: 0.80, densityReleaseMs: 260,
+				lightDuckMul: 0.82, lightDuckSec: 0.16, majorDuckMul: 0.60, majorDuckSec: 0.28,
+				chooseDuckMul: 0.54, pauseRampSec: 0.06, deathSilenceSec: 0.12,
 				limiterThresholdDb: -8, limiterKneeDb: 12, limiterRatio: 4, limiterAttackSec: 0.003, limiterReleaseSec: 0.16,
-				bgmPressureStart: 1.15, bgmPressureEnd: 2.70, bgmPressureFloor: 0.80,
-				layerExploreGain: 0.90, layerBattlePadGain: 0.70, layerBattleGain: 0.80, layerBossGain: 0.82
+				bgmPressureStart: 1.20, bgmPressureEnd: 2.80, bgmPressureFloor: 0.92
+			},
+			music: {
+				// Phase 1.2: five exclusive arrangements share one bright night-garden motif.
+				// Stages transition on a bar boundary; the previous arrangement fades OUT instead of remaining underneath.
+				stageBpm: [92, 104, 116, 130, 142],
+				stageHeat: [0.00, 0.78, 1.50, 2.22, 2.90],
+				stageBgmGainByStage: [0.94, 1.00, 1.06, 1.10, 1.13],
+				padGainByStage: [0.026, 0.028, 0.025, 0.021, 0.018],
+				padCutoffByStage: [2200, 2400, 2650, 2900, 3150],
+				padStepsByStage: [11, 12, 10, 8, 7],
+				padAttackSec: 0.30, padReleaseSec: 0.42,
+				motiveGainByStage: [0.041, 0.047, 0.052, 0.058, 0.062],
+				bassGainByStage: [0.000, 0.043, 0.056, 0.066, 0.074],
+				arpGainByStage: [0.000, 0.012, 0.024, 0.032, 0.036],
+				kickGainByStage: [0.000, 0.000, 0.043, 0.057, 0.067],
+				snareGainByStage: [0.000, 0.000, 0.024, 0.032, 0.038],
+				hatGainByStage: [0.000, 0.006, 0.014, 0.020, 0.024],
+				transitionGainByStage: [0.000, 0.045, 0.052, 0.060, 0.068],
+				kickFilterHz: 520, snareFilterHz: 1500, hatFilterHz: 3400,
+				stageCrossfadeSec: 0.72
 			},
 			hit: {
 				// 同一次伤害只保留一个主要音效所有者：专属技能事件拥有声音时，通用命中音静音。

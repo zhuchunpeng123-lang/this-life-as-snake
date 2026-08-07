@@ -1,7 +1,9 @@
 # 《此生为蛇》技能音频规范
 
-版本：v1.1
-性质：ChatGPT 与 Codex 共用的技能音频真理源
+版本：v1.2
+性质：ChatGPT 与 Codex 共用的技能音频实现规范
+
+> 所有音频任务先读 `docs/audio/AUDIO-BIBLE.md`。本文件只规定技能实现细则；世界观、混音主次、BGM 成长与材质语言以 Audio Bible 为上位真理源。
 
 ## 1. 每个技能必须记录
 
