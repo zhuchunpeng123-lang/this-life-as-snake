@@ -29,6 +29,7 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var usedChoiceIds = {}
 	var chooseKeyHandler = null   // 三选一键盘 1/2/3 监听句柄（显示时挂载、hideChoose 时移除）
 	var bossTagged = false, firstUpgradeTagged = false, choicesUsed = 0, choiceActive = false, choiceChoices = null
+	var narrativeQueue = [], queuedChoiceIds = {}, resultSnapshot = null, chapterBeat = null
 	var ownedSkillIds = {}
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
@@ -221,6 +222,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		hudCombo.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudCombo, 'data-combo', 'combo', 'combo_status') })
 		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
+		chapterBeat = mk('div', 'position:absolute;left:50%;top:calc(24% + env(safe-area-inset-top));transform:translateX(-50%);display:none;min-width:min(68vw,420px);padding:10px 18px;box-sizing:border-box;text-align:center;color:' + STYLE.textMain + ';font:700 clamp(14px,3.4vw,18px)/1.45 system-ui;text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.8) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .35s', root)
 		// 系统按钮：移动端带完整文字(⏸ 暂停 / ⛶ 全屏 / ⚙ GM)并等宽居中对齐；桌面保留原横排文字（hudSys 已在上方按 isTouch 定位）
 		pauseBtn = mk('div', 'min-width:' + (isTouch ? '92px' : 'auto') + ';text-align:center;padding:' + (isTouch ? '9px 14px' : '10px 16px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		pauseBtn.textContent = '暂停'
@@ -269,9 +271,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 
 	function tagLatest(tag) {
 		var t = GS.memoryTokens
-		if (!t.length) { t.push({ tag: tag }); return }
+		var meta = { time: GS.timeSec || 0, stage: GS.stageId || 0, segments: GS.segments || 0, event: tag || null }
+		if (!t.length) { meta.tag = tag; t.push(meta); return }
 		var last = t[t.length - 1]
-		if (last.tag) { t.push({ tag: tag }) } else { last.tag = tag }
+		if (last.tag) { meta.tag = tag; t.push(meta) } else { last.tag = tag; last.time = meta.time; last.stage = meta.stage; last.segments = meta.segments; last.event = meta.event }
 	}
 
 	function classifyDeathCause() {
@@ -301,12 +304,17 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		return null
 	}
 
-	function buildFlashbackLines() {
-		var fb = NARR.flashback, toks = GS.memoryTokens || [], total = toks.length, lines = []
+	function buildFlashbackLines(snapshot) {
+		var fb = NARR.flashback, toks = snapshot.memoryTokens || [], total = toks.length, lines = []
 		if (total === 0) { return [fb.headClosingLine] }
 		var lastLine = '', seenEvent = {}, seenStage = {}
-		for (var i = 0; i < total; i++) {
-			var p = (i + 1) / total, tok = toks[i], line = ''
+		var ranked = [], priority = { choice: 7, bossEncounter: 6, comboSteam: 5, comboElectro: 5, comboBurn: 5, firstUpgrade: 4, hurt: 3, heal: 3, killElite: 2 }
+		for (var r = 0; r < total; r++) { var rt = toks[r] || {}; ranked.push({ token: rt, index: r, weight: priority[rt.tag] || 1 }) }
+		ranked.sort(function (a, b) { return b.weight - a.weight || a.index - b.index })
+		var limit = Math.max(NARR.carouselCountMin, Math.min(NARR.carouselCountMax, ranked.length))
+		ranked = ranked.slice(0, limit).sort(function (a, b) { return a.index - b.index })
+		for (var i = 0; i < ranked.length; i++) {
+			var p = (ranked[i].index + 1) / total, tok = ranked[i].token, line = ''
 			if (tok && tok.tag && fb.eventLines[tok.tag] && !seenEvent[tok.tag]) {
 				line = fb.eventLines[tok.tag]; seenEvent[tok.tag] = true
 			} else {
@@ -336,14 +344,18 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			return (v === undefined || v === null) ? '' : String(v)
 		})
 	}
-	function buildEulogy(cause, lean) {
+	function buildEulogy(cause, lean, snapshot) {
 		var tpls = NARR.eulogy.templates
 		var tpl = (tpls[cause] && tpls[cause][lean]) ? tpls[cause][lean] : NARR.eulogy.fallback
-		return fillTemplate(tpl, {
-			maxLen: GS.maxSegments || '', maxStage: (stageName !== '—' ? stageName : ''),
-			build: topBuildLabel() || '', topCombo: topComboLabel() || '', kills: GS.kills || '',
-			choice: (GS.irreversibleChoices.length ? GS.irreversibleChoices[GS.irreversibleChoices.length - 1] : '')
+		var text = fillTemplate(tpl, {
+			maxLen: snapshot.maxSegments || '', maxStage: snapshot.stageName || '',
+			build: snapshot.topBuild || '', topCombo: snapshot.topCombo || '', kills: snapshot.kills || '',
+			choice: (snapshot.irreversibleChoices.length ? snapshot.irreversibleChoices[snapshot.irreversibleChoices.length - 1] : '')
 		})
+		return snapshot.irreversibleChoices.length ? (text + ' 最后，它记得自己曾选择：' + snapshot.irreversibleChoices[snapshot.irreversibleChoices.length - 1] + '。') : text
+	}
+	function snapshotResult(cause) {
+		return { cause: cause, time: GS.timeSec || 0, stageId: GS.stageId || 0, stageName: stageName !== '—' ? stageName : '', segments: GS.segments || 0, maxSegments: GS.maxSegments || 0, kills: GS.kills || 0, killStreakMax: GS.killStreakMax || 0, score: GS.score || 0, comboScore: GS.comboScore || 0, bossDefeated: !!GS.bossDefeated, memoryTokens: (GS.memoryTokens || []).slice(), irreversibleChoices: (GS.irreversibleChoices || []).slice(), comboHighlights: (GS.comboHighlights || []).slice(), topBuild: topBuildLabel(), topCombo: topComboLabel(), ownedSkills: Object.assign({}, GS.ownedSkills || {}) }
 	}
 
 	function startSequence(cause) {
@@ -352,10 +364,11 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var mySeqId = seqId
 		hideChoose(); if (choiceBox) { choiceBox.style.display = 'none' }
 		var win = cause === 'clear', lean = classifyBuildLean()
-		var lines = buildFlashbackLines(), eulogy = buildEulogy(cause, lean)
+		resultSnapshot = snapshotResult(cause)
+		var lines = buildFlashbackLines(resultSnapshot), eulogy = buildEulogy(cause, lean, resultSnapshot)
 		var stillMs = NARR.deathStillSec * 1000
 		var flashMs = Math.min(NARR.carouselSec * 1000, NARR.flashback.samplingCapMs)
-		var eulogyMs = NARR.aiTextSec * 1000, budget = NARR.staticHardcapSec * 1000
+		var eulogyMs = Math.max(NARR.aiTextSec * 1000, NARR.eulogyMinReadSec * 1000), budget = NARR.staticHardcapSec * 1000
 		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
 		result.innerHTML = ''; result.style.display = 'flex'
 		// 复用 HUD 同款 uiScale(画布显示高/540,钳0.55~1.0)：手机横屏(高~375)缩到~0.69 不显过大,PC 恒1.0 零回归
@@ -381,22 +394,32 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var euWrap = mk('div', 'margin-top:16px;padding:16px 18px;border-left:3px solid ' + (win ? STYLE.win : STYLE.lose) + ';background:' + hexA(STYLE.panel, 0.4) + ';color:' + STYLE.textMain + ';font:500 16px/1.9 system-ui;text-align:left;opacity:0;transition:opacity 1s', stage)
 			euWrap.textContent = eulogy; after(30, function () { euWrap.style.opacity = '1' })
 		})
-		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })   // Phase3 评级 + 再来一局按钮 + 九项卡(按钮已内置于 renderScoreboard,与评级同现、不沉底)
+		after(stillMs + flashMs, function () {
+			var viewScore = mk('button', 'margin-top:12px;padding:9px 16px;border:1px solid ' + STYLE.ui + ';border-radius:999px;background:transparent;color:' + STYLE.textMain + ';font:700 14px system-ui;cursor:pointer', stage)
+			viewScore.textContent = '查看战绩'
+			viewScore.onclick = function () { resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) }
+		})
+		after(stillMs + flashMs + eulogyMs, function () { resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) })
+		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })
 	}
 
-	function computeRating() {   // P1-7：评级仅展示、不入数值（金标色用 STYLE.food，无新 hex）
+	function computeRating(view) {
+		view = view || GS
 		var pts = 0
-		pts += Math.min(GS.maxSegments || 0, 40) * 2          // 长度（封顶 80）
-		pts += Math.min(GS.kills || 0, 120)                   // 击杀（封顶 120）
-		pts += Math.min((GS.score + GS.comboScore) || 0, 4000) / 14   // 得分（封顶 ~286）
-		if (GS.bossDefeated) { pts += 220 }                  // 通关加成（封顶合计 ~706）
+		pts += Math.min(view.maxSegments || 0, 40) * 2          // 长度（封顶 80）
+		pts += Math.min(view.kills || 0, 120)                   // 击杀（封顶 120）
+		pts += Math.min((view.score + view.comboScore) || 0, 4000) / 14   // 得分（封顶 ~286）
+		if (view.bossDefeated) { pts += 220 }                  // 通关加成（封顶合计 ~706）
 		if (pts >= 560) { return 'S' }
 		if (pts >= 380) { return 'A' }
 		if (pts >= 200) { return 'B' }
 		return 'C'
 	}
-	function renderScoreboard(stage, cause, win) {
-		var comboCount = GS.comboHighlights ? GS.comboHighlights.length : 0
+	function renderScoreboard(stage, cause, win, snapshot) {
+		if (!snapshot && resultSnapshot && !resultSnapshot.scoreboardReady) { return }
+		if (stage.getAttribute('data-scoreboard-shown')) { return }
+		stage.setAttribute('data-scoreboard-shown', '1')
+		var view = snapshot || resultSnapshot || GS, comboCount = view.comboHighlights ? view.comboHighlights.length : 0
 		var verdict = NARR.scoreboard.verdictByDeathCause[cause] || '一条蛇的一生', runCount = 1
 		try {
 			var key = NARR.scoreboard.localStorageKey
@@ -405,7 +428,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		} catch (e) { runCount = 1 }
 		// 评级金标（gold=STYLE.food，仅展示、不入数值）
 		var rbadge = mk('div', 'margin:2px auto 14px;display:inline-flex;align-items:center;gap:8px;padding:6px 18px;border-radius:999px;background:' + hexA(STYLE.food, 0.16) + ';border:1px solid ' + STYLE.food + ';color:' + STYLE.food + ';font:800 15px system-ui;box-shadow:0 0 12px ' + hexA(STYLE.food, 0.4), stage)   // 恢复原始紧凑居中尺寸(不拉满宽)
-		rbadge.innerHTML = '评级<span style="font-size:22px;margin-left:6px">' + computeRating() + '</span>'
+		rbadge.innerHTML = '评级<span style="font-size:22px;margin-left:6px">' + computeRating(view) + '</span>'
 		// 再来一局按钮：紧跟评级下方(与评级同时出现,不延迟、不沉底)；九项置于其下最底
 		var btn = mk('button', 'display:block;margin:0 auto 16px;padding:13px 30px;border:2px solid ' + STYLE.player + ';border-radius:12px;background:' + STYLE.player + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer;box-shadow:0 0 14px ' + hexA(STYLE.player, 0.5), stage)   // 恢复原始紧凑居中尺寸(不拉满宽)
 		btn.textContent = win ? '再来一局' : '再来一条蛇生'
@@ -584,7 +607,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (isPortrait()) { showRotateChoice(function () { renderChooseCards(choices) }); return }
 		renderChooseCards(choices)
 	}
-	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } choiceChoices = null; hideRotateChoice() }
+	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } choiceChoices = null; hideRotateChoice(); after(0, drainNarrativeQueue) }
 	function hideBuildInfo() {
 		if (!buildInfoLayer) { return }
 		buildInfoLayer.style.display = 'none'
@@ -633,23 +656,31 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		showBuildInfo(kind, target.getAttribute(attr))
 	}
 
-	function offerChoice(ev) {
-		if (choiceActive || GS.status !== 'playing' || choicesUsed >= NARR.choicePerRunMax) { return }
+	function enqueueNarrativeChoice(ev) {
+		if (!ev || usedChoiceIds[ev.id] || queuedChoiceIds[ev.id] || choicesUsed >= NARR.choicePerRunMax) { return }
+		queuedChoiceIds[ev.id] = true; narrativeQueue.push(ev); drainNarrativeQueue()
+	}
+	function drainNarrativeQueue() {
+		if (!narrativeQueue.length || choiceActive || GS.status !== 'playing' || (choose && choose.style.display !== 'none')) { return }
+		var ev = narrativeQueue.shift(); delete queuedChoiceIds[ev.id]
+		if (usedChoiceIds[ev.id] || choicesUsed >= NARR.choicePerRunMax) { drainNarrativeQueue(); return }
 		if (isPortrait()) { showRotateChoice(function () { renderOfferChoice(ev) }); return }
 		renderOfferChoice(ev)
 	}
 	function renderOfferChoice(ev) {
-		choiceActive = true; choicesUsed++; choiceBox.innerHTML = ''
+		choiceActive = true; choicesUsed++; usedChoiceIds[ev.id] = true; GS.status = 'choosing'; choiceBox.innerHTML = ''
 		mk('div', 'color:' + STYLE.textMain + ';font:600 15px system-ui;background:' + hexA(STYLE.panel, 0.8) + ';padding:8px 14px;border-radius:10px;max-width:520px;text-align:center', choiceBox).textContent = ev.desc
 		var btns = mk('div', 'display:flex;gap:12px', choiceBox), resolved = false
 		function resolve(opt) {
 			if (resolved) { return }
 			resolved = true; choiceActive = false; choiceBox.style.display = 'none'; hideRotateChoice()
 			if (GS.status === 'dead' || GS.status === 'clear') { return }   // #1 修复：死亡/通关后超时默认抉择不再生效（不再涨节/加血/记记忆）
-			Bus.emit('narrative:choice', { memory: opt.memory })
+			GS.status = 'playing'
+			Bus.emit('narrative:choice', { memory: opt.memory, choiceId: ev.id })
 			GS.irreversibleChoices.push(opt.memory); tagLatest('choice')
 			if (opt.seg && GS.segments < PLAYER.maxSegments) { for (var n = 0; n < opt.seg; n++) { Bus.emit('pickup:eat', { kind: 'narrative', id: -1, x: 0, y: 0 }) } }   // S2：叙事加节走独立 kind，豁免段 cap 仅受 maxSegments 硬顶（记忆 tag 上文已记，不受 cap 影响）
 			if (opt.hp) { var hp = GS.coreHp + opt.hp; GS.coreHp = hp > PLAYER.coreHp ? PLAYER.coreHp : hp }
+			after(0, drainNarrativeQueue)
 		}
 		function makeBtn(opt) {
 			var b = mk('button', 'padding:10px 18px;border:2px solid ' + STYLE.ui + ';border-radius:10px;background:' + STYLE.panel + ';color:' + STYLE.textMain + ';font:600 14px system-ui;cursor:pointer', btns)
@@ -662,7 +693,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (choicesUsed >= NARR.choicePerRunMax) { return }
 		var evs = NARR.choices.events
 		for (var i = 0; i < evs.length; i++) {
-			if (evs[i].segId === stageId && !usedChoiceIds[evs[i].id]) { usedChoiceIds[evs[i].id] = true; offerChoice(evs[i]); return }
+			if (evs[i].segId === stageId && !usedChoiceIds[evs[i].id]) { enqueueNarrativeChoice(evs[i]); return }
 		}
 	}
 	function countOwnedSkills() { var n = 0; for (var k in ownedSkillIds) { if (ownedSkillIds.hasOwnProperty(k)) { n++ } } return n }
@@ -672,8 +703,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		for (var i = 0; i < evs.length; i++) {
 			var ev = evs[i]
 			if (ev.skillCount && skillCount >= ev.skillCount && !usedChoiceIds[ev.id]) {
-				usedChoiceIds[ev.id] = true
-				;(function (e) { global.setTimeout(function () { offerChoice(e) }, 0) })(ev)   // 延后到 status→playing 再弹
+				enqueueNarrativeChoice(ev)
 				return
 			}
 		}
@@ -685,7 +715,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var ev = evs[i]
 			if (!ev.firstSkillRequired || usedChoiceIds[ev.id]) { continue }
 			if (countOwnedSkills() > 0 && GS.segments >= ev.minSegments) {
-				usedChoiceIds[ev.id] = true; offerChoice(ev); return
+				enqueueNarrativeChoice(ev); return
 			}
 		}
 	}
@@ -766,6 +796,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (!spec.src) { return '<span class="ui-v1-icon-cell" style="' + cellTransform + ';font:800 15px system-ui">' + text + '</span>' }
 		var src = iconText(spec.src)
 		return '<span class="ui-v1-icon-cell" style="' + cellTransform + '"><img src="' + src + '" alt="" style="position:relative;left:' + ((offset.x || 0) * 100) + '%;top:' + ((offset.y || 0) * 100) + '%;transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
+	}
+	function showChapterBeat(stageId) {
+		var beat = NARR.chapterBeats && NARR.chapterBeats[stageId]
+		if (!chapterBeat || !beat || GS.status !== 'playing') { return }
+		chapterBeat.innerHTML = '<strong style="display:block;color:' + STYLE.ui + ';font-size:1.12em">' + iconText(beat.title) + '</strong><span>' + iconText(beat.line) + '</span>'
+		chapterBeat.style.display = 'block'; chapterBeat.style.opacity = '1'
+		after(NARR.chapterBeatSec * 1000, function () { if (chapterBeat) { chapterBeat.style.opacity = '0' } })
+		after(NARR.chapterBeatSec * 1000 + 400, function () { if (chapterBeat) { chapterBeat.style.display = 'none' } })
 	}
 	function buildSkillDomSignature() {
 		var list = CONFIG.SKILL.list || [], owned = GS.ownedSkills || '', out = []
@@ -884,17 +922,17 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 	Bus.on('wave:stage', function (d) {
 		if (d && d.name) { stageName = d.name }
 		if (d && d.stageId >= NARR.classify.deathCause.bossStageId && !bossTagged) { bossTagged = true; tagLatest('bossEncounter') }
-		if (d && d.stageId) { tryTriggerChoice(d.stageId) }
+		if (d && d.stageId) { showChapterBeat(d.stageId); tryTriggerChoice(d.stageId) }
 	})
 	Bus.on('snake:dead', function () { startSequence(classifyDeathCause()) })
 	Bus.on('boss:defeated', function () { GS.bossDefeated = true; startSequence('clear') })
 	Bus.on('core:run_reset', function () {
 		seqId++; clearTimers()
 		_skillDomSignature = null; _comboDomSignature = null
-		stageName = '—'; bossTagged = false; firstUpgradeTagged = false; choicesUsed = 0; choiceActive = false; usedChoiceIds = {}
+		stageName = '—'; bossTagged = false; firstUpgradeTagged = false; choicesUsed = 0; choiceActive = false; usedChoiceIds = {}; queuedChoiceIds = {}; narrativeQueue = []; resultSnapshot = null
 		ownedSkillIds = {}
 		hideChoose(); hideBuildInfo(); if (choiceBox) { choiceBox.style.display = 'none' } if (result) { result.style.display = 'none'; result.innerHTML = '' }
-		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' }
+		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' } if (chapterBeat) { chapterBeat.style.display = 'none'; chapterBeat.style.opacity = '0' }
 	})
 
 	// —— 移动端 HUD 等比缩放（必改1：每簇从各自屏角缩放，杜绝整体 top-left 内漂）——

@@ -5,6 +5,16 @@
 	var BOSS_ACTION = (CONFIG.RENDER && CONFIG.RENDER.bossVisual) || {}
 	var GAME = CONFIG.GAME, PLAYER = CONFIG.PLAYER, CAM = PLAYER.camera, COL = CONFIG.COLORS, SHK = CONFIG.COMBAT.shake
 	var STYLE = CONFIG.STYLE   // §5.5 视觉真源（唯一引用；全文件禁再写 CONFIG.STYLE 或散色）
+	var SKILL_VFX = (STYLE.combatFx && STYLE.combatFx.skillVfx) || {}
+	var FIRE_FLAME_SPRITE_SRC = 'assets/vfx/fire/vfx_fire_flame_a_v1.png'
+	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
+	var SHIELD_ORB_SPRITE_SRC = 'assets/skill_shield_v1.png'
+	var fireFlameSprite = null, fireFlameSpriteReady = false, iceBloomSprite = null, iceBloomSpriteReady = false, shieldOrbSprite = null, shieldOrbSpriteReady = false
+	if (global.Image) {
+		fireFlameSprite = new global.Image(); fireFlameSprite.onload = function () { fireFlameSpriteReady = true }; fireFlameSprite.onerror = function () { fireFlameSpriteReady = false }; fireFlameSprite.src = FIRE_FLAME_SPRITE_SRC
+		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
+		shieldOrbSprite = new global.Image(); shieldOrbSprite.onload = function () { shieldOrbSpriteReady = true }; shieldOrbSprite.onerror = function () { shieldOrbSpriteReady = false }; shieldOrbSprite.src = SHIELD_ORB_SPRITE_SRC
+	}
 
 	// 配色红线：蛇身/蛇尾读 STYLE.player（= 蛇头 PNG 同一个绿）；旧 COL.snakeBody/snakeHead 仅兼容保留、新代码不引用
 	var SNAKE_BODY = STYLE.player
@@ -874,13 +884,21 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		return x > cam.x - hw - m && x < cam.x + hw + m && y > cam.y - hh - m && y < cam.y + hh + m
 		*/
 	}
-	function drawHpBar(e, ix, iy) {                                    // 小怪世界血条（插值版 ix/iy；剔除仍读真实 e.x/e.y）
+	function shouldDrawHpBar(e) {
+		var policy = (STYLE.combatFx && STYLE.combatFx.hpBar) || {}
+		if (e.isDummy) { return policy.dummyMode === 'always' }
+		if (e.type === 'elite') { return policy.eliteMode === 'damaged' ? e.hp < e.maxHp : true }
+		if (policy.normalMode !== 'recent-hit') { return e.hp < e.maxHp }
+		return e.hp < e.maxHp && (GS.timeSec - (e.lastVisualHitSec || -999)) <= (policy.normalRecentHitSec || 0.7)
+	}
+	function drawHpBar(e, ix, iy) {                                    // 小怪世界血条（Presentation policy；插值版 ix/iy）
 		if (ix == null) { ix = e.x } if (iy == null) { iy = e.y }
-		if (!e.maxHp || e.hp >= e.maxHp) { return }                   // 满血不画（省恒定 draw 成本）
+		if (!e.maxHp || !shouldDrawHpBar(e)) { return }
 		if (!inView(e.x, e.y, e.radius)) { return }                  // 视口外不画
 		var ratio = M.clamp(e.hp / e.maxHp, 0, 1)
-		var w = Math.max(e.radius * 2, 16), hgt = 3
-		var bx = ix - w / 2, by = iy - e.radius - 9
+		var hpStyle = (STYLE.combatFx && STYLE.combatFx.hpBar) || {}
+		var w = Math.max(e.radius * 2, 16), hgt = hpStyle.heightPx || 3
+		var bx = ix - w / 2, by = iy - e.radius - (hpStyle.offsetYPx || 9)
 		ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, by, w, hgt)
 		ctx.fillStyle = ratio > 0.5 ? '#7CFC00' : (ratio > 0.25 ? '#ffd166' : '#ff5a5a')
 		ctx.fillRect(bx, by, w * ratio, hgt)
@@ -890,24 +908,26 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		}
 	}
 function drawBurnMark(e, hasSlow) {                               // ⑦ 燃烧可见：仅绘制头顶火苗，与减速标记并排且避开血条
-	var _ex = _ix(e) + (hasSlow ? -9 : 0), _ey = _iy(e)
+	var statusStyle = (STYLE.combatFx && STYLE.combatFx.statusIcon) || {}, burnStyle = statusStyle.burn || {}
+	var _ex = _ix(e) + (hasSlow ? -(statusStyle.pairGapPx || 9) : 0), _ey = _iy(e)
 	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 18)
-	var fy = _ey - e.radius - 23 - pulse * 2
+	var fy = _ey - e.radius - (statusStyle.offsetYPx || 23) - pulse * 2
 	var flameScale = 1 + pulse * 0.12
 	ctx.save(); ctx.translate(_ex, fy); ctx.scale(flameScale, flameScale)
-	ctx.globalAlpha = 0.82 + pulse * 0.16; ctx.fillStyle = '#ff632f'
+	ctx.globalAlpha = 0.82 + pulse * 0.16; ctx.fillStyle = burnStyle.outer || '#ff632f'
 	ctx.beginPath(); ctx.moveTo(0, -8); ctx.bezierCurveTo(5, -3, 5, 3, 0, 7); ctx.bezierCurveTo(-5, 3, -4, -2, 0, -8); ctx.closePath(); ctx.fill()
-	ctx.globalAlpha = 0.95; ctx.fillStyle = '#ffd36b'
+	ctx.globalAlpha = 0.95; ctx.fillStyle = burnStyle.core || '#ffd36b'
 	ctx.beginPath(); ctx.moveTo(0, -4); ctx.bezierCurveTo(3, -1, 3, 3, 0, 5); ctx.bezierCurveTo(-3, 2, -2, -1, 0, -4); ctx.closePath(); ctx.fill()
 	ctx.restore(); ctx.globalAlpha = 1
 }
 function drawSlowMark(e, hasBurn) {                                // 冰冻/减速可见：蓝染环 + 头顶冰晶，与灼烧标记并排且避开血条
-	var _ex = _ix(e) + (hasBurn ? 9 : 0), _ey = _iy(e)
-	var cy = _ey - e.radius - 23
+	var statusStyle = (STYLE.combatFx && STYLE.combatFx.statusIcon) || {}, slowStyle = statusStyle.slow || {}
+	var _ex = _ix(e) + (hasBurn ? (statusStyle.pairGapPx || 9) : 0), _ey = _iy(e)
+	var cy = _ey - e.radius - (statusStyle.offsetYPx || 23)
 	var pulse = 0.5 + 0.5 * Math.sin(GS.timeSec * 10)
-	ctx.globalAlpha = 0.62 + pulse * 0.22; ctx.strokeStyle = '#8ceaff'; ctx.lineWidth = 2
+	ctx.globalAlpha = 0.62 + pulse * 0.22; ctx.strokeStyle = slowStyle.ring || '#8ceaff'; ctx.lineWidth = 2
 	ctx.beginPath(); ctx.arc(_ex, cy, 7 + pulse, 0, M.PI2); ctx.stroke()
-	ctx.globalAlpha = 0.95; ctx.fillStyle = '#dff3ff'
+	ctx.globalAlpha = 0.95; ctx.fillStyle = slowStyle.core || '#dff3ff'
 	ctx.beginPath()
 	for (var k = 0; k < 6; k++) { var a = k * Math.PI / 3; var px = _ex + Math.cos(a) * 4.5, py = cy + Math.sin(a) * 4.5; if (k === 0) { ctx.moveTo(px, py) } else { ctx.lineTo(px, py) } }
 	ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1
@@ -1050,6 +1070,7 @@ function drawSnake() {
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
 		var T4 = RT('PERF.suppressIceFill', perfFB('suppressIceFill', false) ? 1 : 0) > 0   // 自适应分级：POTATO 档冰池只描边；GM 经 editor.rtSet 仍优先
 		var h = s.head, owned = sk.owned(), SKC = CONFIG.SKILL
+		var fieldFx = (CONFIG.STYLE.combatFx && CONFIG.STYLE.combatFx.fieldReadability) || {}
 		var _ihA = interpHead() || h   // 护盾光球绕「插值头」公转（与所画蛇头同源），消 165Hz 光球相对头错位跳
 	var _snapA = DIR1_SNAP()   // 调试开关：true=吸附光球/火墙到整数设备像素(消亚像素 AA 摇摆)；false=方向1 浮点(复现卡顿)
 	var _iax = _ihA.x, _iay = _ihA.y   // 方向1：护盾/火墙基底浮点(残差补偿后随蛇一起连续投影)
@@ -1073,8 +1094,18 @@ function drawSnake() {
 				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
 			}
 			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-			ctx.lineWidth = fr * 2; ctx.strokeStyle = 'rgba(255,95,30,0.22)'; ctx.stroke()
+			if (fieldFx.fireFillAlpha > 0) { ctx.lineWidth = fr * 2; ctx.globalAlpha = fieldFx.fireFillAlpha; ctx.strokeStyle = '#ff5f1e'; ctx.stroke(); ctx.globalAlpha = 1 }
 			ctx.restore()
+			var fireStyle = SKILL_VFX.fire || {}, fireStride = Math.max(fireStyle.anchorStep, Math.ceil(segs.length / fireStyle.maxAnchors))
+			if (!T3 && fireFlameSpriteReady && fireFlameSprite && fireFlameSprite.naturalWidth) {
+				ctx.save(); ctx.globalCompositeOperation = 'lighter'
+				for (var fireIndex = 0; fireIndex < segs.length; fireIndex += fireStride) {
+					var fireSeg = segs[fireIndex], fireX = (fireSeg.px != null) ? M.lerp(fireSeg.px, fireSeg.x, _ra) : fireSeg.x, fireY = (fireSeg.py != null) ? M.lerp(fireSeg.py, fireSeg.y, _ra) : fireSeg.y
+					var firePulse = 1 + Math.sin(GS.timeSec * fireStyle.flickerHz + fireIndex) * fireStyle.flickerAmount, fireSize = fireStyle.flameSizePx * firePulse
+					ctx.globalAlpha = fireStyle.flameAlpha; ctx.drawImage(fireFlameSprite, fireX - fireSize / 2, fireY - fireStyle.yOffsetPx - fireSize / 2, fireSize, fireSize)
+				}
+				ctx.restore()
+			}
 		}
 		if (owned.shield > 0) {
 			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = RTA('SKILL.shield.orbitRadius.' + si, SKC.shield.orbitRadius[si])
@@ -1085,11 +1116,11 @@ function drawSnake() {
 			var at = a2 - SHIELD_GLOW_TRAIL   // 拖影（沿轨道后方）
 			var oxt = _iax + Math.cos(at) * orbR, oyt = _iay + Math.sin(at) * orbR   // 方向1：护盾拖影浮点(残差补偿后连续投影)
 			if (_snapA) { ox2 = snapWX(ox2); oy2 = snapWY(oy2); oxt = snapWX(oxt); oyt = snapWY(oyt) }
-				ctx.globalAlpha = 0.3; ctx.strokeStyle = 'rgba(255,225,140,0.9)'; ctx.lineWidth = 5; ctx.lineCap = 'round'
+				var shieldStyle = SKILL_VFX.shield || {}
+				ctx.globalAlpha = shieldStyle.trailAlpha; ctx.strokeStyle = shieldStyle.trailColor; ctx.lineWidth = shieldStyle.trailWidthPx; ctx.lineCap = 'round'
 				ctx.beginPath(); ctx.moveTo(oxt, oyt); ctx.lineTo(ox2, oy2); ctx.stroke(); ctx.globalAlpha = 1
-				ctx.beginPath(); ctx.arc(ox2, oy2, 6, 0, M.PI2); ctx.fillStyle = 'rgba(255,235,160,0.95)'; ctx.fill()   // 发光球（白金）
-				ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(ox2, oy2, 9, 0, M.PI2); ctx.fillStyle = 'rgba(255,225,140,0.4)'; ctx.fill(); ctx.globalAlpha = 1
-				ctx.beginPath(); ctx.arc(ox2, oy2, orbR * SKC.shield.orbitHitMul, 0, M.PI2); ctx.strokeStyle = 'rgba(255,225,140,0.20)'; ctx.lineWidth = 1.5; ctx.stroke()   // B-2 对齐修正：命中环=orbitRadius×orbitHitMul，让玩家看清烫区
+				if (shieldOrbSpriteReady && shieldOrbSprite && shieldOrbSprite.naturalWidth) { var shieldSize = shieldStyle.orbSpriteSizePx; ctx.drawImage(shieldOrbSprite, ox2 - shieldSize / 2, oy2 - shieldSize / 2, shieldSize, shieldSize) }
+				if (fieldFx.shieldHitRingAlpha > 0) { ctx.globalAlpha = fieldFx.shieldHitRingAlpha; ctx.beginPath(); ctx.arc(ox2, oy2, orbR * SKC.shield.orbitHitMul, 0, M.PI2); ctx.strokeStyle = shieldStyle.trailColor; ctx.lineWidth = shieldStyle.trailWidthPx; ctx.stroke(); ctx.globalAlpha = 1 }
 			}
 		}
 		// —— 冰：CD 自动索敌冰池（读 Skill.getIcePools()，与 tickIce 判定严格一致；视觉=判定）——
@@ -1101,11 +1132,13 @@ function drawSnake() {
 					var premain = p.expire - GS.timeSec
 					var plife = p.life > 0 ? p.life : 1
 					var pratio = premain > 0 ? (premain / plife) : 0   // 剩余寿命占比 → 淡出
-					var pa = (0.18 + 0.32 * pratio).toFixed(2)         // 冰池底色透明度随寿命衰减（不强到挡视线）
+					var pa = (fieldFx.iceFillBaseAlpha + fieldFx.iceFillLifeAlpha * pratio).toFixed(2)         // 冰池底色退为低干扰语义底色
 					var gr = (p.growDur > 0 && p.growT > 0) ? (1 - p.growT / p.growDur) : 1   // ⑥ 首测：生长 scale 0→1
 					var pr = p.r * gr                                                  // 生长中半径（看到的=打到的，与 tickIce effR 一致）
 				ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2)
 				if (!T4) { ctx.fillStyle = 'rgba(120,205,255,' + pa + ')'; ctx.fill() }   // 冰蓝霜池：T4 关填充只留描边（纯视觉，零 gameplay）
+				var iceStyle = SKILL_VFX.ice || {}
+				if (iceBloomSpriteReady && iceBloomSprite && iceBloomSprite.naturalWidth) { var iceCoreSize = iceStyle.poolCoreSizePx; ctx.globalAlpha = iceStyle.poolCoreAlpha * pratio; ctx.drawImage(iceBloomSprite, p.x - iceCoreSize / 2, p.y - iceCoreSize / 2, iceCoreSize, iceCoreSize); ctx.globalAlpha = 1 }
 					ctx.strokeStyle = 'rgba(159,220,255,0.35)'; ctx.lineWidth = 2   // 冰池外环（强调大控制场边界，看到的=打到的）
 					ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, M.PI2); ctx.stroke()
 					ctx.fillStyle = 'rgba(225,243,255,0.5)'   // 霜点（固定亮，沿半径撒布填充大霜池）

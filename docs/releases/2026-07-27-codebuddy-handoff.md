@@ -5,7 +5,7 @@
 
 > **目标**：读毕即对整个项目了如指掌，可独立定位 bug、扩展特性、不踩历史巨坑。
 > **读者**：接续本项目修 bug / 做特性的 AI（下称「你」）。人类项目负责人（用户）保留所有「计划确认 / §9 真源回写 / 发布开关」决策权。
-> **配套文档**：`AGENTS.md`（守则·最高优先）、`CHANGELOG.md`（改动流水）、`docs/DEBT.md`（债台账）、`docs/plans/STATUS.md`（计划索引）、`docs/RETRO.md`（复盘教训）、`docs/workflow.md`（协作细则）、`docs/RELEASE.md`（封版快照）。
+> **配套文档**：`AGENTS.md`（守则·最高优先）、`CHANGELOG.md`（改动流水）、`docs/DEBT.md`（债台账）、`docs/plans/STATUS.md`（计划索引）、`docs/RETRO.md`（复盘教训）、`docs/workflow.md`（协作细则）、`docs/releases/2026-07-27-freeze.md`（封版快照）。
 
 ---
 
@@ -195,8 +195,8 @@
 | `docs/plans/STATUS.md` | 计划文件总索引 | 落地后更新状态 |
 | `docs/RETRO.md` | 跨会话复盘教训 | 追加开放风险 |
 | `docs/workflow.md` | 协作/调参 SOP | 否 |
-| `docs/RELEASE.md` | 封版快照 | 封版时更新 |
-| `docs/HANDOFF-CODEX.md` | 本文件 | 大改前告知用户 |
+| `docs/releases/2026-07-27-freeze.md` | 封版快照 | 历史快照 |
+| `docs/releases/2026-07-27-codebuddy-handoff.md` | 本文件 | 历史交接 |
 | `docs/《GDD v0.3》` | 设计意图 | 否 |
 | `docs/《数值真理源 §9》` | 数值唯一真源 | **绝不改**（用户回写） |
 
@@ -313,7 +313,7 @@ git push origin main
   git tag -a v0.9 -m "封版快照 2026-07-27（B-TUNE 阻塞仍开）"
   git push origin v0.9
   ```
-- Tag 命名随意，但与用户商定后再打；`RELEASE.md` 记录冻结 commit 哈希即可。
+- Tag 命名随意，但与用户商定后再打；封版快照记录冻结 commit 哈希即可。
 
 ### 12.9 回滚 SOP（本地优先，安全）
 ```bash

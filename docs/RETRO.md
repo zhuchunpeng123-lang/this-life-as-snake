@@ -67,7 +67,7 @@
 - **⑥ 冰冻重做**：已 commit（5777395）、数值已回写 §9，用户确认重做已完成。
 - **④ 蒸汽状态引爆**：已 commit（13c2e53）+ 实测绿，零新数值无需 §9 回写；④-B 屏震精修解除阻塞可推进（屏震四档已在 07-17 落地）。
 - **性能"外部 gap"**：偶发尖峰为环境级（最小化恢复 / 后台切换），靠主循环丢追帧缓解，非渲染根治。
-- **🔒 封版快照 2026-07-27（commit 5a5b5d6）**：内部冻结基线，非 GA。配套 `docs/RELEASE.md` + `docs/HANDOFF-CODEX.md`。**🔴 B-TUNE 发布硬阻塞仍开**：`13_editor.js`（GM 标定层 + `~` 键 + ⚙ 按钮）与 `07_enemy.js` `spawnDummy` 未受 `CONFIG.DEBUG.enabled` 门控，随包加载 → GA 前须 Codex 接手加 `if (CONFIG.DEBUG.editorEnabled)` 门控（详见 DEBT §4 / HANDOFF-CODEX §7）。
+- **🔒 封版快照 2026-07-27（commit 5a5b5d6）**：内部冻结基线，非 GA。配套 `docs/releases/2026-07-27-freeze.md` + `docs/releases/2026-07-27-codebuddy-handoff.md`。**🔴 B-TUNE 发布硬阻塞仍开**：`13_editor.js`（GM 标定层 + `~` 键 + ⚙ 按钮）与 `07_enemy.js` `spawnDummy` 未受 `CONFIG.DEBUG.enabled` 门控，随包加载 → GA 前须 Codex 接手加 `if (CONFIG.DEBUG.editorEnabled)` 门控（详见 DEBT §4 / 交接快照 §7）。
 - **iOS standalone 真机复验**：2026-07-27 第三轮音频解锁（手势内同步起振荡器 + ctx running 后起 BGM）逻辑应已根治「主屏打开无声」，但用户尚未真机复验绿，列为待复验项（非代码阻塞）。
 
 ## 12. 当前流程口径

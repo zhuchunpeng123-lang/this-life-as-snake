@@ -8,23 +8,23 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="5.5 蛇">
+<meta name="apple-mobile-web-app-title" content="5.5 �?>
 <meta name="theme-color" content="#11162a">
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #11162a; overflow: hidden; }   /* 背景=画布色：contain 留白不可见→移动端视觉满屏、消除"刘海虚影" */
+  html, body { margin: 0; padding: 0; height: 100%; background: #11162a; overflow: hidden; }   /* 背景=画布色：contain 留白不可见→移动端视觉满屏、消�?刘海虚影" */
   #game-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #11162a; }
-  #stage { position: relative; }   /* JS 同步为 canvas 显示尺寸，使 #ui-stage 角标精确贴游戏框（治暂停按钮掉框外） */
+  #stage { position: relative; }   /* JS 同步�?canvas 显示尺寸，使 #ui-stage 角标精确贴游戏框（治暂停按钮掉框外） */
   #stage { width: 100%; height: 100%; }
   #game-canvas { display: block; background: #11162a; box-shadow: 0 0 40px rgba(0,0,0,.6); touch-action: none; }
-  @media (pointer:coarse) { #game-canvas { box-shadow: none; } }   /* 触屏去黑边光晕(移动端"虚影"主因)；桌面保留屏幕质感 */
-  #ui-stage { position: absolute; inset: 0; pointer-events: none; }   /* 角落 HUD 层：贴 canvas 显示区 */
-  #ui-full { position: fixed; inset: 0; pointer-events: none; z-index: 50; }   /* 全屏遮罩层：升级/结算/暂停/请横屏 */
+  @media (pointer:coarse) { #game-canvas { box-shadow: none; } }   /* 触屏去黑边光�?移动�?虚影"主因)；桌面保留屏幕质�?*/
+  #ui-stage { position: absolute; inset: 0; pointer-events: none; }   /* 角落 HUD 层：�?canvas 显示�?*/
+  #ui-full { position: fixed; inset: 0; pointer-events: none; z-index: 50; }   /* 全屏遮罩层：升级/结算/暂停/请横�?*/
   #boot-error { position: fixed; left: 0; top: 0; right: 0; z-index: 9999; display: none;
     color: #ff6b6b; font: 14px/1.6 monospace; padding: 12px; white-space: pre-wrap;
     background: rgba(10,14,26,.95); }
-  /* 横屏遮罩 #orientation-gate 由 12_ui.js 动态创建（复用 STYLE 配色，z-index:60 压所有层）；此处不再保留竖屏提示，避免与「强制横屏」策略冲突 */
+  /* 横屏遮罩 #orientation-gate �?12_ui.js 动态创建（复用 STYLE 配色，z-index:60 压所有层）；此处不再保留竖屏提示，避免与「强制横屏」策略冲�?*/
 </style>
-  <!-- 全局错误兜底：必须最先注册（早于所有游戏脚本），否则脚本加载/执行错误会被静默吞掉（曾导致 collision 抛错无红字、碰撞缺失） -->
+  <!-- 全局错误兜底：必须最先注册（早于所有游戏脚本），否则脚本加�?执行错误会被静默吞掉（曾导致 collision 抛错无红字、碰撞缺失） -->
   <script>
     window.addEventListener('error', function (e) {
       // 跨域脚本/浏览器扩展产生的 'Script error.'（浏览器脱敏，非本游戏错误）与资源加载失败（e.target 为元素）
@@ -51,22 +51,22 @@
   <div id="ui-full"></div>
   <div id="boot-error"></div>
 
-  <!-- 顺序加载（禁止 import/export）：L1 数据 → L3 引擎 → L5 系统 → L6 渲染 → L7 调试 → 入口；本地双击(file://)打开时去掉 ?v= 缓存版本号，否则 Chrome 对带查询串的本地脚本会 404 导致整游戏白屏（worktree 13c915b 即无 ?v= 可正常加载）；如需强制刷新清缓存用 Ctrl+Shift+R -->
-  <!-- 缓存破坏：版本号跟随 build 升，改任意脚本后统一 +1 即强制浏览器拉新，免手动清缓存 -->
-<script src="02_config.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="03_core.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="04_collision.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="05_particle.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="06_snake.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="07_enemy.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="08_skill.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="09_wave.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="10_audio.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="11_render.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="12_ui.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="13_editor.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="14_main.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="15_profiler.js?v=audio-v1-1-dart-v5-2-20260808"></script>
-<script src="16_skill_econ.js?v=audio-v1-1-dart-v5-2-20260808"></script>
+  <!-- 顺序加载（禁�?import/export）：L1 数据 �?L3 引擎 �?L5 系统 �?L6 渲染 �?L7 调试 �?入口；本地双�?file://)打开时去�??v= 缓存版本号，否则 Chrome 对带查询串的本地脚本�?404 导致整游戏白屏（worktree 13c915b 即无 ?v= 可正常加载）；如需强制刷新清缓存用 Ctrl+Shift+R -->
+  <!-- 缓存破坏：版本号跟随 build 升，改任意脚本后统一 +1 即强制浏览器拉新，免手动清缓�?-->
+<script src="02_config.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="03_core.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="04_collision.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="05_particle.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="06_snake.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="07_enemy.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="08_skill.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="09_wave.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="10_audio.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="11_render.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="12_ui.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="13_editor.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="14_main.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="15_profiler.js?v=skill-vfx-audit-v2-20260808"></script>
+<script src="16_skill_econ.js?v=skill-vfx-audit-v2-20260808"></script>
 </body>
 </html>

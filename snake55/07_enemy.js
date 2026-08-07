@@ -30,7 +30,7 @@
 			kbImmune: false, state: 'seek', stateT: 0, cd: 0,
 		contact: false, kbx: 0, kby: 0, stun: 0, slowT: 0, slowPct: 0, steamCd: 0,   // ④ per-enemy 蒸汽引爆冷却（默认 0；死亡经对象池复用复位）
 		inIce: false, _iceHit: false,   // B-2：冰区进入标记（进入检测清零，防对象池复用残留）
-		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, flashKind: '', dotMap: {},   // B-4 衍生：DOT 分源累加器（dotMap[src]=累计值）
+		lifeT: 0, phase: 1, invuln: 0, fireT: 0, flashT: 0, flashKind: '', lastVisualHitSec: -999, dotMap: {},   // lastVisualHitSec 仅供 Presentation HP bar policy；不参与战斗
 		burnT: 0, burnDps: 0   // ⑦ 燃烧 DOT 状态（默认 0；对象池复用与 bossBullet 走 spawnBullet 均靠此兜底，防残留）
 	}
 	}
@@ -79,7 +79,7 @@
 		e.x = _pos.x; e.y = _pos.y; e.prevX = _pos.x; e.prevY = _pos.y; e.vx = 0; e.vy = 0; e.radius = cfg.radius
 		e.color = colorByType[type] || '#fff'
 		e.invuln = 0; e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.isDummy = false   // #2 修复：通用复位 invuln（防 boss 相位残留无敌被对象池复用给普通敌）；B-GM：复用复位 isDummy + B-2 冰标记，防残留；④ 复位 per-enemy 蒸汽冷却
-	e.burnT = 0; e.burnDps = 0   // ⑦ 燃烧状态复位（spawn/spawnBullet 双处，配合 newEnemy 默认字段）
+	e.burnT = 0; e.burnDps = 0; e.lastVisualHitSec = -999   // Presentation-only HP bar clock must reset with pooled enemies
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
@@ -111,7 +111,7 @@
 		var sp = EN.boss.bulletSpeed
 		e.vx = Math.cos(ang) * sp; e.vy = Math.sin(ang) * sp
 		e.hp = e.maxHp = 1; e.kbImmune = true; e.color = colorByType.bossBullet
-		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.flashT = 0; e.flashKind = ''; e.burnT = 0; e.burnDps = 0; e.isDummy = false
+		e.lifeT = BOSS_BULLET_LIFE_SEC; e.contact = false; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false; e.flashT = 0; e.flashKind = ''; e.burnT = 0; e.burnDps = 0; e.lastVisualHitSec = -999; e.isDummy = false
 		list.push(e)
 	}
 	function releaseAt(i) { pool.release(list[i]); list.splice(i, 1) }
@@ -133,7 +133,7 @@
 			e.color = '#ffd166'
 			e.contact = false; e.kbx = 0; e.kby = 0; e.stun = 0; e.slowT = 0; e.slowPct = 0; e.steamCd = 0; e.inIce = false; e._iceHit = false
 			e.burnT = 0; e.burnDps = 0
-			e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.dotMap = {}
+		e.state = 'idle'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.lastVisualHitSec = -999; e.dotMap = {}
 			e.hp = e.maxHp = hp; e.baseSpeed = 0; e.atk = 0; e.senseRange = 0; e.kbImmune = true; e.isDummy = true
 			list.push(e)
 		}
@@ -172,6 +172,7 @@
 	function applyDamage(e, amount, isCrit, isDot, src) {   // B-1：src=伤害来源标签（仅透传给飘字，不参与伤害计算）
 		if (!e || !e.active || e.type === 'bossBullet' || e.invuln > 0) { return }
 		e.hp -= amount
+		e.lastVisualHitSec = GS.timeSec   // Presentation only：普通怪 recent-hit HP bar 的时钟，绝不影响伤害、AI、掉落或死亡
 		if (!isDot) {                                                // 即时伤害保留停顿/击退；整只怪闪色改为来源专属，普通飞镖不再白闪。
 			e.stun = Math.max(e.stun, CB.enemyHitStunFrames / GAME.fps)
 			if (src === 'electro') {

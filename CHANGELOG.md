@@ -1,5 +1,23 @@
 # CHANGELOG · 5.5 好玩基因融合版贪吃蛇
 
+## 2026-08-06 · docs: 分层沉淀技能美术与音频协作规范
+- 新增技能美术、技能音频协作规范及仓库级实现 Skill，沉淀电系专项的表现、音频和交付方法。
+- 同步当前状态、债务台账、艺术规范、音频指南和电系迭代复盘；仅修改文档与协作入口，不改变运行时玩法和数值。
+- commit：`df76655`。
+
+## 2026-08-06 · feat(vfx): establish readable electric combat identity
+- 基础闪电链与电磁炮台 Combo 完成可读性收口：视觉身份、束线层级、移动目标跟随、等级成长和受击反馈分离。
+- 电磁炮台世界实体素材接入，基础闪电与电磁炮台的音频身份和事件路由分开；同步加入 GM/性能观察支持。
+- 未改变 `03_core.js` / `04_collision.js`；commit：`90e7cb5`。
+
+## 2026-08-04 · feat: finalize responsive opening page
+- 开场页改为标准屏与宽屏分别使用背景、Logo 和开始按钮资源，并按宽高比采用响应式布局。
+- 保留 GM 调整入口与缓存戳规则；commit：`9774a6d`。
+
+## 2026-08-04 · tune: adjust snake run pacing
+- 调整敌人生命值、分段时长与刷怪密度、技能保底和升级间隔，使单局节奏更集中。
+- 运行时数值以 `snake55/02_config.js` 为准；commit：`e565ec7`。
+
 ## 2026-07-28 · fix(audio): 音频分轨、火焰和 Boss 结算收口
 - `10_audio.js` 修正 master/BGM/SFX/UI 增益链；master 只读 `masterVolume`，SFX、BGM 和 UI 各自独立控制，暂停期间硬静音且恢复不补播。
 - 火焰 DOT、`fx:burndart`、`fx:steamblast` 改为短暖噪声与弱三角热气音，降低低频冲突并保留三者辨识度。
@@ -14,7 +32,7 @@
 
 > 格式：日期 / 需求名 / 改动文件清单 / 一句话 / 是否动 §9 / 验收 ✅❌
 
-> 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/RELEASE.md` 与 `docs/HANDOFF-CODEX.md`。本文件照常记录每次落地改动。
+> 🔒 **封版快照 2026-07-27 · commit `5a5b5d6`**：内部冻结基线（非 GA）。B-TUNE 发布硬阻塞（GM 标定层 + 训练假人未 `DEBUG` 门控）仍开，详见 `docs/releases/2026-07-27-freeze.md` 与 `docs/releases/2026-07-27-codebuddy-handoff.md`。本文件照常记录每次落地改动。
 
 ## 2026-07-28 · fix(audio): standalone 音频状态与开始手势兜底
 - **现象**：Safari 普通页面开局有声，但 iOS standalone 仍可能要等食物或技能点击后才有声，出现时间不稳定。

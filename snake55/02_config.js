@@ -248,6 +248,14 @@
 			deathStillSec: 1.0,
 			carouselSec: 4, carouselCountMin: 3, carouselCountMax: 5,
 			aiTextSec: 12, aiTextSecMin: 10, aiTextSecMax: 14,
+			eulogyMinReadSec: 6,
+			chapterBeatSec: 2.4,
+			chapterBeats: {
+				2: { title: '成长期', line: '开始懂得，贪一口会长得更快。' },
+				3: { title: '割草期', line: '火力盖过恐惧。' },
+				4: { title: '高潮期', line: '越强，越没有退路。' },
+				5: { title: 'Boss期', line: '终点就在前面。' }
+			},
 			staticHardcapSec: 20,
 			choicePerRunMin: 1, choicePerRunMax: 2,
 			templateSkeletonMin: 12,
@@ -397,11 +405,30 @@
 					ground: '#536FD8', beam: '#A06CFF', beamCore: '#E9FFFF', impact: '#F4FFFF', impactEdge: '#69E7FF',
 					boltAccent: '#D8FF7A', text: '#E3D6FF', textStroke: '#111830', icon: '#C0AFFF', iconBg: '#18234F', hitFlash: '#D9FFFF', hitFlashSec: 0.07
 				},
+				// Presentation Foundation v2：战斗文字只按语义 role 取 token；元素只可作为轻度 accent，不得自带来源标签或 Emoji。
 				text: {
-					baseSize: 14, comboSize: 18, comboCritSize: 22, outlinePx: 2.5,
-					comboLifeSec: 0.72, iconSizePx: 15, iconGapPx: 4
+					debugSourceLabels: false,
+					tiers: {
+						dot: { sizePx: 10, weight: 600, fill: '#ff7a3c', stroke: null, strokePx: 0, lifeSec: 0.6, risePxPerSec: 36, priority: 'low' },
+						normal: { sizePx: 14, weight: 700, fill: '#ffd166', stroke: null, strokePx: 0, lifeSec: 0.6, risePxPerSec: 36, priority: 'low' },
+						crit: { sizePx: 20, weight: 800, fill: '#fff1a8', stroke: '#1b2340', strokePx: 2.5, lifeSec: 0.72, risePxPerSec: 42, priority: 'high' },
+						combo: { sizePx: 18, weight: 800, fill: '#e3d6ff', stroke: '#111830', strokePx: 2.5, lifeSec: 0.72, risePxPerSec: 42, priority: 'high' },
+						playerHurt: { sizePx: 14, weight: 800, fill: '#ff4d6d', stroke: '#1b2340', strokePx: 2, lifeSec: 0.6, risePxPerSec: 36, priority: 'high' },
+						status: { sizePx: 12, weight: 600, fill: '#7fc4ff', stroke: null, strokePx: 0, lifeSec: 0.45, risePxPerSec: 30, priority: 'low' },
+						debugSource: { sizePx: 11, weight: 600, fill: '#7f8bad', stroke: null, strokePx: 0, lifeSec: 0.45, risePxPerSec: 30, priority: 'low' }
+					}
 				},
-				statusIcon: { sizePx: 13, maxPerEnemy: 3 }
+				priority: { low: 0, normal: 1, high: 2, danger: 3 },
+				// 范围底色只作弱提示；技能本体由下方 skillVfx 的精灵和短时爆点承担，避免大面积色块吞掉战场。
+				fieldReadability: { fireFillAlpha: 0, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
+				skillVfx: {
+					fire: { anchorStep: 2, maxAnchors: 6, flameSizePx: 34, flameAlpha: 0.92, flickerHz: 8, flickerAmount: 0.12, yOffsetPx: 10 },
+					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
+					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },
+					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 }
+				},
+				hpBar: { normalMode: 'recent-hit', normalRecentHitSec: 0.7, eliteMode: 'damaged', dummyMode: 'always', heightPx: 3, offsetYPx: 9 },
+				statusIcon: { sizePx: 13, maxPerEnemy: 3, offsetYPx: 23, pairGapPx: 9, burn: { outer: '#ff632f', core: '#ffd36b' }, slow: { ring: '#8ceaff', core: '#dff3ff' } }
 			}
 		},
 

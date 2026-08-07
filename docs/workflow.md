@@ -17,10 +17,10 @@
 | docs/README.md | docs/ | 文档入口 |
 | docs/workflow.md | docs/ | 本文（协作 + 调参细则） |
 | docs/RETRO.md | docs/ | 跨会话踩坑教训 |
-| docs/RELEASE.md | docs/ | 5.5 封版快照 |
-| docs/HANDOFF-CODEX.md | docs/ | CodeBuddy 封版交接，历史参考 |
+| docs/releases/2026-07-27-freeze.md | docs/releases/ | 5.5 封版快照，历史参考 |
+| docs/releases/2026-07-27-codebuddy-handoff.md | docs/releases/ | CodeBuddy 封版交接，历史参考 |
 | 《GDD v0.3 设计意图层》 | docs/ | 设计意图（数值已分离） |
-| 《数值真理源 v0.3 §9》 | docs/ | 旧数值镜像 / 历史参考；当前以 `snake55/02_config.js` 为准 |
+| 《数值真理源 v0.3 §9》 | docs/archive/design-history/ | 旧数值镜像 / 历史参考；当前以 `snake55/02_config.js` 为准 |
 
 ---
 

@@ -444,6 +444,25 @@ function checkMarkdownLinks() {
   }
 }
 
+function checkPresentationFoundation() {
+  const configFile = path.join(SNAKE_DIR, '02_config.js');
+  const particleFile = path.join(SNAKE_DIR, '05_particle.js');
+  const renderFile = path.join(SNAKE_DIR, '11_render.js');
+  const config = readText(configFile);
+  const particle = readText(particleFile);
+  const render = readText(renderFile);
+  const requiredTokens = ['dot:', 'normal:', 'crit:', 'combo:', 'playerHurt:', 'status:', 'debugSource:'];
+
+  for (const token of requiredTokens) {
+    if (!config.includes(token)) report('presentation foundation', `missing combat text token ${token}`, configFile);
+  }
+  if (!config.includes('normalMode: \'recent-hit\'')) report('presentation foundation', 'missing normal enemy recent-hit HP bar policy', configFile);
+  if (!particle.includes('function resolveCombatText(') || !particle.includes('function emitCombatText(')) {
+    report('presentation foundation', 'missing unified combat text resolver', particleFile);
+  }
+  if (!render.includes('function shouldDrawHpBar(')) report('presentation foundation', 'missing HP bar presentation policy resolver', renderFile);
+}
+
 function runCheck(label, callback) {
   try {
     callback();
@@ -457,6 +476,7 @@ runCheck('javascript syntax', () => checkJavaScriptSyntax(scripts));
 runCheck('module syntax', () => checkForbiddenModuleSyntax(scripts));
 runCheck('index.html scripts', checkHtmlScripts);
 runCheck('markdown links', checkMarkdownLinks);
+runCheck('presentation foundation', checkPresentationFoundation);
 
 if (errors.length === 0) {
   console.log('Project static check passed: JavaScript, module syntax, script loading contract, cache stamps, and Markdown links.');

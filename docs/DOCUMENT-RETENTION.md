@@ -1,6 +1,14 @@
 # DOCUMENT-RETENTION.md · 历史资料取舍表
 
-> 目的：降低 Codex 日常开工 token 噪音，同时保留足够的设计依据、故障证据和回滚线索。本文只给处置建议，不直接删除文件。最终删除/迁移前由用户拍板。
+> 目的：降低 Codex 日常开工 token 噪音，同时保留足够的设计依据、故障证据和回滚线索。本文只给处置建议，不直接删除或迁移文件。最终删除/迁移前由用户拍板。
+
+## 0.1 当前读取分层
+
+- 日常入口：`AGENTS.md`、`README.md`、`docs/README.md`，再加当前任务相关文件和专项真理源。
+- 总控规划：增加 `CHATGPT-CONTROL.md`、`PROJECT-BRIEF.md`、`PROJECT-STATUS.md`、`DEBT.md`、`plans/STATUS.md` 和当前 GDD。
+- 版本回顾：按需读取根目录 `CHANGELOG.md`，不作为普通任务默认上下文。
+- 历史追溯：`archive/`、`releases/`、`plans/archive/`、`plans/deprecated/`、`RETRO` 和 `retros/` 不定义当前权限或运行时事实。
+- `_exports/` 及其 ZIP 是导出副本，不是真理源；后续应移出主工作区或明确排除，不纳入文档阅读范围。
 
 ## 0. 取舍原则
 
@@ -26,15 +34,15 @@
 | 文件 | 建议 | 理由 | 风险/前置 | 建议时机 |
 |---|---|---|---|---|
 | GDD 设计意图文档 | 保留，后续重命名到 `docs/design/GDD.md` | 玩法、叙事、系统意图仍有规划价值 | 文件名过长，不利检索；迁移前更新引用 | 第三阶段 |
-| 旧数值真理源 v0.3 | 归档并抽取精华 | 当前运行时以 `02_config.js` 为准；但旧文档含数值理由、叙事模板、选择文本等历史价值 | 先抽取叙事/数值理由到短文档，再归档 | 第三阶段 |
+| `docs/archive/design-history/` 旧数值快照 v0.3 | 已归档 | 当前运行时以 `02_config.js` 为准；旧文档保留数值理由、叙事模板、选择文本等历史价值 | 仅作设计追溯，不回写 CONFIG | 已完成 |
 | `snake55/02_config.js` | 保留，不在本文处理 | 当前运行时配置落点，不能用文档覆盖代码 | 未来需修正“深冻结/运行时覆盖”口径 | 代码治理阶段 |
 
 ## 3. 交接与封版层
 
 | 文件 | 建议 | 理由 | 风险/前置 | 建议时机 |
 |---|---|---|---|---|
-| `docs/HANDOFF-CODEX.md` | 归档到 `docs/releases/2026-07-27-codebuddy-handoff.md` | 是 CodeBuddy 封版证据，不应再当每日规则源 | 迁移前确认 AGENTS/workflow 已覆盖当前规则 | 第三阶段 |
-| `docs/RELEASE.md` | 归档到 `docs/releases/2026-07-27-freeze.md` | 是封版快照，适合按日期进入 releases | 迁移前更新内部链接 | 第三阶段 |
+| `docs/releases/2026-07-27-codebuddy-handoff.md` | 已归档 | CodeBuddy 封版交接证据，不作为每日规则源 | 仅需维护历史链接 | 已完成 |
+| `docs/releases/2026-07-27-freeze.md` | 已归档 | 封版快照，不作为当前状态入口 | 仅需维护历史链接 | 已完成 |
 | `docs/RETRO.md` | 保留并继续瘦身 | 记录会重复踩的工程教训，比聊天记忆可靠 | 只留结论和查证入口，不复制长规则 | 当前保留 |
 | `docs/REVIEW-20260723.md` | 归档或拆分 | 仍含有效问题（深冻结、碰撞盒、AOE 口径），但也含已过期项 | 先把仍有效问题登记到 DEBT，再归档原报告 | 第二阶段 |
 
@@ -45,12 +53,12 @@
 | `docs/plans/archive/` | 保留 | 已落地计划是复盘证据，低频读取即可 | 可长期保留，不进每日入口 | 当前保留 |
 | `docs/plans/deprecated/` | 保留少量，后续压缩 | 被推翻方案能防重蹈覆辙，但不宜太多 | 把关键教训写入 RETRO 后，可删原长文 | 第四阶段 |
 | `docs/plans/diagnosis/` | 保留 | 诊断类文件帮助性能/环境问题复盘 | 只保留结论清晰的诊断 | 当前保留 |
-| `docs/plans/④-蒸汽状态引爆-计划.md` | 移入 archive | STATUS 已标已落地，根目录不应继续显示 active | 移动前更新 STATUS 链接 | 第二阶段 |
-| `docs/plans/④-蒸汽状态引爆-测试清单.md` | 移入 archive | 同上，是已落地验收资料 | 移动前更新 STATUS 链接 | 第二阶段 |
-| `docs/plans/⑥-冰冻机制重做-计划.md` | 移入 archive | STATUS 已标已落地 | 移动前更新 STATUS 链接 | 第二阶段 |
-| `docs/plans/需求AUDIO-程序化BGM系统v3.md` | 移入 archive | 已落地且实测绿 | 移动前更新 STATUS 链接 | 第二阶段 |
-| `docs/plans/需求AUDIO-程序化BGM系统v3-测试清单.md` | 移入 archive | 已落地验收资料 | 移动前更新 STATUS 链接 | 第二阶段 |
-| `docs/plans/需求AUDIO-音效优化与BGM关系治理.md` | 移入 archive | 已落地且实测绿 | 移动前更新 STATUS 链接 | 第二阶段 |
+| `docs/plans/archive/④-蒸汽状态引爆-计划.md` | 已归档 | STATUS 已标已落地，低频追溯 | 仅维护历史引用 | 已完成 |
+| `docs/plans/archive/④-蒸汽状态引爆-测试清单.md` | 已归档 | 已落地验收资料，低频追溯 | 仅维护历史引用 | 已完成 |
+| `docs/plans/archive/⑥-冰冻机制重做-计划.md` | 已归档 | STATUS 已标已落地 | 仅维护历史引用 | 已完成 |
+| `docs/plans/archive/需求AUDIO-程序化BGM系统v3.md` | 已归档 | 已落地且实测绿 | 仅维护历史引用 | 已完成 |
+| `docs/plans/archive/需求AUDIO-程序化BGM系统v3-测试清单.md` | 已归档 | 已落地验收资料 | 仅维护历史引用 | 已完成 |
+| `docs/plans/archive/需求AUDIO-音效优化与BGM关系治理.md` | 已归档 | 已落地且实测绿 | 仅维护历史引用 | 已完成 |
 | `docs/plans/mobile-touch-optim.md` | 暂留根目录 | 部分落地，剩余移动端适配后置 | 等用户决定移动端是否继续做 | 后续需求阶段 |
 | `docs/plans/需求B-边缘撞墙回正.md` | 暂留根目录 | 状态为“已落地待实测”，还需要用户浏览器复验 | 复验绿后移 archive，失败则重新计划 | 近期 |
 | `docs/plans/需求B-边缘撞墙回正-测试清单.md` | 暂留根目录 | 仍服务于待实测项 | 同上 | 近期 |
@@ -69,7 +77,7 @@
 
 1. 把本表里“第二阶段”项落地：瘦身 `DEBT.md`、修正 plans 根目录已落地文件、归档旧审查有效问题。
 2. 抽取 ChatGPT 总控资料包：保留当前状态、开放债、设计意图、已知发布阻塞、可做优化方向。
-3. 迁移长文档：GDD 改短路径，旧数值文档抽精华后归档，HANDOFF/RELEASE 移入 `docs/releases/`。
+3. 后续如有必要再处理长文档路径；旧数值快照已归档，HANDOFF/RELEASE 已移入 `docs/releases/`。
 4. 建静态检查脚本：校验 JS 语法、禁止 import/export、脚本顺序、`?v=` 一致、文档链接。
 5. 开始代码治理前置修复：B-TUNE dev 工具门控、CONFIG 深冻结/运行时覆盖口径、碰撞盒 headRadius 缺键。
 6. 再进入 gameplay 优化：撞墙回正实测、Boss 子弹/召唤、小怪节奏、技能可读性、移动端后置适配。
@@ -89,7 +97,7 @@
 1. `AGENTS.md`：当前硬规则和执行约束。
 2. `docs/DOCUMENT-RETENTION.md`：文档治理判断和后续顺序。
 3. `docs/DEBT.md`：开放债务，但提醒它里面含已还历史，需要先过滤未结项。
-4. `docs/RELEASE.md`：5.5 封版状态、发布阻塞、已知问题。
+4. `docs/releases/2026-07-27-freeze.md`：5.5 封版状态、发布阻塞、已知问题；仅在追溯封版时提供。
 5. `docs/RETRO.md`：历史踩坑教训，尤其性能、Bus、DOT、调参纪律。
 6. `docs/plans/STATUS.md`：当前计划索引和待办/已落地状态。
 7. GDD 设计意图文档：只在做玩法/叙事/系统规划时提供。

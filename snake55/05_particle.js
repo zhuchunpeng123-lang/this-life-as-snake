@@ -4,7 +4,7 @@
 	var M = Core.M
 	var COLORS = CONFIG.COLORS
 	var STYLE = CONFIG.STYLE, SKFX = CONFIG.STYLE.skillFx   // §5.5 视觉真源 + 五技能标志色（键=代码技能 id）
-	var COMBAT_FX = STYLE.combatFx || {}, COMBAT_E = COMBAT_FX.electro || {}, COMBAT_TEXT = COMBAT_FX.text || {}
+	var COMBAT_FX = STYLE.combatFx || {}, COMBAT_E = COMBAT_FX.electro || {}, COMBAT_TEXT = COMBAT_FX.text || {}, COMBAT_TIERS = COMBAT_TEXT.tiers || {}, SKILL_VFX = COMBAT_FX.skillVfx || {}
 
 	// —— 表现债：技能视效参数（🟡 纯表现层，待 ~ 调参器定稿，候选见 TODO；不动 §9）——
 	var BOLT_COLOR = SKFX.bolt      // §5.5：飞镖/射击标志色（原白黄 #fff1a8 → STYLE.skillFx.bolt，避开 ui 青）
@@ -24,6 +24,8 @@
 	var DART_BODY_HEIGHT_SCALE = 1.0
 	var BOLT_SPRITE_SRC = 'assets/vfx/bolt_world_v5_2_battletone.png'
 	var BURN_DART_SPRITE_SRC = 'assets/vfx/burning_barrage_dart_v5_2_tailfire.png'
+	var FIRE_HIT_SPRITE_SRC = 'assets/vfx/fire/vfx_fire_hit_burst_v1.png'
+	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
 	var BURN_TRAIL = '#ff6f26', BURN_TRAIL_HOT = '#ffd36a'
 	var DART_IMPACT_LIFE = 0.14, DART_LAUNCH_LIFE = 0.06
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
@@ -72,10 +74,15 @@
 		burnDartWorldSprite.onerror = function () { burnDartWorldReady = false }
 		burnDartWorldSprite.src = BURN_DART_SPRITE_SRC
 	}
+	var fireHitSprite = null, fireHitSpriteReady = false, iceBloomSprite = null, iceBloomSpriteReady = false
+	if (global.Image) {
+		fireHitSprite = new global.Image(); fireHitSprite.onload = function () { fireHitSpriteReady = true }; fireHitSprite.onerror = function () { fireHitSpriteReady = false }; fireHitSprite.src = FIRE_HIT_SPRITE_SRC
+		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
+	}
 
 	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
 	function resetParticle(p) { p.active = false }
-	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, prio: 'high', strokeColor: null, strokeWidth: 0, iconId: null, iconColor: null } }
+	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, weight: 700, prio: 'high', strokeColor: null, strokeWidth: 0, iconId: null, iconColor: null } }
 	function resetText(t) { t.active = false }
 
 	var particlePool = Core.createPool(newParticle, resetParticle, 512)   // b9 性能护栏：齐爆峰值防爆池增长 GC 尖刺（128→512，一次性内存廉价）
@@ -89,6 +96,8 @@
 	function resetDart(b) { b.active = false; b.targetId = null }
 	function newDartAccent() { return { active: false, kind: 'impact', x: 0, y: 0, life: 0, maxLife: 1, burning: false, angle: 0 } }
 	function resetDartAccent(a) { a.active = false }
+	function newSkillBurst() { return { active: false, kind: '', x: 0, y: 0, life: 0, maxLife: 1, size: 0, angle: 0 } }
+	function resetSkillBurst(b) { b.active = false; b.kind = '' }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
 	var blastPool = Core.createPool(newBlast, resetBlast, 96)   // b9：爆环池 32→96（蒸汽齐爆峰值）
 	var particles = []
@@ -99,6 +108,8 @@
 	var darts = []
 	var dartAccentPool = Core.createPool(newDartAccent, resetDartAccent, 48)
 	var dartAccents = []   // 发射闪点/命中叶切：绘于实体之上，寿命极短，不参与 gameplay
+	var skillBurstPool = Core.createPool(newSkillBurst, resetSkillBurst, 16)
+	var skillBursts = []
 	var flashPool = Core.createPool(function () { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, color: '#fff' } }, function (f) { f.active = false }, 96)   // b9：闪核池 32→96（蒸汽白闪/电磁辉光峰值）
 	var flashCores = []   // 叠加层实心闪核（蒸汽白闪/电磁辉光），drawOverlay 绘于实体之上
 	var DBG = { ignite: 0, fireDot: 0, flashDrawn: 0, steamBlasts: 0, steamAoeCmp: 0, electricDecorDowngradeMode: 'cumulative' }   // b9-diag/measure：诊断计数器（仅 HUD，零 gameplay；不进 caps/伤害管线）；steamBlasts=本帧真引爆次数(未被 steamFxCap 门控)、steamAoeCmp=蒸汽 AOE 邻居比较总次数
@@ -143,8 +154,8 @@
 			else { return false }
 		}
 		var t = textPool.acquire()
-		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -36
-		t.life = t.maxLife = opts && opts.customLife ? opts.customLife : 0.6; t.text = str; t.color = color; t.size = size || 14; t.prio = prio; t.strokeColor = opts && opts.strokeColor ? opts.strokeColor : null; t.strokeWidth = opts && opts.strokeWidth ? opts.strokeWidth : 0; t.iconId = opts && opts.iconId ? opts.iconId : null; t.iconColor = opts && opts.iconColor ? opts.iconColor : null   // 普通伤害保持旧寿命/样式
+		t.active = true; t.x = x; t.y = y; t.prevX = x; t.prevY = y; t.vy = -(opts && opts.risePxPerSec ? opts.risePxPerSec : 36)
+		t.life = t.maxLife = opts && opts.customLife ? opts.customLife : 0.6; t.text = str; t.color = color; t.size = size || 14; t.weight = opts && opts.weight ? opts.weight : 700; t.prio = prio; t.strokeColor = opts && opts.strokeColor ? opts.strokeColor : null; t.strokeWidth = opts && opts.strokeWidth ? opts.strokeWidth : 0; t.iconId = opts && opts.iconId ? opts.iconId : null; t.iconColor = opts && opts.iconColor ? opts.iconColor : null
 		texts.push(t); frameSpawn++; return true
 	}
 	function flashCoreCap() { return RT('PERF.flashCoreCap', 16) }   // 并发闪核硬上限：超量丢最旧(保最新视觉)，削平 402k overdraw 尖峰
@@ -262,6 +273,13 @@
 		}
 	}
 	function spawnText(x, y, str, color, size, prio, opts) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high', opts) }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
+	function spawnSkillBurst(kind, x, y, radius, angle) {
+		var style = SKILL_VFX[kind]
+		if (!style || skillBursts.length >= style.maxBursts) { return }
+		var burst = skillBurstPool.acquire()
+		burst.active = true; burst.kind = kind; burst.x = x; burst.y = y; burst.life = burst.maxLife = style.burstLifeSec; burst.size = radius * style.burstSizeMul; burst.angle = angle || 0
+		skillBursts.push(burst)
+	}
 
 	// 火墙余烬：视觉绑定「火源=蛇身」而非「敌数」——第三轮误删火 DOT 逐次火花后火墙无粒子感(用户反馈表现力弱)，
 	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
@@ -879,8 +897,8 @@
 	}
 
 	var Particle = {
-		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, dartAccents: dartAccents, flashCores: flashCores,   // b9-measure：暴露 6 数组供 HUD 拆行（只读，零 gameplay）
-		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + dartAccents.length + flashCores.length },   // b9 HUD：活跃粒子总数（性能采样）
+		particles: particles, texts: texts, spawnBurst: spawnBurst, spawnText: spawnText, beams: beams, blasts: blasts, darts: darts, dartAccents: dartAccents, flashCores: flashCores, skillBursts: skillBursts,
+		activeCount: function () { return particles.length + texts.length + beams.length + blasts.length + darts.length + dartAccents.length + flashCores.length + skillBursts.length },
 		DBG: DBG,   // b9-diag：诊断计数器暴露给 render HUD 读取
 		incIgnite: function () { DBG.ignite++ },   // b9-diag：灼烧弹幕点燃直计（替代 Bus 事件，免热路径观察者效应；零 gameplay）
 		update: function (dt) {
@@ -929,12 +947,24 @@
 			var fc = flashCores[i]; fc.life -= dt
 			if (fc.life <= 0) { flashPool.release(fc); flashCores.splice(i, 1) }
 		}
+		for (i = skillBursts.length - 1; i >= 0; i--) {
+			var sb = skillBursts[i]; sb.life -= dt
+			if (sb.life <= 0) { skillBurstPool.release(sb); skillBursts.splice(i, 1) }
+		}
 	},
 		// 由 render 在世界坐标系下调用；粒子层绘于核心实体之下，飘字小号，永不盖核心信息（JUICE 不干扰）
 		drawWorld: function (ctx, ra) {
 			if (ra == null) { ra = 1 }
 			var i
 			drawElectricWorld(ctx)
+			for (i = 0; i < skillBursts.length; i++) {
+				var sb = skillBursts[i], sprite = sb.kind === 'ice' ? iceBloomSprite : fireHitSprite
+				var ready = sb.kind === 'ice' ? iceBloomSpriteReady : fireHitSpriteReady
+				if (!ready || !sprite || !sprite.naturalWidth) { continue }
+				var burstAlpha = sb.life / sb.maxLife
+				ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = burstAlpha * burstAlpha
+				ctx.translate(sb.x, sb.y); ctx.rotate(sb.angle); ctx.drawImage(sprite, -sb.size, -sb.size, sb.size * 2, sb.size * 2); ctx.restore()
+			}
 			for (i = 0; i < particles.length; i++) {
 				var p = particles[i]
 				var a = p.life / p.maxLife
@@ -991,7 +1021,7 @@
 				var t = texts[ti]
 				ctx.globalAlpha = M.clamp(t.life / t.maxLife * 1.5, 0, 1)
 				ctx.fillStyle = t.color
-				ctx.font = (t.iconId === 'electro' ? '800 ' : '700 ') + t.size + 'px system-ui, sans-serif'
+				ctx.font = t.weight + ' ' + t.size + 'px system-ui, sans-serif'
 				var tx = M.lerp(t.prevX, t.x, ra), ty = M.lerp(t.prevY, t.y, ra), textX = tx
 				if (t.iconId === 'electro') {
 					var iconSize = COMBAT_TEXT.iconSizePx || 15, iconGap = COMBAT_TEXT.iconGapPx || 4, numWidth = Math.max(t.size * 0.72, t.text.length * t.size * 0.58)
@@ -1012,19 +1042,41 @@
 			while (blasts.length) { blastPool.release(blasts.pop()) }
 			while (darts.length) { dartPool.release(darts.pop()) }
 			while (dartAccents.length) { dartAccentPool.release(dartAccents.pop()) }
+			while (skillBursts.length) { skillBurstPool.release(skillBursts.pop()) }
 			while (flashCores.length) { flashPool.release(flashCores.pop()) }
 		}
 	}
 
 	// —— 事件订阅（即时·夸张·层叠）——
+	function resolveCombatText(role, source) {
+		var tier = COMBAT_TIERS[role] || COMBAT_TIERS.normal || {}
+		var accent = source && SRC_STYLE[source] ? SRC_STYLE[source].color : null
+		return { size: tier.sizePx || 14, weight: tier.weight || 700, color: accent || tier.fill || COLORS.damageText, prio: tier.priority || 'low', strokeColor: tier.stroke || null, strokeWidth: tier.strokePx || 0, customLife: tier.lifeSec || 0.6, risePxPerSec: tier.risePxPerSec || 36 }
+	}
+	function emitCombatText(x, y, text, role, source) {
+		var style = resolveCombatText(role, source)
+		return spawnText(x, y, text, style.color, style.size, style.prio, style)
+	}
 	Bus.on('enemy:hit', function (d) {
-		var dmg = Math.round(d.damage)
+		if (!d || d.x == null || d.y == null) { return }
+		var presentationDamage = Math.round(d.damage)
+		if (presentationDamage <= 0) { return }
+		var presentationY = d.y - 6 - (d.r || 0)
+		if (d.isDot) {
+			if (d.src === 'fire') { DBG.fireDot++ }
+			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; emitCombatText(d.x, presentationY, '-' + presentationDamage, 'dot', d.src) }
+			return
+		}
+		var presentationRole = d.crit ? 'crit' : 'normal'
+		var presentation = resolveCombatText(presentationRole, d.src)
+		if (presentationRole === 'normal') { spawnBurst(d.x, d.y, 5, presentation.color, 160, 3, 0.3, 'low') }
+		emitCombatText(d.x, presentationY, String(presentationDamage), presentationRole, d.src)
+		return
 		if (dmg <= 0) { return }                                  // 过滤 ≤0 伤害：绝不显示「0」飘字（防小数/无效伤害刷屏）
 		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
 		var ty = d.y - 6 - (d.r || 0)   // 飘字生成在精灵上方（按命中体半径抬升，修 boss 大精灵盖住伤害数字）
 		if (d.isDot) {                                            // ⑦ DOT：专属小橙红飘字（伤害必显）；停喷逐次火花粒子——火墙 MULTI-敌叠加会把粒子池顶爆→GPU overdraw 主因（5 敌 350/350 数据定因）；火墙光环+飘字已足够反馈，零 gameplay
 			if (d.src === 'fire') { DBG.fireDot++ }               // b9-diag：火墙 DOT 命中计数（仅 HUD，零 gameplay）
-			var dc = st ? st.color : DOT_TEXT_COLOR, dl = st ? st.label : ''
 			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; spawnText(d.x, ty, dl + '-' + dmg, dc, DOT_TEXT_SIZE, 'high') }   // P2-10：DOT 飘字每帧抽稀（火墙 MULTI-敌齐爆不糊屏）；提权 high 满池不让位
 		} else {
 			var electro = d.src === 'electro'
@@ -1036,6 +1088,11 @@
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || STYLE.enemy, 220, 4, 0.5) })   // 死亡爆花取威胁色（d.color 来自 07_enemy STYLE 色阶）
 	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, STYLE.food, 120, 3, 0.35) } })   // 吃拾取金色爆花
 	Bus.on('snake:hurt', function (d) {                                   // 受击：红色爆花+红飘字（危险语义，配合 render 全屏红闪+蛇头红闪+轻震屏）
+		if (!d || d.x == null || d.y == null) { return }
+		var hurtStyle = resolveCombatText('playerHurt')
+		spawnBurst(d.x, d.y, 10, hurtStyle.color, 200, 4, 0.5)
+		emitCombatText(d.x, d.y - 10, '-' + (d.damage || 1), 'playerHurt')
+		return
 		spawnBurst(d.x, d.y, 10, STYLE.enemy, 200, 4, 0.5)
 		spawnText(d.x, d.y - 10, '-' + (d.damage || 1), STYLE.enemy, 14)   // P2-10：受击飘字字号 18→14（缩小，别糊屏）
 	})
@@ -1058,14 +1115,16 @@
 	Bus.on('fx:electroturretend', function (d) { endElectroVfx(d) })
 	Bus.on('fx:steamblast', function (d) {
 		if (!d || d.x == null || d.y == null || !d.radius) { return }
+		var steamStyle = SKILL_VFX.steam || {}
 		var steamFrame = Math.floor(((global.performance && global.performance.now) ? global.performance.now() : Date.now()) / (1000 / ((CONFIG.GAME && CONFIG.GAME.fps) || 60)))
 		var steamTime = (typeof GS.timeSec === 'number' ? GS.timeSec : -1) + ':' + steamFrame
 		skipNextSteamFlash = steamTime === steamFlashTime
 		steamFlashTime = steamTime
-		spawnFlashCore(d.x, d.y, d.radius * 0.7, 'rgba(255,255,255,0.5)', 0.22)   // 实心白闪核（绘于实体之上，不被盖；round6 稳定版，纯表现，零 gameplay）。【修 25s 偶发纯白屏】alpha 0.92→0.5：单核有效≈0.7*0.5=0.35(半透)；多个同点蒸汽/电闪核叠加 2~3 个封顶≈0.6~0.73，不再逼近纯白
-		spawnBlast(d.x, d.y, d.radius, 'rgba(255,255,255,0.5)', 0.55)              // 白色蒸汽云扩张≈r90（亮度下调：修 25s 偶发纯白屏，多个环叠加不再爆白）
-		spawnBlast(d.x, d.y, d.radius * 0.4, '#fff3d6', 0.18)                 // 中心暖橙/亮白爆闪（短命高亮）
-		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)          // 少量暖橙爆散团（呼应原爆环色）
+		spawnSkillBurst('steam', d.x, d.y, d.radius, Math.random() * M.PI2)
+		spawnFlashCore(d.x, d.y, d.radius * steamStyle.coreRadiusMul, steamStyle.coreColor, steamStyle.coreLifeSec)
+		spawnBlast(d.x, d.y, d.radius, steamStyle.outerColor, steamStyle.outerLifeSec)
+		spawnBlast(d.x, d.y, d.radius * steamStyle.coreRadiusMul, steamStyle.innerColor, steamStyle.innerLifeSec)
+		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)
 		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· high 优先（蒸汽 VFX 尽量保留）
 			var px = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
 			var py = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
@@ -1080,6 +1139,9 @@
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
+		if (COMBAT_TEXT.debugSourceLabels) { emitCombatText(d.x, d.y - 6 - (d.r || 12), '减速', 'debugSource', 'ice') }
+		spawnBurst(d.x, d.y, 3, SKFX.ice, 90, 2, 0.25)
+		return
 		emitText(d.x, d.y - 6 - (d.r || 12), '减速', SKFX.ice, 12, 'low')   // 减速标签：low 优先（满上限时丢弃，不抢伤害飘字预算）
 		spawnBurst(d.x, d.y, 3, SKFX.ice, 90, 2, 0.25)
 	})
@@ -1093,6 +1155,7 @@
 	// ⑥ 首测 A：冰锥到达落点 → 霜环扩张淡出 + 冰晶爆点（冰池生长动画由 render 读 icePools.growT 承担）
 	Bus.on('fx:ice_pool', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
+		spawnSkillBurst('ice', d.x, d.y, d.r || 40)
 		spawnBlast(d.x, d.y, d.r || 40, 'rgba(225,243,255,0.75)', 0.3)   // 落点霜环扩张淡出
 		spawnBurst(d.x, d.y, 6, SKFX.ice, 110, 3, 0.28)                  // 冰晶爆点
 	})
