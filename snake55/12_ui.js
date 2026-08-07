@@ -904,8 +904,12 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var skillSignature = buildSkillDomSignature()
 		if (hudSkills && skillSignature !== _skillDomSignature) { hudSkills.innerHTML = renderV1Skills(); _skillDomSignature = skillSignature }
 		refreshV1Boss()
-		// CB 自检：HUD 状态簇零溢出(scrollWidth ≤ clientWidth)，破版即告警(供截图核验)
-		if (hudLife && hudLife.scrollWidth > hudLife.clientWidth + 1) { Log.warn('[ui][CB] hudLife 溢出', hudLife.scrollWidth, hudLife.clientWidth) }
+		// CB 自检：生命内容经过 scale 后再比较实际渲染边界，避免 scrollWidth 把 transform 前的尺寸误报为溢出。
+		var lifeContent = hudLife && hudLife.querySelector('.ui-v1-life-content')
+		if (hudLife && lifeContent) {
+			var lifeBox = hudLife.getBoundingClientRect(), contentBox = lifeContent.getBoundingClientRect()
+			if (contentBox.left < lifeBox.left - 1 || contentBox.right > lifeBox.right + 1 || contentBox.top < lifeBox.top - 1 || contentBox.bottom > lifeBox.bottom + 1) { Log.warn('[ui][CB] hudLife 溢出', contentBox, lifeBox) }
+		}
 		if (hudData && hudData.scrollWidth > hudData.clientWidth + 1) { Log.warn('[ui][CB] hudData 溢出', hudData.scrollWidth, hudData.clientWidth) }
 	}
 
