@@ -167,8 +167,8 @@
 		ENEMIES: {
 			chaser: { hp: 20, atk: 1, speed: 120, speedByStage: [120, 120, 140, 155, 120], senseRange: -1, radius: 11 },   // Third Wave：成长期保持120；割草/高潮逐步升至140/155制造路线压力；Boss段回120，本轮不改Boss压力。
 			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [800, 800, 800, 800, 0], approachRadius: 80, wanderRedirSec: 1.5 },   // Third Wave：继续用800 aggro保证进场，但只靠近蛇头周边约80px，不再精准锁头；定位固定为低威胁割草素材。
-			charger: { hp: 60, atk: 1, speed: 90, chargeSpeed: 215, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },   // Third Wave：冲锋短时允许超过普通敌速上限；0.7s预警后才爆发，保留可读闪避窗口。
-			elite: { hp: 260, atk: 1, speed: 60, senseRange: -1, radius: 24 },
+			charger: { hp: 60, hpByStage: [60, 60, 90, 130, 60], atk: 1, speed: 90, chargeSpeed: 215, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0, maxConcurrentChargesByStage: [0, 0, 2, 3, 0] },   // Final Wave：普通阶段保留60；割草/高潮90/130，目标是让青蛙有机会完成一次冲锋；同时威胁上限2/3只，防多方向随机夹杀。
+			elite: { hp: 260, hpByStage: [260, 260, 260, 360, 260], atk: 1, speed: 60, senseRange: -1, radius: 24 },   // Final Wave：只在高潮期提高驻场到360；仍是“绕”的战场锚点，不增加新机制。
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
 
@@ -220,10 +220,14 @@
 		segments: [
 			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 4, spawnRate: 0.7, pool: ['wanderer'] },
 			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 14, spawnRate: 3.2, pool: ['wanderer', 'chaser'] },
-			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 30, spawnRate: 8.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'elite', 'elite'] },   // Second Wave：50% Wanderer / 25% Chaser / 15% Charger / 10% Elite；增加可持续割草素材和少量耐久视觉锚点。
-			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 50, spawnRate: 16.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'charger', 'elite', 'elite', 'elite'] },   // Second Wave：40% Wanderer / 25% Chaser / 20% Charger / 15% Elite；目标是“杀不完但杀得动”，不增加总 cap/spawn。
+			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 36, spawnRate: 10.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'elite', 'elite'] },   // Final Wave：基础密度约+20%，普通怪比例不变；目标是更持续的可见怪潮。
+			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 60, spawnRate: 18.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'charger', 'elite', 'elite', 'elite'] },   // Final Wave：50→60；16/s→18/s。普通怪继续脆，用供应量承接强Build。
 			{ id: 5, name: 'Boss期', startSec: 300, endSec: 420, cap: 6, spawnRate: 1.0, pool: ['chaser', 'elite'] }
 		],
+		dangerPulseByStage: {
+			3: { firstDelaySec: 18, cycleSec: 26, durationSec: 7, capBonus: 4, spawnMul: 1.25, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'charger', 'charger', 'charger', 'elite', 'elite', 'elite', 'elite'] },   // 25%草 / 25%追 / 30%躲 / 20%绕；约每26s出现7s压力峰。
+			4: { firstDelaySec: 13, cycleSec: 22, durationSec: 7, capBonus: 6, spawnMul: 1.22, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'charger', 'charger', 'charger', 'charger', 'elite', 'elite', 'elite', 'elite'] }   // 20%草 / 25%追 / 35%躲 / 20%绕；高潮期峰值更偏特殊威胁，但冲锋并发仍由2/3只硬限制。
+		},
 			rookieProtect: [
 				{ startSec: 0, endSec: 10, speedMul: 0.6, cap: 2 },
 				{ startSec: 10, endSec: 25, speedMul: 0.8, cap: 4 }

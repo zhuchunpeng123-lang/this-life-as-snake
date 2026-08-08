@@ -196,24 +196,58 @@
 		return Infinity
 	}
 	var lastSeg = STAGE.segments[STAGE.segments.length - 1]
+	function hasExplicitBossSchema() {
+		var segs = STAGE.segments || []
+		for (var i = 0; i < segs.length; i++) {
+			var s = segs[i]
+			if (!s) { continue }
+			if (Object.prototype.hasOwnProperty.call(s, 'boss') || Object.prototype.hasOwnProperty.call(s, 'isBoss') || Object.prototype.hasOwnProperty.call(s, 'musicState') || Object.prototype.hasOwnProperty.call(s, 'audioState')) { return true }
+		}
+		return false
+	}
+	var explicitBossSchema = hasExplicitBossSchema()
+	function isBossSegment(seg) {
+		if (!seg) { return false }
+		if (explicitBossSchema) {
+			if (seg.boss === true || seg.isBoss === true) { return true }
+			return String(seg.musicState || seg.audioState || '').toLowerCase() === 'boss'
+		}
+		return seg === lastSeg   // Legacy compatibility: old configs used "last segment = Boss".
+	}
+	function musicStateOf(seg) { return seg ? (seg.musicState || seg.audioState || '') : '' }
+	function activeDangerPulse(seg, now) {
+		var table = STAGE.dangerPulseByStage, p = table && table[seg.id]
+		if (!p) { return null }
+		var local = now - seg.startSec, first = Math.max(0, Number(p.firstDelaySec) || 0), cycle = Math.max(0.1, Number(p.cycleSec) || 0), duration = Math.max(0, Number(p.durationSec) || 0)
+		if (local < first || duration <= 0) { return null }
+		return ((local - first) % cycle) < duration ? p : null
+	}
 
 	var Wave = {
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }
-			var now = GS.timeSec, seg = currentSegment(now)
+			var now = GS.timeSec, seg = currentSegment(now), bossSeg = isBossSegment(seg), stageToken = String(seg.id) + '@' + String(seg.startSec) + '@' + musicStateOf(seg)
 			GS.stageId = seg.id
-			if (seg.id !== prevStageId) { prevStageId = seg.id; Bus.emit('wave:stage', { stageId: seg.id, name: seg.name }) }
-			var En = Registry.get('enemy'); if (!En) { return }
-			var cap = Math.min(seg.cap, rookieCap(now))
-			if (seg.id === lastSeg.id) {                  // Boss 段：预警 → 生成 Boss（双阶段在 enemy.js）
-				if (!bossWarned) { bossWarned = true; Bus.emit('wave:boss_warn', { leadSec: STAGE.bossWarnLeadSec }) }
-				if (!bossSpawned && now >= seg.startSec + STAGE.bossWarnLeadSec && !En.hasBoss()) { bossSpawned = true; En.spawn('boss') }
+			if (stageToken !== prevStageId) {
+				prevStageId = stageToken
+				Bus.emit('wave:stage', { stageId: seg.id, name: seg.name, musicState: musicStateOf(seg), isBoss: bossSeg })
 			}
-			spawnAcc += seg.spawnRate * dt                // 持续刷怪 accumulator（只/秒），受 cap 限制
+			var En = Registry.get('enemy'); if (!En) { return }
+			var pulse = bossSeg ? null : activeDangerPulse(seg, now)
+			var pulseCapBonus = pulse ? (Number(pulse.capBonus) || 0) : 0
+			var cap = Math.min(seg.cap + pulseCapBonus, rookieCap(now))
+			if (bossSeg) {                  // Explicit boss segment when configured; legacy configs fall back to last segment.
+				var lead = Math.max(0, Number(seg.bossWarnLeadSec == null ? STAGE.bossWarnLeadSec : seg.bossWarnLeadSec) || 0)
+				if (!bossWarned) { bossWarned = true; Bus.emit('wave:boss_warn', { leadSec: lead, stageId: seg.id, name: seg.name, musicState: 'boss' }) }
+				if (!bossSpawned && now >= seg.startSec + lead && !En.hasBoss()) { bossSpawned = true; En.spawn('boss') }
+			}
+			var spawnRate = seg.spawnRate * (pulse ? (Number(pulse.spawnMul) || 1) : 1)
+			var spawnPool = (pulse && pulse.pool && pulse.pool.length) ? pulse.pool : seg.pool
+			spawnAcc += spawnRate * dt                // Final Wave：基础密度常驻；危险潮只短时提高补怪速度/上限/特殊怪权重。
 			while (spawnAcc >= 1) {
 				spawnAcc -= 1
 				if (En.countMobs() >= cap) { spawnAcc = 0; break }
-				En.spawn(M.pick(seg.pool))
+				En.spawn(M.pick(spawnPool))
 			}
 		}
 	}
