@@ -11,10 +11,10 @@
 	var ctx = null, master = null, limiter = null, sfxGain = null, uiGain = null, muted = !AUDIO.enabled
 	var sfxBus = { skill: null, combo: null, player: null, impact: null, death: null, boss: null }
 	// —— BGM 子链（Phase 1.2：五阶段独立编曲、单一 Transport、与战斗 SFX 分轨）——
-	var bgmGain = null
-	var stageGain = [null, null, null, null, null, null]
 	var bgmRunning = false, bgmTimer = null, bgmWanted = false
-	var bgmLifecycleToken = 0, bgmTransportSerial = 0
+	var bgmMedia = {}, bgmActive = null, bgmActiveKey = '', bgmStageRequestTimer = null, bossLoopAtGameTime = null
+	var currentMusicState = 'protection', pendingMusicState = '', bossWarningActive = false
+	var bgmLifecycleToken = 0, bgmTransportSerial = 0, bgmPlaySerial = 0
 	var bgmNodes = [], sfxNodes = [], uiNodes = []
 	var absStep = 0, nextNoteTime = 0
 	var sfxPauseMul = 1, hardPaused = false, duckTimer = null, musicSampleAt = 0, pressureLevel = 0, pressureTarget = 0, buildLevel = 0, buildTarget = 0
@@ -53,7 +53,7 @@
 		electroTurret: { notes: [520, 780, 1170], type: 'square' },
 		burningBarrage: { notes: [240, 360, 540], type: 'triangle' }
 	}
-	var stageBpm = MUSIC.stageBpm || [92, 104, 116, 130, 142]
+	var stageBpm = [88, 124, 124, 124, 136]
 	var stageHeat = MUSIC.stageHeat || [0.00, 0.78, 1.50, 2.22, 2.90]
 	var stageBgmGainByStage = MUSIC.stageBgmGainByStage || [0.94, 1.00, 1.06, 1.10, 1.13]
 	var currentStage = 1, pendingMusicStage = 0, stepDur = 60 / stageBpm[0] / 4, targetStepDur = stepDur
@@ -82,10 +82,6 @@
 		sfxBus.impact = ctx.createGain(); sfxBus.impact.gain.value = MIX.impactBusGain == null ? 0.62 : MIX.impactBusGain; sfxBus.impact.connect(sfxGain)
 		sfxBus.death = ctx.createGain(); sfxBus.death.gain.value = MIX.deathBusGain == null ? 0.72 : MIX.deathBusGain; sfxBus.death.connect(sfxGain)
 		sfxBus.boss = ctx.createGain(); sfxBus.boss.gain.value = MIX.bossBusGain == null ? 1.00 : MIX.bossBusGain; sfxBus.boss.connect(sfxGain)
-		bgmGain = ctx.createGain(); bgmGain.gain.value = AUDIO.bgmVolume; bgmGain.connect(master)
-		for (var musicStage = 1; musicStage <= 5; musicStage++) {
-			stageGain[musicStage] = ctx.createGain(); stageGain[musicStage].gain.value = musicStage === 1 ? 1 : 0; stageGain[musicStage].connect(bgmGain)
-		}
 		return true
 	}
 	var VOICE_BUDGET = MIX.voiceBudget || {}
@@ -458,8 +454,7 @@
 	Bus.on('skill:offer', function () { sfxPing(1.2); chooseDuckMul = MIX.chooseDuckMul == null ? 0.50 : MIX.chooseDuckMul; applyBgmGain(false); playUiCue([520, 660, 880], 'sine', 0.14, 0.08) })
 	Bus.on('skill:gained', function (d) { d = d || {}; chooseDuckMul = 1; applyBgmGain(false); playSkillCue(d.id, d.level); duck('major') })
 	Bus.on('combo:found', function (d) { sfxPing(1.8); playComboCue(d && d.id) })
-	Bus.on('wave:boss_warn', function () { sfxPing(2); playUiCue([140, 110, 90], 'square', 0.18, 0.10); duck('major') })
-	Bus.on('wave:stage', function () { throttled('wave:stage', 120, function () { sfxPing(0.8); tone({ freq: 440, freqTo: 660, dur: 0.14, type: 'sine', gain: 0.10, priority: 2 }, uiGain) }) })
+	Bus.on('wave:boss_warn', function () { sfxPing(2); tone({ freq: 92, freqTo: 46, dur: 0.20, type: 'triangle', gain: 0.13, attack: 0.003, priority: 4 }, sfxBus.boss); duck('major') })
 	Bus.on('pickup:eat', function (d) {
 		d = d || {}
 		if (d.kind === 'skill') { return }   // 技能球由 skill:offer 拥有声音，避免同帧双提示。
@@ -476,126 +471,223 @@
 	Bus.on('fx:steamblast', function (d) { var a = SKILL_SFX.steam || {}; throttled('fx:steamblast', a.throttleMs || 210, function () { playSteamBlast(d) }) })
 	Bus.on('fx:burndart', function () { var a = SKILL_SFX.burnDart || {}; throttled('fx:burndart', a.throttleMs || 125, playBurnDart) })
 
-	// ================= 程序化 BGM（Phase 1.2 · Night Garden Rebuild） =================
-	// Design: one bright life motif, five exclusive arrangements. Previous-stage music never remains underneath the next stage.
-	var FREQ = { F2:87.31, G2:98.00, A2:110.00, C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00, A3:220.00, B3:246.94, C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88, C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880.00 }
-	// Cadd9 -> G6 -> Am7 -> Fmaj7: major-center first, with add9/maj7 color for a living night garden instead of a gloomy minor bed.
-	var CHORD = [['C4','E4','G4','D5'], ['B3','D4','G4','E5'], ['C4','E4','A4','G4'], ['A3','C4','F4','E4']]
-	var BASS_ROOT = ['C3','G2','A2','F2']
-	var LIFE_MOTIVE = [
-		['E4','G4','A4','G4'],
-		['D4','G4','B4','A4'],
-		['E4','A4','C5','A4'],
-		['C4','F4','A4','G4']
-	]
-	var ARP = [
-		['C4','E4','G4','C5','G4','E4','D4','G4'],
-		['G3','B3','D4','G4','D4','B3','E4','G4'],
-		['A3','C4','E4','A4','E4','C4','G4','A4'],
-		['F3','A3','C4','F4','C4','A3','E4','G4']
-	]
+	// ================= Golden-Master Single-Source BGM =================
+	// Five clean loops only. No musical transition assets and no Boss-warning BGM.
+	// Stage changes are phase-locked to the current 4-bar cycle; gameplay owns all durations.
+	// Boss warning is SFX-only; Boss Loop runs until boss:defeated.
+	var BGM_ASSET = {
+		protection: 'assets/audio/bgm/golden_modular/bgm_protection_loop.wav',
+		growth: 'assets/audio/bgm/golden_modular/bgm_growth_loop.wav',
+		mowing: 'assets/audio/bgm/golden_modular/bgm_mowing_loop.wav',
+		climax: 'assets/audio/bgm/golden_modular/bgm_climax_loop.wav',
+		boss: 'assets/audio/bgm/golden_modular/bgm_boss_loop.wav'
+	}
+	var MUSIC_STATE_LOOP_KEY = { protection: 'protection', growth: 'growth', mowing: 'mowing', climax: 'climax', boss: 'boss' }
+	var MUSIC_STATE_BPM = { protection: 88, growth: 124, mowing: 124, climax: 124, boss: 136 }
+	var MUSIC_STATE_HEAT = { protection: 0.00, growth: 0.78, mowing: 1.50, climax: 2.22, boss: 2.90 }
+	var MUSIC_LOOP_SEC = {
+		protection: 16 * 60 / 88,
+		growth: 16 * 60 / 124,
+		mowing: 16 * 60 / 124,
+		climax: 16 * 60 / 124,
+		boss: 16 * 60 / 136
+	}
+	var MUSIC_STATE_ALIAS = {
+		protection: 'protection', protect: 'protection', rookie: 'protection', intro: 'protection',
+		growth: 'growth', grow: 'growth',
+		mowing: 'mowing', mow: 'mowing', combat: 'mowing', battle: 'mowing', farm: 'mowing',
+		climax: 'climax', high: 'climax', peak: 'climax',
+		bosswarning: 'boss', bosswarn: 'boss', warning: 'boss',
+		boss: 'boss'
+	}
 
-	function playOsc(freq, type, t, dur, peak, dest, attack, release) {
-		if (!ctx || hardPaused || !dest || peak <= 0) { return }
-		var o = ctx.createOscillator(), g = ctx.createGain()
-		o.type = type; o.frequency.setValueAtTime(freq, t)
-		var a = attack == null ? 0.005 : attack, r = release == null ? 0.02 : release
-		var susEnd = t + Math.max(a + 0.01, dur - r)
-		g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.setValueAtTime(peak, susEnd); g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(g); g.connect(dest); trackVoice(bgmNodes, o, 0, 'music'); o.start(t); o.stop(t + dur + 0.02)
+	function createBgmMedia(src) {
+		var a = null
+		if (global.document && global.document.createElement) { a = global.document.createElement('audio') }
+		else if (global.Audio) { try { a = new global.Audio() } catch (_) {} }
+		if (!a) { return null }
+		a.preload = 'auto'; a.src = src; a.loop = false; a.volume = 0
+		try { a.playsInline = true; a.load() } catch (_) {}
+		return a
 	}
-	// Bright organic pluck: exact octave harmonic, no detune beating.
-	function playGardenPluck(freq, t, gain, dest, bright) {
-		if (!ctx || hardPaused || !dest || gain <= 0) { return }
-		var dur = bright ? Math.max(0.13, stepDur * 1.15) : Math.max(0.16, stepDur * 1.45)
-		playOsc(freq, 'triangle', t, dur, gain, dest, 0.004, dur * 0.72)
-		playOsc(freq * 2, 'sine', t, dur * 0.72, gain * (bright ? 0.24 : 0.16), dest, 0.003, dur * 0.55)
+	function ensureBgmMedia() {
+		if (bgmMedia.protection) { return true }
+		for (var key in BGM_ASSET) {
+			if (!Object.prototype.hasOwnProperty.call(BGM_ASSET, key)) { continue }
+			var media = createBgmMedia(BGM_ASSET[key]); if (!media) { return false }
+			bgmMedia[key] = media
+		}
+		return true
 	}
-	// Air pad stays in the mid/high register and leaves a gap before the next bar. It is color, not a second rhythm section.
-	function playAirPad(freq, t, dur, gain, dest, stage) {
-		if (!ctx || hardPaused || !dest || gain <= 0) { return }
-		var o = ctx.createOscillator(), filter = ctx.createBiquadFilter(), g = ctx.createGain()
-		o.type = 'sine'; o.frequency.setValueAtTime(freq, t)
-		filter.type = 'lowpass'; filter.frequency.value = audioLevelValue(MUSIC.padCutoffByStage, stage, 2400); filter.Q.value = 0.30
-		var attack = MUSIC.padAttackSec == null ? 0.30 : MUSIC.padAttackSec, release = MUSIC.padReleaseSec == null ? 0.42 : MUSIC.padReleaseSec
-		var susEnd = t + Math.max(attack + 0.02, dur - release)
-		g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.setValueAtTime(gain, susEnd); g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(filter); filter.connect(g); g.connect(dest); trackVoice(bgmNodes, o, 0, 'music'); o.start(t); o.stop(t + dur + 0.02)
-	}
-	function playNoiseAt(dur, gain, t, dest, kind) {
-		if (!ctx || hardPaused || !dest || gain <= 0) { return }
-		var n = Math.max(8, Math.floor(ctx.sampleRate * dur)), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0)
-		for (var i = 0; i < n; i++) { var env = 1 - i / n; d[i] = (Math.random() * 2 - 1) * env * env }
-		var src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain(); src.buffer = buf
-		if (kind === 'hat') { filter.type = 'highpass'; filter.frequency.value = MUSIC.hatFilterHz || 3400 }
-		else if (kind === 'snare') { filter.type = 'bandpass'; filter.frequency.value = MUSIC.snareFilterHz || 1500; filter.Q.value = 0.65 }
-		else { filter.type = 'lowpass'; filter.frequency.value = MUSIC.kickFilterHz || 520 }
-		g.gain.value = gain; src.connect(filter); filter.connect(g); g.connect(dest); trackVoice(bgmNodes, src, 0, 'music'); src.start(t)
-	}
-	function playKickAt(gain, t, dest, strong) {
-		if (!ctx || hardPaused || !dest || gain <= 0) { return }
-		var o = ctx.createOscillator(), g = ctx.createGain(), end = t + (strong ? 0.105 : 0.085)
-		o.type = 'sine'; o.frequency.setValueAtTime(strong ? 118 : 102, t); o.frequency.exponentialRampToValueAtTime(strong ? 52 : 56, end)
-		g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, end)
-		o.connect(g); g.connect(dest); trackVoice(bgmNodes, o, 0, 'music'); o.start(t); o.stop(end + 0.02)
-		playNoiseAt(strong ? 0.040 : 0.030, gain * 0.18, t, dest, 'kick')
-	}
-	function playSnareAt(gain, t, dest, strong) {
-		playNoiseAt(strong ? 0.080 : 0.060, gain, t, dest, 'snare')
-		if (strong) { playOsc(196, 'triangle', t, 0.065, gain * 0.32, dest, 0.003, 0.045) }
-	}
-	function playBass(freq, t, dur, gain, dest, accent) {
-		if (gain <= 0) { return }
-		playOsc(freq, 'sine', t, dur, gain, dest, 0.006, Math.min(0.10, dur * 0.45))
-		if (accent) { playOsc(freq * 2, 'triangle', t, dur * 0.62, gain * 0.18, dest, 0.004, dur * 0.34) }
-	}
-	function rampGain(node, v, t, dur) {
-		if (!node) { return }
-		node.gain.cancelScheduledValues(t); node.gain.setValueAtTime(node.gain.value, t); node.gain.linearRampToValueAtTime(v, t + (dur == null ? (MUSIC.stageCrossfadeSec || 0.72) : dur))
-	}
-	function activateStageBus(stage, t, immediate) {
-		if (!ctx) { return }
-		for (var i = 1; i <= 5; i++) {
-			var node = stageGain[i]; if (!node) { continue }
-			var v = i === stage ? 1 : 0
-			if (immediate) { node.gain.cancelScheduledValues(t); node.gain.setValueAtTime(v, t) }
-			else { rampGain(node, v, t, MUSIC.stageCrossfadeSec || 0.72) }
+	function silenceInactiveBgmMedia(keep) {
+		for (var key in bgmMedia) {
+			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key)) { continue }
+			var media = bgmMedia[key]
+			if (!media || media === keep) { continue }
+			try {
+				media.volume = 0
+				media.onended = null
+				if (!media.paused) { media.pause() }
+			} catch (_) {}
 		}
 	}
+	function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
 	function applyBgmGain(immediate) {
-		if (!bgmGain) { return }
-		var v = AUDIO.bgmVolume * stageBgmMul * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul
-		var t = ctx.currentTime, g = bgmGain.gain; g.cancelScheduledValues(t)
-		if (immediate) { g.setValueAtTime(v, t) } else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + 0.15) }
+		var v = (muted ? 0 : MASTER_GAIN * AUDIO.bgmVolume * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul)
+		v = clamp(v, 0, 1)
+		for (var key in bgmMedia) {
+			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
+			bgmMedia[key].volume = bgmMedia[key] === bgmActive ? v : 0
+		}
 	}
 	function applySfxGain(immediate) {
 		if (!sfxGain || !ctx) { return }
 		var t = ctx.currentTime, g = sfxGain.gain, v = AUDIO.sfxVolume * sfxPauseMul; g.cancelScheduledValues(t)
 		if (immediate) { g.setValueAtTime(v, t) } else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + AUDIO_MIX.pauseRampSec) }
 	}
-	function applyStageState(stage) {
-		currentStage = stage; curLayer = 'stage' + stage
-		battleHeat = stageHeat[stage - 1] == null ? 1 : stageHeat[stage - 1]
-		stageBgmMul = stageBgmGainByStage[stage - 1] == null ? 1 : stageBgmGainByStage[stage - 1]
-		targetStepDur = 60 / (stageBpm[stage - 1] || stageBpm[0] || 92) / 4
+	function normalizeMusicState(value) {
+		if (value == null) { return '' }
+		var raw = String(value).replace(/[\s_-]+/g, '').toLowerCase()
+		return MUSIC_STATE_ALIAS[raw] || ''
 	}
-	function commitMusicStage(stage, t) {
-		var previous = currentStage
-		applyStageState(stage); pendingMusicStage = 0; stageTransitionPending = stage > 1 ? stage : 0
-		activateStageBus(stage, t, false); applyBgmGain(false)
-		Log.info('[bgm] arrangement ' + previous + ' -> ' + stage + ' bpm=' + stageBpm[stage - 1])
+	function inferMusicStateFromName(name) {
+		var s = String(name == null ? '' : name).toLowerCase()
+		if (/boss|首领|老板/.test(s)) { return 'boss' }
+		if (/高潮|climax|peak/.test(s)) { return 'climax' }
+		if (/割草|战斗|combat|battle|mow|farm/.test(s)) { return 'mowing' }
+		if (/成长|growth|grow/.test(s)) { return 'growth' }
+		if (/保护|新手|rookie|protect|intro/.test(s)) { return 'protection' }
+		return ''
 	}
-	function setMusicStage(stageId) {
-		var nextStage = clamp(Number(stageId) || 1, 1, 5)
-		if (!bgmRunning || !ctx) { pendingMusicStage = 0; applyStageState(nextStage); if (ctx) { activateStageBus(nextStage, ctx.currentTime, true) }; applyBgmGain(false); return }
-		if (nextStage === currentStage) { pendingMusicStage = 0; return }
-		if (pendingMusicStage !== nextStage) { pendingMusicStage = nextStage; Log.info('[bgm] arrangement requested -> ' + nextStage + ' (next bar)') }
+	function legacyMusicStateByStageId(stageId) {
+		var id = Number(stageId)
+		return id === 1 ? 'protection' : id === 2 ? 'growth' : id === 3 ? 'mowing' : id === 4 ? 'climax' : id === 5 ? 'boss' : ''
 	}
-	function playTransition(stage, t, dest) {
-		var gain = audioLevelValue(MUSIC.transitionGainByStage, stage, 0.05); if (gain <= 0) { return }
-		var notes = stage === 2 ? ['G4','A4','C5'] : stage === 3 ? ['A4','C5','D5'] : stage === 4 ? ['C5','E5','G5'] : ['D5','E5','G5','A5']
-		for (var i = 0; i < notes.length; i++) { playGardenPluck(FREQ[notes[i]], t + i * stepDur, gain * (1 - i * 0.07), dest, true) }
-		if (stage >= 4) { playKickAt(gain * 0.92, t, dest, true) }
+	function resolveMusicState(d) {
+		d = d || {}
+		return normalizeMusicState(d.musicState || d.audioState) || inferMusicStateFromName(d.name) || legacyMusicStateByStageId(d.stageId) || currentMusicState || 'protection'
+	}
+	function initialMusicDescriptor() {
+		var segs = CONFIG.STAGE && CONFIG.STAGE.segments
+		var seg = segs && segs.length ? segs[0] : null
+		return seg ? { stageId: seg.id, name: seg.name, musicState: seg.musicState || seg.audioState || '', isBoss: !!(seg.boss || seg.isBoss) } : { stageId: 1, musicState: 'protection' }
+	}
+	function applyMusicState(state, stageId) {
+		var next = normalizeMusicState(state) || state
+		if (!MUSIC_STATE_BPM[next]) { next = 'protection' }
+		currentMusicState = next; curLayer = next
+		var id = Number(stageId)
+		if (isFinite(id)) { currentStage = id }
+		battleHeat = MUSIC_STATE_HEAT[currentMusicState] == null ? 1 : MUSIC_STATE_HEAT[currentMusicState]
+		stageBgmMul = 1
+		targetStepDur = 60 / (MUSIC_STATE_BPM[currentMusicState] || 124) / 4
+	}
+	function safeMediaPlay(media, serial) {
+		if (!media || hardPaused || !bgmWanted) { return }
+		try {
+			var p = media.play()
+			bgmRunning = true
+			if (p && typeof p.catch === 'function') {
+				p.catch(function () {
+					if (serial === bgmPlaySerial && bgmActive === media && bgmWanted && !hardPaused) { bgmRunning = false }
+				})
+			}
+		} catch (_) {
+			if (serial === bgmPlaySerial && bgmActive === media) { bgmRunning = false }
+		}
+	}
+	function playBgmSegment(key, loop, startAtSec) {
+		if (!ensureBgmMedia()) { return false }
+		var next = bgmMedia[key]; if (!next) { return false }
+		var serial = ++bgmPlaySerial
+		silenceInactiveBgmMedia(next)
+		if (bgmActive) {
+			try { bgmActive.pause(); bgmActive.onended = null; bgmActive.volume = 0 } catch (_) {}
+		}
+		bgmActive = next; bgmActiveKey = key
+		next.loop = !!loop; next.onended = null
+		try { next.currentTime = Math.max(0, Number(startAtSec) || 0) } catch (_) {}
+		applyBgmGain(true); safeMediaPlay(next, serial)
+		Log.info('[bgm] segment=' + key + ' loop=' + (!!loop) + ' state=' + currentMusicState + ' owner=' + serial + ' at=' + (Number(startAtSec) || 0).toFixed(3))
+		return true
+	}
+	function playMusicStateLoop(state, startAtSec) {
+		var key = MUSIC_STATE_LOOP_KEY[state] || MUSIC_STATE_LOOP_KEY.protection
+		return playBgmSegment(key, true, startAtSec)
+	}
+	function currentCyclePhase(state) {
+		if (!bgmActive || !isFinite(bgmActive.currentTime)) { return 0 }
+		var len = MUSIC_LOOP_SEC[state] || 0
+		if (!(len > 0)) { return 0 }
+		var pos = bgmActive.currentTime % len
+		if (pos < 0) { pos += len }
+		return pos / len
+	}
+	function phaseStartFor(state, phase) {
+		var len = MUSIC_LOOP_SEC[state] || 0
+		if (!(len > 0)) { return 0 }
+		return clamp(Number(phase) || 0, 0, 0.999999) * len
+	}
+	function clearStageRequestTimer() {
+		if (bgmStageRequestTimer) { clearTimeout(bgmStageRequestTimer); bgmStageRequestTimer = null }
+	}
+	function nextBeatDelayMs() {
+		if (!bgmActive || !isFinite(bgmActive.currentTime)) { return 0 }
+		var bpm = MUSIC_STATE_BPM[currentMusicState] || 124, beat = 60 / bpm, phase = bgmActive.currentTime % beat
+		var wait = beat - phase
+		if (wait < 0.055 || wait > beat - 0.025) { return 0 }
+		return Math.round(wait * 1000)
+	}
+	function beginMusicState(targetState, stageId, sourceState) {
+		var target = normalizeMusicState(targetState) || targetState
+		if (!MUSIC_STATE_BPM[target]) { target = 'protection' }
+		if (hardPaused || !bgmWanted) { pendingMusicState = target; pendingMusicStage = Number(stageId) || 0; return }
+		var from = sourceState || currentMusicState
+		var phase = currentCyclePhase(from)
+		applyMusicState(target, stageId); pendingMusicState = ''; pendingMusicStage = 0
+		playMusicStateLoop(target, phaseStartFor(target, phase))
+	}
+	function setMusicState(d) {
+		d = d || {}
+		var target = resolveMusicState(d), stageId = Number(d.stageId) || 0
+		if (target === 'boss') {
+			pendingMusicState = 'boss'; pendingMusicStage = stageId; clearStageRequestTimer()
+			bgmStageRequestTimer = setTimeout(function () {
+				bgmStageRequestTimer = null
+				if (bossWarningActive || pendingMusicState !== 'boss') { return }
+				beginMusicState('boss', stageId, currentMusicState)
+			}, 30)
+			return
+		}
+		if (target === currentMusicState && !pendingMusicState) {
+			if (isFinite(stageId)) { currentStage = stageId }
+			return
+		}
+		var source = currentMusicState
+		pendingMusicState = target; pendingMusicStage = stageId; clearStageRequestTimer()
+		if (!bgmRunning || hardPaused || !bgmActive) { applyMusicState(target, stageId); pendingMusicState = ''; pendingMusicStage = 0; return }
+		var delay = nextBeatDelayMs()
+		bgmStageRequestTimer = setTimeout(function () {
+			bgmStageRequestTimer = null
+			if (pendingMusicState !== target) { return }
+			beginMusicState(target, stageId, source)
+		}, delay)
+		Log.info('[bgm] state requested ' + source + ' -> ' + target + ' quantizeMs=' + delay)
+	}
+	function finishBossWarning(stageId) {
+		var from = currentMusicState, phase = currentCyclePhase(from)
+		bossLoopAtGameTime = null; bossWarningActive = false; pendingMusicState = ''; pendingMusicStage = 0
+		applyMusicState('boss', stageId || currentStage)
+		playMusicStateLoop('boss', phaseStartFor('boss', phase))
+	}
+	function beginBossWarning(d) {
+		clearStageRequestTimer(); pendingMusicState = 'boss'; bossWarningActive = true
+		var gs = global.GS || {}, leadSec = Math.max(0, Number(d && d.leadSec) || 0), stageId = Number(d && d.stageId)
+		if (!isFinite(stageId)) { stageId = currentStage }
+		pendingMusicStage = stageId
+		bossLoopAtGameTime = (Number(gs.timeSec) || 0) + leadSec
+		// Important: warning is SFX-only. Keep the current single BGM loop alive.
+		if (leadSec <= 0) { finishBossWarning(stageId) }
 	}
 	var duckReleaseAt = 0
 	function duck(kind) {
@@ -606,12 +698,12 @@
 		if (duckTimer) { clearTimeout(duckTimer) }
 		duckTimer = setTimeout(function () { duckTimer = null; duckReleaseAt = 0; eventDuckMul = 1; applyBgmGain(false) }, Math.max(1, duckReleaseAt - now))
 	}
-	function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
 	function updateMusicState() {
 		if (!ctx || !bgmRunning || (ctx.currentTime - musicSampleAt) < AUDIO_MIX.stateSampleSec) { return }
 		musicSampleAt = ctx.currentTime
 		var gs = global.GS || {}, enemy = Registry && Registry.get ? Registry.get('enemy') : null
-		var stage = clamp(gs.stageId || currentStage || 1, 1, 5), stageBase = [0.12, 0.32, 0.56, 0.82, 1.05][stage - 1]
+		var stateBase = { protection: 0.12, growth: 0.32, mowing: 0.56, climax: 0.82, boss: 1.05 }
+		var stageBase = stateBase[currentMusicState] == null ? 0.32 : stateBase[currentMusicState]
 		var mobs = enemy && enemy.countMobs ? enemy.countMobs() : 0, chasing = enemy && enemy.chasingCount ? enemy.chasingCount() : 0, boss = !!(enemy && enemy.hasBoss && enemy.hasBoss())
 		var coreMax = CONFIG.PLAYER && CONFIG.PLAYER.coreHp ? CONFIG.PLAYER.coreHp : 3
 		var hpPressure = clamp(1 - ((gs.coreHp == null ? coreMax : gs.coreHp) / coreMax), 0, 1)
@@ -626,104 +718,37 @@
 		pressureBgmMul = 1 - pressureRatio * (1 - (MIX.bgmPressureFloor == null ? 0.92 : MIX.bgmPressureFloor))
 		if (Math.abs(pressureBgmMul - lastPressureBgmMul) >= 0.01) { lastPressureBgmMul = pressureBgmMul; applyBgmGain(false) }
 	}
-	function schedulePad(bar, stage, t, dest) {
-		var chord = CHORD[bar], gain = audioLevelValue(MUSIC.padGainByStage, stage, 0.024), steps = audioLevelValue(MUSIC.padStepsByStage, stage, 10)
-		var start = 0, count = stage <= 2 ? 3 : 4
-		for (var i = start; i < Math.min(chord.length, start + count); i++) { playAirPad(FREQ[chord[i]], t, steps * stepDur, gain * (i === chord.length - 1 ? 0.78 : 1), dest, stage) }
-	}
-	function scheduleMotive(bar, stage, s, t, dest) {
-		var motive = LIFE_MOTIVE[bar], gain = audioLevelValue(MUSIC.motiveGainByStage, stage, 0.05)
-		if (stage === 1) {
-			if (s % 4 === 0) { playGardenPluck(FREQ[motive[(s / 4) % 4]], t, gain * (s === 0 ? 0.94 : 0.78), dest, s >= 8) }
-		} else if (stage === 2) {
-			if (s % 4 === 0) { playGardenPluck(FREQ[motive[(s / 4) % 4]], t, gain * (s === 0 ? 1.04 : 0.90), dest, s >= 8) }
-		} else if (stage === 3) {
-			if (s === 0 || s === 4 || s === 8 || s === 12) { playGardenPluck(FREQ[motive[(s / 4) % 4]], t, gain, dest, true) }
-		} else {
-			if (s === 0 || s === 4 || s === 8 || s === 12) { playGardenPluck(FREQ[motive[(s / 4) % 4]] * (stage === 5 && s >= 8 ? 2 : 1), t, gain, dest, true) }
-			if (s === 6 || s === 14) { playGardenPluck(FREQ[stage === 5 ? 'E5' : 'C5'], t, gain * 0.55, dest, true) }
-		}
-	}
-	function scheduleBass(bar, stage, s, t, dest) {
-		var gain = audioLevelValue(MUSIC.bassGainByStage, stage, 0.055), root = FREQ[BASS_ROOT[bar]]
-		if (stage === 2 && (s === 0 || s === 8)) { playBass(root, t, stepDur * 4.8, gain, dest, s === 0) }
-		else if (stage === 3 && (s === 0 || s === 6 || s === 8 || s === 14)) { playBass(root, t, stepDur * 2.2, gain, dest, s === 0 || s === 8) }
-		else if (stage === 4 && s % 2 === 0) { playBass(root, t, stepDur * 1.45, gain * (s === 0 || s === 8 ? 1.05 : 0.90), dest, s === 0 || s === 8) }
-		else if (stage === 5 && s % 2 === 0) { var fifth = bar === 0 ? FREQ.G3 : bar === 1 ? FREQ.D3 : bar === 2 ? FREQ.E3 : FREQ.C3; playBass((s === 6 || s === 14) ? fifth : root, t, stepDur * 1.35, gain, dest, s === 0 || s === 8) }
-	}
-	function scheduleArp(bar, stage, s, t, dest) {
-		var gain = audioLevelValue(MUSIC.arpGainByStage, stage, 0.024), seq = ARP[bar]
-		if (stage === 2 && (s === 6 || s === 14)) { playGardenPluck(FREQ[seq[(s / 2) % 8]], t, gain, dest, true) }
-		else if (stage === 3 && (s === 2 || s === 6 || s === 10 || s === 14)) { playGardenPluck(FREQ[seq[(s / 2) % 8]], t, gain, dest, true) }
-		else if (stage >= 4 && s % 2 === 1) { playGardenPluck(FREQ[seq[((s - 1) / 2) % 8]] * (stage === 5 && s >= 9 ? 2 : 1), t, gain * (stage === 5 ? 0.92 : 1), dest, true) }
-	}
-	function scheduleDrums(stage, s, t, dest) {
-		var kick = audioLevelValue(MUSIC.kickGainByStage, stage, 0), snare = audioLevelValue(MUSIC.snareGainByStage, stage, 0), hat = audioLevelValue(MUSIC.hatGainByStage, stage, 0)
-		if (stage === 2) { if (s === 6 || s === 14) { playNoiseAt(0.014, hat, t, dest, 'hat') }; return }
-		if (stage === 3) {
-			if (s === 0 || s === 8) { playKickAt(kick, t, dest, s === 0) }
-			if (s === 4 || s === 12) { playSnareAt(snare, t, dest, false) }
-			if (s === 2 || s === 6 || s === 10 || s === 14) { playNoiseAt(0.014, hat, t, dest, 'hat') }
-		} else if (stage === 4) {
-			if (s === 0 || s === 4 || s === 8 || s === 12) { playKickAt(kick * (s === 0 || s === 8 ? 1 : 0.78), t, dest, s === 0 || s === 8) }
-			if (s === 4 || s === 12) { playSnareAt(snare, t, dest, false) }
-			if (s === 2 || s === 6 || s === 10 || s === 14) { playNoiseAt(0.014, hat, t, dest, 'hat') }
-		} else if (stage === 5) {
-			if (s === 0 || s === 4 || s === 8 || s === 12) { playKickAt(kick * (s === 0 || s === 8 ? 1.08 : 0.84), t, dest, s === 0 || s === 8) }
-			if (s === 4 || s === 12) { playSnareAt(snare, t, dest, true) }
-			if (s % 2 === 0 && s !== 0 && s !== 8) { playNoiseAt(0.012, hat, t, dest, 'hat') }
-		}
-	}
-	function scheduleStep(stepAbs, t) {
-		var s = stepAbs % 16
-		if (s === 0 && pendingMusicStage && pendingMusicStage !== currentStage) { commitMusicStage(pendingMusicStage, t) }
-		var stage = currentStage, bar = Math.floor((stepAbs % 64) / 16), dest = stageGain[stage]
-		if (!dest) { return }
-		if (s === 0) {
-			schedulePad(bar, stage, t, dest)
-			if (stageTransitionPending === stage) { playTransition(stage, t, dest); stageTransitionPending = 0 }
-		}
-		scheduleMotive(bar, stage, s, t, dest)
-		if (stage >= 2) { scheduleBass(bar, stage, s, t, dest); scheduleArp(bar, stage, s, t, dest) }
-		if (stage >= 2) { scheduleDrums(stage, s, t, dest) }
-		// Build only brightens existing musical beats; it never creates an independent second rhythm.
-		if (stage >= 3 && buildLevel >= AUDIO_MIX.buildHarmonyBand && s === 12) { playGardenPluck(FREQ[stage >= 4 ? 'E5' : 'C5'], t, 0.014 + stage * 0.002, dest, true) }
-	}
-	function _sched() {
-		if (!bgmRunning || !ctx) { return }
+	function _bgmTick() {
+		if (!bgmRunning || hardPaused) { return }
 		updateMusicState()
-		while (nextNoteTime < ctx.currentTime + 0.12) {
-			scheduleStep(absStep, nextNoteTime); absStep++
-			stepDur += (targetStepDur - stepDur) * 0.16
-			nextNoteTime += stepDur
+		silenceInactiveBgmMedia(bgmActive)
+		if (bossWarningActive && bossLoopAtGameTime != null) {
+			var gs = global.GS || {}
+			if ((Number(gs.timeSec) || 0) >= bossLoopAtGameTime) { finishBossWarning(currentStage) }
 		}
 	}
 	function startBgm() {
-		// startBgm 只表达“当前游戏状态需要 BGM”。真正启动必须等 AudioContext running。
-		// 这样即使首次 iOS resume 失败，后续合法手势的 unlock 也只会兑现既有请求，不会在菜单里自行创建 BGM。
 		bgmWanted = true
-		if (hardPaused || bgmRunning || !ensure()) { return }
-		var token = bgmLifecycleToken
-		resume(function () {     // 必须等 ctx 真正 running 再调度；suspended 期 currentTime 冻结，音符全堆在 0.1s 处永不会响(原 iOS 静音根因)
-			// stopBgm 会推进生命周期令牌：暂停/死亡/重开局后，旧 resume 回调必须失效。
-			if (token !== bgmLifecycleToken || !bgmWanted || hardPaused || bgmRunning || !ctx || ctx.state !== 'running') { return }
-			if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; Log.warn('[bgm] 清理异常残留 transport timer') }
-			bgmRunning = true
-			activateStageBus(currentStage, ctx.currentTime, true)
-			absStep = 0
-			stepDur = targetStepDur = 60 / (stageBpm[currentStage - 1] || stageBpm[0] || 88) / 4
-			nextNoteTime = ctx.currentTime + 0.1
-			applyBgmGain(true)
-			bgmTimer = setInterval(_sched, 25)
-			bgmTransportSerial++
-			Log.info('[bgm] transport#' + bgmTransportSerial + ' 启动 layer=' + curLayer)
-		})
+		if (hardPaused || !ensureBgmMedia()) { return }
+		if (!bgmActive) { playMusicStateLoop(currentMusicState, 0) }
+		else { silenceInactiveBgmMedia(bgmActive); applyBgmGain(true); safeMediaPlay(bgmActive, bgmPlaySerial) }
+		if (!bgmTimer) { bgmTimer = setInterval(_bgmTick, 100) }
+		bgmTransportSerial++
+		if (pendingMusicState && pendingMusicState !== currentMusicState && !bossWarningActive) { setMusicState({ stageId: pendingMusicStage, musicState: pendingMusicState }) }
+	}
+	function pauseBgm() {
+		clearStageRequestTimer(); bgmRunning = false
+		if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null }
+		if (bgmActive) { try { bgmActive.pause() } catch (_) {} }
 	}
 	function stopBgm() {
-		bgmLifecycleToken++
-		bgmWanted = false
-		bgmRunning = false
+		bgmLifecycleToken++; bgmPlaySerial++; bgmWanted = false; bgmRunning = false; clearStageRequestTimer(); bossLoopAtGameTime = null; bossWarningActive = false; pendingMusicState = ''
 		if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null }
+		for (var key in bgmMedia) {
+			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
+			try { bgmMedia[key].pause(); bgmMedia[key].onended = null; bgmMedia[key].currentTime = 0; bgmMedia[key].volume = 0 } catch (_) {}
+		}
+		bgmActive = null; bgmActiveKey = ''
 		stopVoices(bgmNodes)
 	}
 	function clearAudioTimers() {
@@ -742,17 +767,18 @@
 		suppressStartCue = false; hardPaused = false; clearAudioTimers()
 		stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
 		pauseMul = 1; sfxPauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1
-		densityOn = false; sfxCount = 0; sfxWinStart = 0; _lastAt = {}; electricGateAt.lightning = -Infinity; electricGateAt.electro = -Infinity; currentStage = 1; pendingMusicStage = 0; curLayer = 'stage1'; battleHeat = stageHeat[0]; stageBgmMul = stageBgmGainByStage[0]; stageTransitionPending = 0
+		var initialMusic = initialMusicDescriptor(), initialState = resolveMusicState(initialMusic)
+		densityOn = false; sfxCount = 0; sfxWinStart = 0; _lastAt = {}; electricGateAt.lightning = -Infinity; electricGateAt.electro = -Infinity; currentStage = Number(initialMusic.stageId) || 1; pendingMusicStage = 0; currentMusicState = initialState; pendingMusicState = ''; curLayer = initialState; battleHeat = MUSIC_STATE_HEAT[initialState] == null ? 0 : MUSIC_STATE_HEAT[initialState]; stageBgmMul = 1; stageTransitionPending = 0; bossWarningActive = false; bossLoopAtGameTime = null
 		pressureLevel = 0; pressureTarget = 0; buildLevel = 0; buildTarget = 0; pressureBgmMul = 1; lastPressureBgmMul = 1; musicSampleAt = 0; runCount++
-		if (ensure()) { applySfxGain(true); setMusicStage(1) }
+		if (ensure()) { applySfxGain(true); applyMusicState(initialState, currentStage) }
 		startBgm()
 		resume(function () { if (!skipStartCue) { playStartCue(runCount > 1) } })
 	})
 	Bus.on('wave:stage', function (d) {
 		if (!bgmRunning) { startBgm() }
-		setMusicStage(d && d.stageId)
+		setMusicState(d)
 	})
-	Bus.on('wave:boss_warn', function () { if (!bgmRunning) { startBgm() }; setMusicStage(5) })
+	Bus.on('wave:boss_warn', function (d) { if (!bgmRunning) { startBgm() }; beginBossWarning(d) })
 	Bus.on('snake:dead', function () {
 		clearAudioTimers(); stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
 		pauseMul = 0; sfxPauseMul = 0; applyBgmGain(true); applySfxGain(true); playDeathCue()
@@ -765,7 +791,7 @@
 	Bus.on('game:pause_changed', function () {
 		var st = global.GS && global.GS.status
 		if (st === 'paused') {
-			hardPaused = true; clearAudioTimers(); stopVoices(uiNodes); stopBgm(); stopVoices(sfxNodes); pauseMul = 0; sfxPauseMul = 0; applyBgmGain(false); applySfxGain(false)
+			hardPaused = true; clearAudioTimers(); stopVoices(uiNodes); pauseBgm(); stopVoices(sfxNodes); pauseMul = 0; sfxPauseMul = 0; applyBgmGain(false); applySfxGain(false)
 		} else {
 			hardPaused = false; pauseMul = 1; sfxPauseMul = 1; applyBgmGain(false); applySfxGain(false); startBgm(); resume(function () { playPauseCue() })
 		}
@@ -777,15 +803,24 @@
 		return out
 	}
 	var Audio = {
-		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN } },
+		setMuted: function (m) { muted = !!m; if (master) { master.gain.value = muted ? 0 : MASTER_GAIN }; applyBgmGain(true) },
 		isMuted: function () { return muted },
 		unlock: function () { ensure(); _kickIos(); resume(function () { _kickIos(); if (bgmWanted && !bgmRunning) { startBgm() } }); return !!(ctx && ctx.state === 'running') },
 		isRunning: function () { return !!(ctx && ctx.state === 'running') },
 		registerSample: registerSample,
 		playSample: playSample,
-		debugState: function () { return { context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, stage: currentStage, pendingStage: pendingMusicStage, layer: curLayer, bpm: stageBpm[currentStage - 1], stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, voices: voiceSnapshot() } }
+		debugState: function () {
+			var mediaPlaying = [], mediaAudible = []
+			for (var key in bgmMedia) {
+				if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
+				var media = bgmMedia[key]
+				if (!media.paused) { mediaPlaying.push(key) }
+				if (!media.paused && media.volume > 0.0001) { mediaAudible.push(key) }
+			}
+			return { context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, voices: voiceSnapshot() }
+		}
 	}
 	Registry.register('audio', Audio)
-	Log.info('audio 就绪：Phase 1.2 Night Garden 五阶段独立编曲 + 语义 Bus + Voice Budget')
+	Log.info('audio 就绪：Golden Master 单源相位锁定 BGM + 可选阶段/Boss + Voice Budget')
 
 })(typeof window !== 'undefined' ? window : this)
