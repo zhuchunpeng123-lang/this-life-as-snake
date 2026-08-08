@@ -50,7 +50,15 @@
 			followLerp: 0.4,
 		initSegments: 3,
 		maxSegments: 25,                 // 长度线硬顶（叙事加节仅受此限；普通食物额外受段 cap 卡）
-		segCapByStage: [5, 8, 15, 25, 25],   // S2：成长节数按段封顶（索引=stageId-1 对齐 §8.5.2）；段①④才可达25，防长度线提前封顶导致后期放风筝。普通食物门控用段 cap，叙事选择豁免段 cap 仅受 maxSegments
+		segCapByStage: [6, 14, 20, 25, 25],   // 兼容回退：若成长曲线不可用，按阶段使用该段 cap；正常运行优先读取 segCapCurve。
+		segCapCurve: [
+			{ timeSec: 0, cap: 4 },
+			{ timeSec: 10, cap: 5 },
+			{ timeSec: 25, cap: 6 },
+			{ timeSec: 95, cap: 14 },
+			{ timeSec: 215, cap: 20 },
+			{ timeSec: 300, cap: 25 }
+		],   // First Wave：长度上限随局内时间逐步开放，避免成长期早早封顶；普通食物受该曲线门控，叙事加节仍只受 maxSegments
 		coreHp: 3,
 			headRadius: 14,            // 碰撞判定半径（真理源 §1：宁小勿大防冤死，回真源 14；渲染半径见下方 headRadiusRender）
 			headRadiusRender: 28,      // 渲染半径(px)：纯表现，配合 snake_head.png；与碰撞 headRadius 解耦（视觉≥判定，防冤死）；getSpriteOff 整图缩到 2r → 视觉头宽≈1.2×此值(≈34px，比身体24px略大、协调)；用户最新：蛇头从30再小一点点→28（"蛇头有点大"），缩放回退「之前版本」(dispCss=r*2)
@@ -157,9 +165,9 @@
 
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
-			chaser: { hp: 28, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 20, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [0, 800, 450, 450, 0], wanderRedirSec: 1.5 },   // aggroRangeByStage=段-scaled 游荡aggro范围px（索引 stageId-1，复用 upgradeMinGapSecBySeg 段-scaled 模式：1→0无wanderer / 2→800成长期覆盖刷怪环520-760 / 3→450割草期 / 4→450高潮期 / 5→0无wanderer；须>250才>原senseRange生效；RT 桥按段即时可调）；wanderRedirSec=游荡重定向间隔s（收编自硬编码 WANDER_REDIR_SEC）
-			charger: { hp: 42, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
+			chaser: { hp: 20, atk: 1, speed: 120, senseRange: -1, radius: 11 },
+			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [800, 800, 800, 800, 0], wanderRedirSec: 1.5 },   // Second Wave：Stage1-4 aggro 均覆盖刷怪环520-760，使低威胁 wanderer 持续进入玩家火力区，减少屏外占 cap 导致的清场空窗。
+			charger: { hp: 60, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
 			elite: { hp: 260, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
@@ -201,7 +209,7 @@
 			food: { screenCap: 6, refreshIntervalSec: 2.5, segCap: 25, gainSegments: 1, safeDistance: 180, minSpacing: 80, radius: 10, maxSegScreenCap: 2, maxSegRefreshIntervalSec: 6, overflowScore: 10 },  // B：满节后食物稀疏化(屏上限2/刷新6s)+溢出转小分(🟡 TODO 候选[5/10/20] 终值待 §9；score 用途未定仅占位)
 			skill: { baseDropRate: 0.12, perOwnedPenalty: 0.02, floorRate: 0.03 },
 			skillPity: { killStreakGuarantee: 12, firstSkillGuaranteeSec: 5 },   // 单局节奏调优：首技能5s保底；连杀12保底（保护期内仍暂停连杀保底）
-		upgradeMinGapSecBySeg: [16, 20, 24, 22, 60],   // 单局节奏调优：升级间隔地板按段取值（索引=stageId-1：1→16 / 2→20 / 3→24 / 4→22 / 5→60）；值0或null才表示地板失效
+		upgradeMinGapSecBySeg: [14, 18, 20, 18, 60],   // First Wave：前中期更快形成构筑；Boss 段保持 60s，不在本轮调整
 			heal: { gainHp: 1, maxHp: 3, naturalRefreshSec: 20, healStageCapByStage: [0, 2, 2, 1, 0], perRunMin: 2, perRunMax: 3, screenCap: 1 },   // S3·贪婪悖论：naturalRefreshSec 45→20(heal间冷却≥20s)；healStageCapByStage 索引=stageId-1（段①0/段②2/段③2/段④1/段⑤0 Boss纯决战）；满血(coreHp<maxHp)才出、偏敌簇勾引冒险
 			visualScale: { food: 1.3, heal: 1.8, skill: 1.8 },   // 拾取物【仅视觉】放大倍率(不动 o.radius 碰撞)；用户验收：heal/skill 定 1.8x，food(加节数) 1.3x；待实测量化回写 §9
 			dangerBias: { ringMin: 40, ringMax: 150 }   // 🟡 补给危险偏向：敌身周围偏移环带(px)，落点钳视野内且不贴脸；候选 ringMin 30/40 · ringMax 120/150/180，待实测量化回写 §9
@@ -210,15 +218,15 @@
 		// —— §6 STAGE（cap/rate/时间窗=确认；🟡 pool=GDD 文字推断） ——
 		STAGE: {
 		segments: [
-			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 4, spawnRate: 0.6, pool: ['wanderer'] },
-			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 12, spawnRate: 2.8, pool: ['wanderer', 'chaser'] },
-			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 28, spawnRate: 7.0, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
-			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 46, spawnRate: 15.0, pool: ['chaser', 'wanderer', 'charger', 'elite'] },
+			{ id: 1, name: '保护期', startSec: 0, endSec: 25, cap: 4, spawnRate: 0.7, pool: ['wanderer'] },
+			{ id: 2, name: '成长期', startSec: 25, endSec: 95, cap: 14, spawnRate: 3.2, pool: ['wanderer', 'chaser'] },
+			{ id: 3, name: '割草期', startSec: 95, endSec: 215, cap: 30, spawnRate: 8.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'elite', 'elite'] },   // Second Wave：50% Wanderer / 25% Chaser / 15% Charger / 10% Elite；增加可持续割草素材和少量耐久视觉锚点。
+			{ id: 4, name: '高潮期', startSec: 215, endSec: 300, cap: 50, spawnRate: 16.0, pool: ['wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'wanderer', 'chaser', 'chaser', 'chaser', 'chaser', 'chaser', 'charger', 'charger', 'charger', 'charger', 'elite', 'elite', 'elite'] },   // Second Wave：40% Wanderer / 25% Chaser / 20% Charger / 15% Elite；目标是“杀不完但杀得动”，不增加总 cap/spawn。
 			{ id: 5, name: 'Boss期', startSec: 300, endSec: 420, cap: 6, spawnRate: 1.0, pool: ['chaser', 'elite'] }
 		],
 			rookieProtect: [
 				{ startSec: 0, endSec: 10, speedMul: 0.6, cap: 2 },
-				{ startSec: 10, endSec: 25, speedMul: 0.8, cap: 5 }
+				{ startSec: 10, endSec: 25, speedMul: 0.8, cap: 4 }
 			],
 			lethalProtectSec: 25,
 			lethalProtectMinHp: 1,
@@ -421,7 +429,7 @@
 				},
 				priority: { low: 0, normal: 1, high: 2, danger: 3 },
 				// 范围底色只作弱提示；技能本体由下方 skillVfx 的精灵和短时爆点承担，避免大面积色块吞掉战场。
-				fieldReadability: { fireFillAlpha: 0.035, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
+				fieldReadability: { fireFillAlpha: 0.09, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
 				skillVfx: {
 					fire: { anchorStep: 2, maxAnchors: 5, rangeEdgeAlpha: 0.62, rangeEdgeWidthPx: 1.5, rangeArcGapRad: 0.62, pulseHz: 3.2, pulseAmount: 0.14 },
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },

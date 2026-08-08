@@ -295,8 +295,8 @@
 		else if (e.type === 'wanderer') {
 		var stageIdx = GS.stageId - 1
 		var byStage = EN.wanderer.aggroRangeByStage
-		var aggro = RT('ENEMIES.wanderer.aggroRangeByStage.' + GS.stageId, (byStage && byStage[stageIdx]) || 0)   // 段≥② 游荡型 aggro 圈（段-scaled：成长期800覆盖刷怪环, 割草/高潮450; 须>250才>原senseRange生效）
-		if (sensesHead(e, hx, hy) || (GS.stageId >= 2 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+		var aggro = RT('ENEMIES.wanderer.aggroRangeByStage.' + GS.stageId, (byStage && byStage[stageIdx]) || 0)   // First Wave：各阶段只要配置 aggro>0 即生效；保护期靠 rookieProtect 降速而不是让怪失联。
+		if (sensesHead(e, hx, hy) || (aggro > 0 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 			else { wander(e, moveSpeed(e, e.baseSpeed, sm) * 0.6, dt) }
 		}
 		else if (e.type === 'charger') { e._chasing = true; updateCharger(e, hx, hy, dt, sm) }

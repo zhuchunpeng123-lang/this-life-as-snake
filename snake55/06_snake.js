@@ -144,13 +144,27 @@
 	}
 
 	Bus.on('core:run_reset', function () { spawnAtCenter(); squash.sx = 1; squash.sy = 1; squash.dur = 0 })
-	// S2：当前段节数上限（按段封顶，且不超过 maxSegments 硬顶）。叙事加节豁免段 cap（见 12_ui→pickup:eat kind:'narrative'），此处仅 food 用段 cap。挂 window 供 09_wave 复用。
+	// First Wave：普通食物的长度上限按局内时间平滑开放；叙事加节仍豁免该曲线，仅受 maxSegments。挂 window 供 09_wave 复用。
 	function segCapNow() {
-		var P = CONFIG.PLAYER
+		var P = CONFIG.PLAYER, hardCap = P.maxSegments
+		var curve = P.segCapCurve, now = GS.timeSec || 0
+		if (curve && curve.length) {
+			if (now <= curve[0].timeSec) { return Math.min(curve[0].cap, hardCap) }
+			for (var i = 1; i < curve.length; i++) {
+				var a = curve[i - 1], b = curve[i]
+				if (now <= b.timeSec) {
+					var span = b.timeSec - a.timeSec
+					var t = span > 0 ? (now - a.timeSec) / span : 1
+					var cap = Math.floor(a.cap + (b.cap - a.cap) * t)
+					return Math.min(cap, hardCap)
+				}
+			}
+			return Math.min(curve[curve.length - 1].cap, hardCap)
+		}
 		var idx = (GS.stageId || 1) - 1
 		var arr = P.segCapByStage
-		var stageCap = (arr && arr[idx] != null) ? arr[idx] : P.maxSegments
-		return Math.min(stageCap, P.maxSegments)
+		var stageCap = (arr && arr[idx] != null) ? arr[idx] : hardCap
+		return Math.min(stageCap, hardCap)
 	}
 	window.segCapNow = segCapNow
 
