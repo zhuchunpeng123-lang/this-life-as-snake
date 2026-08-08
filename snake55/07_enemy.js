@@ -12,6 +12,7 @@
 	var BOSS_FIRE_COUNT = 6              // TODO: 待确认（候选 5 / 8）
 	var BOSS_BULLET_RADIUS = 9           // TODO: 待确认（候选 8 / 10）
 	var BOSS_BULLET_LIFE_SEC = 4.0       // TODO: 待确认（候选 3 / 4）
+	var BOSS_AUDIO_WARN_LEAD_SEC = 0.28  // Presentation-only：Boss 弹幕发射前声音预警；不改变 fireT / 伤害 / 弹量。
 	var DOT_TEXT_MIN = 4                 // ⑦ 表现层：DOT 累计到此值才飘伤害字（防每帧刷屏）；Commit A 由 10→4 让 DOT 飘字更频繁（视觉「持续小数字」），仅影响飘字聚合、不进伤害/命中判定；TODO 候选 3 / 6
 
 	// 威胁色阶（§5.5 STYLE 真源，纯视觉）：暖橙(散步)→红(追踪/冲锋)→紫(精英)→品红(Boss/弹)；e.color 仅供渲染/飘字/爆花取色，不参与任何逻辑/数值
@@ -83,9 +84,11 @@
 		e.state = 'seek'; e.stateT = 0; e.cd = 0; e.lifeT = 0; e.flashT = 0; e.flashKind = ''; e.dotMap = {}   // B-4 衍生：对象池复用复位分源 DOT 累加器，防残留串味
 		if (type === 'boss') {
 			e.hp = e.maxHp = cfg.hpTotal; e.baseSpeed = cfg.speedPhase1; e.atk = cfg.atk
-			e.phase = 1; e.invuln = 0; e.fireT = cfg.fireIntervalSec; e.kbImmune = true; e.senseRange = -1
+			e.phase = 1; e.invuln = 0; e.fireT = cfg.fireIntervalSec; e.fireWarned = false; e.kbImmune = true; e.senseRange = -1
 		} else {
-			e.hp = e.maxHp = cfg.hp; e.baseSpeed = cfg.speed; e.atk = cfg.atk
+			var hpByStage = cfg.hpByStage, hpStageIdx = GS.stageId - 1
+			var spawnHp = (hpByStage && hpByStage[hpStageIdx] != null) ? hpByStage[hpStageIdx] : cfg.hp
+			e.hp = e.maxHp = spawnHp; e.baseSpeed = cfg.speed; e.atk = cfg.atk
 			e.senseRange = cfg.senseRange; e.kbImmune = (type === 'elite')
 		}
 		list.push(e)
@@ -252,14 +255,24 @@
 	}
 	function resolveContact(e, dt) { /* MVP no-op：蛇身接触不结算伤害（避免 bodyContactDps×dt≈0 触发 enemy:hit 飘字「0」刷屏）；「铁壁蛇阵」P1 再接入（§2.1） */ }
 
+	function activeChargerThreats(exceptId) {
+		var c = 0
+		for (var i = 0; i < list.length; i++) {
+			var o = list[i]
+			if (!o.active || o.id === exceptId || o.type !== 'charger') { continue }
+			if (o.state === 'windup' || o.state === 'charge') { c++ }
+		}
+		return c
+	}
 	function updateCharger(e, hx, hy, dt, sm) {
-		var cfg = EN.charger
+		var cfg = EN.charger, caps = cfg.maxConcurrentChargesByStage, capIdx = GS.stageId - 1
+		var chargeCap = (caps && caps[capIdx] != null) ? caps[capIdx] : Infinity
 		if (e.state === 'seek') {
-			if (sensesHead(e, hx, hy) && e.cd <= 0) { e.state = 'windup'; e.stateT = cfg.chargeWindupSec; e.angle = Math.atan2(hy - e.y, hx - e.x) }
+			if (sensesHead(e, hx, hy) && e.cd <= 0 && activeChargerThreats(e.id) < chargeCap) { e.state = 'windup'; e.stateT = cfg.chargeWindupSec; e.angle = Math.atan2(hy - e.y, hx - e.x); Bus.emit('enemy:charger_warn', { id: e.id, x: e.x, y: e.y, leadSec: cfg.chargeWindupSec }) }
 			else { e.cd -= dt; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm) * 0.7, dt) }
 		} else if (e.state === 'windup') {
 			e.stateT -= dt; e.angle = Math.atan2(hy - e.y, hx - e.x)
-			if (e.stateT <= 0) { e.state = 'charge'; e.stateT = CHARGE_DURATION_SEC }
+			if (e.stateT <= 0) { e.state = 'charge'; e.stateT = CHARGE_DURATION_SEC; Bus.emit('enemy:charger_charge', { id: e.id, x: e.x, y: e.y }) }
 		} else if (e.state === 'charge') {
 			e.stateT -= dt
 			var cs = burstMoveSpeed(e, cfg.chargeSpeed, sm)
@@ -271,13 +284,19 @@
 		var cfg = EN.boss
 		if (e.invuln > 0) { e.invuln -= dt }
 		if (e.phase === 1 && e.hp <= cfg.hpTotal * (1 - cfg.phaseThresholdPct)) {
-			e.phase = 2; e.baseSpeed = cfg.speedPhase2; e.invuln = cfg.transitionInvulnSec
+			e.phase = 2; e.baseSpeed = cfg.speedPhase2; e.invuln = cfg.transitionInvulnSec; e.fireWarned = false
 			Bus.emit('enemy:phase', { phase: 2, x: e.x, y: e.y })
 		}
 		steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt)
 		e.fireT -= dt
+		if (e.invuln <= 0 && !e.fireWarned && e.fireT > 0 && e.fireT <= BOSS_AUDIO_WARN_LEAD_SEC) {
+			e.fireWarned = true
+			Bus.emit('boss:attack_warn', { id: e.id, x: e.x, y: e.y, phase: e.phase, leadSec: e.fireT })
+		}
 		if (e.invuln <= 0 && e.fireT <= 0) {
 			e.fireT = e.phase === 2 ? EN.boss.phase2FireIntervalSec : EN.boss.fireIntervalSec
+			e.fireWarned = false
+			Bus.emit('boss:attack_fire', { id: e.id, x: e.x, y: e.y, phase: e.phase, count: BOSS_FIRE_COUNT })
 			var base = Math.atan2(hy - e.y, hx - e.x), spread = M.deg2rad(60)
 			for (var i = 0; i < BOSS_FIRE_COUNT; i++) {
 				var t = BOSS_FIRE_COUNT === 1 ? 0.5 : i / (BOSS_FIRE_COUNT - 1)

@@ -1,64 +1,74 @@
+/*
+ * AUDIO CHANGE CONTRACT
+ * Before changing BGM, SFX, UI feedback, skill/combo sound, threat cues, voice budgets or ducking,
+ * read: docs/AUDIO_SYSTEM_SPEC.md and docs/AUDIO_EVENT_MATRIX.md
+ * Locked baseline: AUDIO-FINAL-1.0 (2026-08-08).
+ */
 ;(function (global) {
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, Log = global.Log
-	var AUDIO = CONFIG.AUDIO
-	var MIX = AUDIO.mix || {}, MUSIC = AUDIO.music || {}, HIT_AUDIO = AUDIO.hit || {}, DEATH_AUDIO = AUDIO.death || {}, SKILL_SFX = AUDIO.skills || {}
-	var ELECTRIC_AUDIO = AUDIO.electric
-
-	var MASTER_GAIN = AUDIO.masterVolume
+	var AUDIO = (CONFIG && CONFIG.AUDIO) || {}
+	// AUDIO-FINAL-1.0 ownership rule:
+	// gameplay CONFIG owns only user-facing master/BGM/SFX/UI volume + enabled state.
+	// SFX mix/voice/density tuning is local to this module so gameplay/balance edits never collide with audio patches.
+	var MIX = {
+		maxSfxVoices: 12, maxUiVoices: 4,
+		voiceBudget: { skill: 4, combo: 4, player: 2, impact: 2, death: 2, boss: 3, threat: 3, ui: 3 },
+		skillBusGain: 0.86, comboBusGain: 0.94, playerBusGain: 1.00, impactBusGain: 0.48,
+		deathBusGain: 0.62, bossBusGain: 0.96, threatBusGain: 1.00,
+		lightDuckMul: 0.88, lightDuckSec: 0.14, majorDuckMul: 0.68, majorDuckSec: 0.24,
+		chooseDuckMul: 0.56, pauseRampSec: 0.05, deathSilenceSec: 0.10,
+		limiterThresholdDb: -7, limiterKneeDb: 8, limiterRatio: 3.5, limiterAttackSec: 0.002, limiterReleaseSec: 0.14,
+		bgmPressureStart: 1.35, bgmPressureEnd: 2.90, bgmPressureFloor: 0.94
+	}
+	var SFXCFG = {
+		densityWindowMs: 220, densitySoft: 7, densityHard: 11,
+		wallCooldownMs: 320, fireCooldownMs: 360, shieldCooldownMs: 280, genericHitCooldownMs: 120,
+		deathClusterMs: 70, steamCooldownMs: 180,
+		chargerWarnCooldownMs: 180, chargerChargeCooldownMs: 150,
+		bossAttackWarnCooldownMs: 220, bossAttackFireCooldownMs: 180
+	}
+	var MASTER_GAIN = AUDIO.masterVolume == null ? 0.72 : AUDIO.masterVolume
 	var UI_VOLUME = AUDIO.uiVolume == null ? 0.68 : AUDIO.uiVolume
 
-	var ctx = null, master = null, limiter = null, sfxGain = null, uiGain = null, muted = !AUDIO.enabled
-	var sfxBus = { skill: null, combo: null, player: null, impact: null, death: null, boss: null }
-	// —— BGM 子链（Phase 1.2：五阶段独立编曲、单一 Transport、与战斗 SFX 分轨）——
+	var ctx = null, master = null, limiter = null, sfxGain = null, uiGain = null, muted = AUDIO.enabled === false
+	var sfxBus = { skill: null, combo: null, player: null, impact: null, death: null, boss: null, threat: null }
+
+	// BGM state (single-owner media transport; BGM itself is frozen in this SFX pass).
 	var bgmRunning = false, bgmTimer = null, bgmWanted = false
 	var bgmMedia = {}, bgmActive = null, bgmActiveKey = '', bgmStageRequestTimer = null, bossLoopAtGameTime = null
 	var currentMusicState = 'protection', pendingMusicState = '', bossWarningActive = false
 	var bgmLifecycleToken = 0, bgmTransportSerial = 0, bgmPlaySerial = 0
 	var bgmNodes = [], sfxNodes = [], uiNodes = []
-	var absStep = 0, nextNoteTime = 0
 	var sfxPauseMul = 1, hardPaused = false, duckTimer = null, musicSampleAt = 0, pressureLevel = 0, pressureTarget = 0, buildLevel = 0, buildTarget = 0
 	var pressureBgmMul = 1, lastPressureBgmMul = 1
 	var runCount = 0, suppressStartCue = false
 
-	// 表现层参数：只控制声音密度、层次和响应，不改变任何玩法数值。
+	// BGM pressure model: performance/mix only; never changes gameplay.
 	var AUDIO_MIX = {
 		stateSampleSec: 0.25, stateLerp: 0.18, pressureMobCap: 12, pressureChaseCap: 4,
 		pressureHpWeight: 0.55, pressureMobWeight: 0.75, pressureChaseWeight: 0.65, pressureBossWeight: 0.90,
 		buildSkillWeight: 0.35, buildLevelWeight: 0.06, buildMaxedWeight: 0.25, buildComboWeight: 0.35,
-		buildStreakCap: 8, buildStreakWeight: 0.20, buildHarmonyBand: 0.75, buildLeadBand: 1.65,
-		pressurePulseBand: 1.0, pressureTensionBand: 2.0,
-		pauseRampSec: MIX.pauseRampSec == null ? 0.06 : MIX.pauseRampSec
+		buildStreakCap: 8, buildStreakWeight: 0.20,
+		pauseRampSec: MIX.pauseRampSec == null ? 0.05 : MIX.pauseRampSec
 	}
-	var UI_AUDIO = {
-		press: { notes: [640], gain: 0.035, spacing: 0.04 },
-		confirm: { notes: [520, 780], gain: 0.055, spacing: 0.06 },
-		back: { notes: [400, 280], gain: 0.045, spacing: 0.06 },
-		toggle: { notes: [480, 660], gain: 0.045, spacing: 0.06 }
-	}
-	var BOSS_AUDIO = {
-		impactFreq: 92, impactEndHz: 38, impactDuration: 0.16, impactGain: 0.22,
-		impactNoiseDuration: 0.14, impactNoiseGain: 0.14, restSec: 0.18,
-		motive: [220, 330, 440, 554], motiveGain: 0.14, motiveSpacing: 0.09,
-		atmosphereDelay: 0.68, atmosphereDuration: 0.58, atmosphereGain: 0.035,
-		atmosphere: [370, 466, 622]
-	}
-	var SKILL_AUDIO = {
-		fire: { base: 240, rise: 1.35, type: 'triangle' }, ice: { base: 430, rise: 1.25, type: 'sine' },
-		bolt: { base: 720, rise: 1.35, type: 'square' }, shield: { base: 260, rise: 1.20, type: 'triangle' },
-		lightning: { base: 880, rise: 1.50, type: 'sawtooth' }
-	}
-	var COMBO_AUDIO = {
-		steamExplosion: { notes: [180, 270, 405], type: 'triangle' },
-		electroTurret: { notes: [520, 780, 1170], type: 'square' },
-		burningBarrage: { notes: [240, 360, 540], type: 'triangle' }
-	}
-	var stageBpm = [88, 124, 124, 124, 136]
-	var stageHeat = MUSIC.stageHeat || [0.00, 0.78, 1.50, 2.22, 2.90]
-	var stageBgmGainByStage = MUSIC.stageBgmGainByStage || [0.94, 1.00, 1.06, 1.10, 1.13]
-	var currentStage = 1, pendingMusicStage = 0, stepDur = 60 / stageBpm[0] / 4, targetStepDur = stepDur
-	var curLayer = 'stage1', battleHeat = stageHeat[0], stageBgmMul = stageBgmGainByStage[0], stageTransitionPending = 0
+	var currentStage = 1, pendingMusicStage = 0, targetStepDur = 60 / 88 / 4
+	var curLayer = 'protection', battleHeat = 0, stageBgmMul = 1, stageTransitionPending = 0
 	var pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1, chooseDuckMul = 1
+
+	// SFX density does NOT pump BGM. It only decides which low-value events may consume voices.
+	var densityScore = 0, densityWinStart = 0
+	var densityOn = false, densityTimer = null, sfxCount = 0, sfxWinStart = 0 // compatibility with old debug/reset names; always neutral for BGM.
+	function nowMs() { return (global.performance && global.performance.now) ? global.performance.now() : Date.now() }
+	function resetDensity() { densityScore = 0; densityWinStart = 0; densityOn = false; densityDuckMul = 1; sfxCount = 0; sfxWinStart = 0 }
+	function admitByDensity(priority, weight) {
+		var now = nowMs(), win = SFXCFG.densityWindowMs || 220
+		if (!densityWinStart || now - densityWinStart > win) { densityWinStart = now; densityScore = 0 }
+		var before = densityScore; densityScore += weight == null ? 1 : weight
+		if (priority >= 3) { return true }
+		if (priority === 2) { return before < (SFXCFG.densityHard == null ? 11 : SFXCFG.densityHard) }
+		return before < (SFXCFG.densitySoft == null ? 7 : SFXCFG.densitySoft)
+	}
 
 	function ensure() {
 		if (ctx) { return true }
@@ -67,55 +77,45 @@
 		ctx = new AC(); master = ctx.createGain(); master.gain.value = MASTER_GAIN
 		if (typeof ctx.createDynamicsCompressor === 'function') {
 			limiter = ctx.createDynamicsCompressor()
-			limiter.threshold.value = MIX.limiterThresholdDb == null ? -8 : MIX.limiterThresholdDb
-			limiter.knee.value = MIX.limiterKneeDb == null ? 12 : MIX.limiterKneeDb
-			limiter.ratio.value = MIX.limiterRatio == null ? 4 : MIX.limiterRatio
-			limiter.attack.value = MIX.limiterAttackSec == null ? 0.003 : MIX.limiterAttackSec
-			limiter.release.value = MIX.limiterReleaseSec == null ? 0.16 : MIX.limiterReleaseSec
+			limiter.threshold.value = MIX.limiterThresholdDb == null ? -7 : MIX.limiterThresholdDb
+			limiter.knee.value = MIX.limiterKneeDb == null ? 8 : MIX.limiterKneeDb
+			limiter.ratio.value = MIX.limiterRatio == null ? 3.5 : MIX.limiterRatio
+			limiter.attack.value = MIX.limiterAttackSec == null ? 0.002 : MIX.limiterAttackSec
+			limiter.release.value = MIX.limiterReleaseSec == null ? 0.14 : MIX.limiterReleaseSec
 			master.connect(limiter); limiter.connect(ctx.destination)
 		} else { master.connect(ctx.destination) }
-		sfxGain = ctx.createGain(); sfxGain.gain.value = AUDIO.sfxVolume; sfxGain.connect(master)
+		sfxGain = ctx.createGain(); sfxGain.gain.value = AUDIO.sfxVolume == null ? 0.78 : AUDIO.sfxVolume; sfxGain.connect(master)
 		uiGain = ctx.createGain(); uiGain.gain.value = UI_VOLUME; uiGain.connect(master)
-		sfxBus.skill = ctx.createGain(); sfxBus.skill.gain.value = MIX.skillBusGain == null ? 0.88 : MIX.skillBusGain; sfxBus.skill.connect(sfxGain)
-		sfxBus.combo = ctx.createGain(); sfxBus.combo.gain.value = MIX.comboBusGain == null ? 0.98 : MIX.comboBusGain; sfxBus.combo.connect(sfxGain)
+		sfxBus.skill = ctx.createGain(); sfxBus.skill.gain.value = MIX.skillBusGain == null ? 0.86 : MIX.skillBusGain; sfxBus.skill.connect(sfxGain)
+		sfxBus.combo = ctx.createGain(); sfxBus.combo.gain.value = MIX.comboBusGain == null ? 0.94 : MIX.comboBusGain; sfxBus.combo.connect(sfxGain)
 		sfxBus.player = ctx.createGain(); sfxBus.player.gain.value = MIX.playerBusGain == null ? 1.00 : MIX.playerBusGain; sfxBus.player.connect(sfxGain)
-		sfxBus.impact = ctx.createGain(); sfxBus.impact.gain.value = MIX.impactBusGain == null ? 0.62 : MIX.impactBusGain; sfxBus.impact.connect(sfxGain)
-		sfxBus.death = ctx.createGain(); sfxBus.death.gain.value = MIX.deathBusGain == null ? 0.72 : MIX.deathBusGain; sfxBus.death.connect(sfxGain)
-		sfxBus.boss = ctx.createGain(); sfxBus.boss.gain.value = MIX.bossBusGain == null ? 1.00 : MIX.bossBusGain; sfxBus.boss.connect(sfxGain)
+		sfxBus.impact = ctx.createGain(); sfxBus.impact.gain.value = MIX.impactBusGain == null ? 0.48 : MIX.impactBusGain; sfxBus.impact.connect(sfxGain)
+		sfxBus.death = ctx.createGain(); sfxBus.death.gain.value = MIX.deathBusGain == null ? 0.62 : MIX.deathBusGain; sfxBus.death.connect(sfxGain)
+		sfxBus.boss = ctx.createGain(); sfxBus.boss.gain.value = MIX.bossBusGain == null ? 0.96 : MIX.bossBusGain; sfxBus.boss.connect(sfxGain)
+		sfxBus.threat = ctx.createGain(); sfxBus.threat.gain.value = MIX.threatBusGain == null ? 1.00 : MIX.threatBusGain; sfxBus.threat.connect(sfxGain)
+		buildSampleBank()
 		return true
 	}
+
 	var VOICE_BUDGET = MIX.voiceBudget || {}
-	function voiceCap(list) {
-		if (list === sfxNodes) { return MIX.maxSfxVoices || 16 }
-		if (list === uiNodes) { return MIX.maxUiVoices || 10 }
-		return Infinity
-	}
+	function voiceCap(list) { return list === sfxNodes ? (MIX.maxSfxVoices || 12) : (list === uiNodes ? (MIX.maxUiVoices || 4) : Infinity) }
 	function busFamily(out) {
 		if (out === uiGain) { return 'ui' }
 		for (var key in sfxBus) { if (sfxBus[key] === out) { return key } }
 		return 'skill'
 	}
-	function familyCap(family) {
-		var cap = VOICE_BUDGET[family]
-		return cap == null ? Infinity : Math.max(1, cap)
-	}
+	function familyCap(family) { var cap = VOICE_BUDGET[family]; return cap == null ? Infinity : Math.max(1, cap) }
 	function pickVictim(list, priority, family) {
 		var pick = -1, lowest = Infinity, oldest = Infinity
 		for (var i = 0; i < list.length; i++) {
-			var rec = list[i]
-			if (family && rec.family !== family) { continue }
+			var rec = list[i]; if (family && rec.family !== family) { continue }
 			var p = rec.priority == null ? 2 : rec.priority, started = rec.startedAt || 0
 			if (p < lowest || (p === lowest && started < oldest)) { lowest = p; oldest = started; pick = i }
 		}
 		if (pick < 0 || lowest > priority) { return -1 }
 		return pick
 	}
-	function evictVoice(list, pick) {
-		if (pick < 0) { return false }
-		var old = list.splice(pick, 1)[0]
-		try { old.node.stop(ctx.currentTime) } catch (_) {}
-		return true
-	}
+	function evictVoice(list, pick) { if (pick < 0) { return false }; var old = list.splice(pick, 1)[0]; try { old.node.stop(ctx.currentTime) } catch (_) {}; return true }
 	function reserveVoice(list, priority, family) {
 		var famCap = familyCap(family), famCount = 0
 		for (var i = 0; i < list.length; i++) { if (list[i].family === family) { famCount++ } }
@@ -126,351 +126,197 @@
 	}
 	function trackVoice(list, node, priority, family) {
 		var rec = { node: node, priority: priority == null ? 2 : priority, family: family || 'music', startedAt: ctx ? ctx.currentTime : 0 }
-		list.push(rec)
-		node.onended = function () { var i = list.indexOf(rec); if (i >= 0) { list.splice(i, 1) } }
-		return node
+		list.push(rec); node.onended = function () { var i = list.indexOf(rec); if (i >= 0) { list.splice(i, 1) } }; return node
 	}
-	function stopVoices(list) {
-		if (!ctx) { list.length = 0; return }
-		var t = ctx.currentTime
-		while (list.length) { var rec = list.pop(); try { rec.node.stop(t) } catch (_) {} }
-	}
+	function stopVoices(list) { if (!ctx) { list.length = 0; return }; var t = ctx.currentTime; while (list.length) { var rec = list.pop(); try { rec.node.stop(t) } catch (_) {} } }
+
 	function resume(cb) {
-		if (!ctx) { if (cb) { cb() } return }
-		if (ctx.state === 'running') { if (cb) { cb() } return }
+		if (!ctx) { if (cb) { cb() }; return }
+		if (ctx.state === 'running') { if (cb) { cb() }; return }
 		if (ctx.state === 'closed' || typeof ctx.resume !== 'function') { return }
-		try {
-			var p = ctx.resume()
-			if (p && p.then) {
-				p.then(function () { if (ctx && ctx.state === 'running') { if (cb) { cb() } } }).catch(function () {})
-			} else if (ctx.state === 'running' && cb) { cb() }
-		} catch (_) {}
+		try { var p = ctx.resume(); if (p && p.then) { p.then(function () { if (ctx && ctx.state === 'running' && cb) { cb() } }).catch(function () {}) } else if (ctx.state === 'running' && cb) { cb() } } catch (_) {}
 	}
 	var _kicked = false
 	function _kickIos() {
 		if (!ctx || _kicked) { return }
-		try {
-			var o = ctx.createOscillator(), g = ctx.createGain()
-			g.gain.value = 0.001; o.type = 'sine'; o.frequency.value = 440
-			o.connect(g); g.connect(ctx.destination)
-			var t = ctx.currentTime || 0
-			o.start(0); o.stop(t + 0.05); _kicked = true
-		} catch (e) {}
+		try { var o = ctx.createOscillator(), g = ctx.createGain(); g.gain.value = 0.0001; o.frequency.value = 440; o.connect(g); g.connect(ctx.destination); var t = ctx.currentTime || 0; o.start(0); o.stop(t + 0.02); _kicked = true } catch (_) {}
 	}
 
-	function tone(opt, dest, when) {
-		if (muted || hardPaused || !ensure()) { return }
-		if (when == null) { resume() }
-		opt = opt || {}
-		var out = dest || sfxBus.skill || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes, family = busFamily(out)
-		var priority = opt.priority == null ? 2 : opt.priority
-		if (!reserveVoice(list, priority, family)) { return }
-		var t = (when == null) ? ctx.currentTime : when, dur = opt.dur || 0.12
-		var o = ctx.createOscillator(), g = ctx.createGain()
-		o.type = opt.type || 'sine'; o.frequency.setValueAtTime(opt.freq, t)
-		if (opt.freqTo) { o.frequency.exponentialRampToValueAtTime(Math.max(1, opt.freqTo), t + dur) }
-		g.gain.setValueAtTime(0.0001, t)
-		g.gain.exponentialRampToValueAtTime(opt.gain || 0.2, t + (opt.attack || 0.005))
-		g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		o.connect(g); g.connect(out); trackVoice(list, o, priority, family); o.start(t); o.stop(t + dur + 0.02)
+	// ---------------- Deterministic in-memory Sample Bank ----------------
+	// All runtime SFX below are AudioBufferSourceNode voices: internal layers are pre-rendered once.
+	var sampleBank = {}, synthSeed = 0x51a7f00d
+	function rngFor(salt) { var s = (synthSeed ^ salt) >>> 0; return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 } }
+	function wave(type, ph) { var s = Math.sin(ph); if (type === 'triangle') { return (2 / Math.PI) * Math.asin(s) }; if (type === 'softsquare') { return Math.tanh(2.2 * s) }; return s }
+	function envPerc(u, attack, power) { var a = attack <= 0 ? 1 : Math.min(1, u / attack); return a * Math.pow(Math.max(0, 1 - u), power == null ? 2 : power) }
+	function addOsc(data, sr, start, dur, f0, f1, amp, type, attack, power) {
+		var i0 = Math.max(0, Math.floor(start * sr)), n = Math.max(1, Math.floor(dur * sr)), phase = 0, ratio = f0 > 0 && f1 > 0 ? f1 / f0 : 1
+		for (var j = 0; j < n && i0 + j < data.length; j++) { var u = j / n, f = f0 * Math.pow(ratio, u); phase += 2 * Math.PI * f / sr; data[i0 + j] += wave(type || 'sine', phase) * amp * envPerc(u, attack == null ? 0.03 : attack, power) }
 	}
-	function noise(dur, gain, dest, when, priority) {
-		if (muted || hardPaused || !ensure()) { return }
-		if (when == null) { resume() }
-		var out = dest || sfxBus.skill || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes, family = busFamily(out), p = priority == null ? 2 : priority
-		if (!reserveVoice(list, p, family)) { return }
-		var n = Math.floor(ctx.sampleRate * dur), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0)
-		for (var i = 0; i < n; i++) { d[i] = (Math.random() * 2 - 1) * (1 - i / n) }
-		var src = ctx.createBufferSource(); src.buffer = buf
-		var g = ctx.createGain(); g.gain.value = gain || 0.2
-		src.connect(g); g.connect(out); trackVoice(list, src, p, family); if (when == null) { src.start() } else { src.start(when) }
-	}
-	function filteredNoise(opt, dest, when) {
-		if (muted || hardPaused || !ensure()) { return }
-		if (when == null) { resume() }
-		opt = opt || {}
-		var out = dest || sfxBus.skill || sfxGain || master, list = (out === uiGain) ? uiNodes : sfxNodes, family = busFamily(out), priority = opt.priority == null ? 2 : opt.priority
-		if (!reserveVoice(list, priority, family)) { return }
-		var t = when == null ? ctx.currentTime : when, dur = opt.dur || 0.08
-		var n = Math.max(1, Math.floor(ctx.sampleRate * dur)), buf = ctx.createBuffer(1, n, ctx.sampleRate), data = buf.getChannelData(0)
-		for (var i = 0; i < n; i++) {
-			var envelope = 1 - i / n, grain = opt.crackle ? (((i % 43) < 7) ? 1 : 0.34) : 1
-			data[i] = (Math.random() * 2 - 1) * envelope * grain
+	function addNoise(data, sr, start, dur, amp, lowHz, highHz, attack, power, salt) {
+		var i0 = Math.max(0, Math.floor(start * sr)), n = Math.max(1, Math.floor(dur * sr)), rnd = rngFor(salt || 1), lpHi = 0, lpLo = 0
+		var ahi = Math.min(1, 2 * Math.PI * Math.max(80, highHz || 3000) / sr), alo = Math.min(1, 2 * Math.PI * Math.max(20, lowHz || 0) / sr)
+		for (var j = 0; j < n && i0 + j < data.length; j++) {
+			var x = rnd() * 2 - 1; lpHi += ahi * (x - lpHi); lpLo += alo * (x - lpLo)
+			var y = lowHz > 0 ? (lpHi - lpLo) : lpHi, u = j / n
+			data[i0 + j] += y * amp * envPerc(u, attack == null ? 0.015 : attack, power == null ? 2.5 : power)
 		}
-		var src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain()
-		src.buffer = buf; filter.type = opt.filterType || 'bandpass'
-		filter.frequency.setValueAtTime(Math.max(20, opt.freq || 1200), t)
-		if (opt.freqTo) { filter.frequency.exponentialRampToValueAtTime(Math.max(20, opt.freqTo), t + dur) }
-		filter.Q.value = opt.q == null ? 0.8 : opt.q
-		g.gain.setValueAtTime(0.0001, t)
-		g.gain.exponentialRampToValueAtTime(opt.gain || 0.08, t + (opt.attack || 0.002))
-		g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-		src.connect(filter); filter.connect(g); g.connect(out); trackVoice(list, src, priority, family); src.start(t); src.stop(t + dur + 0.02)
+	}
+	function normalizeSample(data, target) { var peak = 0; for (var i = 0; i < data.length; i++) { var a = Math.abs(data[i]); if (a > peak) { peak = a } }; var mul = peak > 0 ? (target || 0.86) / peak : 1; for (var j = 0; j < data.length; j++) { data[j] = Math.max(-0.98, Math.min(0.98, data[j] * mul)) } }
+	function makeSample(id, dur, draw, target) { var sr = ctx.sampleRate, n = Math.max(32, Math.floor(dur * sr)), data = new Float32Array(n); draw(data, sr); normalizeSample(data, target || 0.86); var b = ctx.createBuffer(1, n, sr); if (b.copyToChannel) { b.copyToChannel(data, 0) } else { b.getChannelData(0).set(data) }; sampleBank[id] = b }
+	function noteSeq(data, sr, notes, gap, dur, amp, type, start) { start = start || 0; for (var i = 0; i < notes.length; i++) { addOsc(data, sr, start + i * gap, dur, notes[i], notes[i] * 1.02, amp, type || 'triangle', 0.04, 2.2) } }
+	function dartBurst(data, sr, count, gap, start, gain) { for (var i = 0; i < count; i++) { var at = (start || 0) + i * gap; addNoise(data, sr, at, 0.045, 0.42 * gain, 850, 2400, 0.01, 3, 1200 + i); addOsc(data, sr, at, 0.075, 980 - i * 35, 480 - i * 20, 0.60 * gain, 'triangle', 0.02, 2.7) } }
+	function buildSampleBank() {
+		if (sampleBank.__ready || !ctx) { return }
+		// UI language: press / confirm / back / toggle / pause. Short, mid-band, non-piercing.
+		makeSample('ui_press', 0.075, function(d,s){ addOsc(d,s,0,0.07,760,610,0.72,'triangle',0.03,2.8); addNoise(d,s,0,0.028,0.16,700,2200,0.01,3,1) })
+		makeSample('ui_confirm', 0.16, function(d,s){ addOsc(d,s,0,0.09,520,640,0.56,'triangle',0.04,2.4); addOsc(d,s,0.052,0.10,720,820,0.48,'triangle',0.04,2.3) })
+		makeSample('ui_back', 0.15, function(d,s){ addOsc(d,s,0,0.09,600,430,0.55,'triangle',0.035,2.5); addOsc(d,s,0.05,0.09,400,285,0.40,'triangle',0.035,2.6) })
+		makeSample('ui_toggle', 0.12, function(d,s){ addNoise(d,s,0,0.025,0.20,600,2200,0.005,3,2); addOsc(d,s,0.01,0.10,480,690,0.52,'triangle',0.035,2.4) })
+		makeSample('ui_pause_in', 0.16, function(d,s){ addOsc(d,s,0,0.14,455,305,0.60,'triangle',0.025,2.0); addNoise(d,s,0,0.045,0.12,250,1200,0.01,3,3) })
+		makeSample('ui_pause_out', 0.16, function(d,s){ addOsc(d,s,0,0.14,340,545,0.58,'triangle',0.03,2.0); addNoise(d,s,0.02,0.04,0.10,400,1500,0.01,3,4) })
+		makeSample('ui_start', 0.28, function(d,s){ noteSeq(d,s,[240,330,440],0.07,0.12,0.48,'triangle',0); addNoise(d,s,0.12,0.10,0.10,500,1800,0.03,2.5,5) })
+		makeSample('ui_replay', 0.24, function(d,s){ noteSeq(d,s,[300,440,600],0.055,0.10,0.48,'triangle',0) })
+		makeSample('ui_offer', 0.23, function(d,s){ noteSeq(d,s,[500,650,820],0.06,0.105,0.40,'sine',0); addNoise(d,s,0.05,0.14,0.08,900,2600,0.03,2.8,6) })
+		makeSample('pickup_food', 0.08, function(d,s){ addOsc(d,s,0,0.075,720,920,0.62,'triangle',0.025,2.8) })
+		makeSample('pickup_heal', 0.20, function(d,s){ addOsc(d,s,0,0.13,300,430,0.50,'triangle',0.04,2.2); addOsc(d,s,0.065,0.12,430,610,0.38,'sine',0.04,2.2) })
+
+		// Player / threat: strong information, centered in phone-speaker band.
+		makeSample('player_hurt', 0.23, function(d,s){ addNoise(d,s,0,0.11,0.35,180,1400,0.005,2.5,10); addOsc(d,s,0,0.21,250,85,0.75,'softsquare',0.015,1.8) })
+		makeSample('player_critical', 0.30, function(d,s){ addNoise(d,s,0,0.13,0.38,180,1500,0.005,2.4,11); addOsc(d,s,0,0.24,230,72,0.78,'softsquare',0.012,1.7); addOsc(d,s,0.08,0.16,520,390,0.34,'triangle',0.03,2.0) })
+		makeSample('wall_scrape', 0.10, function(d,s){ addNoise(d,s,0,0.095,0.52,220,1150,0.01,2.7,12); addOsc(d,s,0,0.08,340,220,0.18,'triangle',0.02,2.7) })
+		makeSample('charger_warn', 0.28, function(d,s){ addOsc(d,s,0,0.25,320,650,0.62,'softsquare',0.04,1.6); addNoise(d,s,0.04,0.18,0.18,500,1800,0.03,2.1,13) })
+		makeSample('charger_charge', 0.18, function(d,s){ addNoise(d,s,0,0.16,0.48,120,1200,0.01,2.1,14); addOsc(d,s,0,0.17,210,90,0.68,'triangle',0.015,2.0) })
+		makeSample('boss_warn', 0.24, function(d,s){ addOsc(d,s,0,0.22,105,48,0.78,'triangle',0.015,1.9); addNoise(d,s,0.015,0.12,0.25,180,1000,0.01,2.5,15); addOsc(d,s,0.055,0.12,470,350,0.28,'triangle',0.03,2.0) })
+		makeSample('boss_attack_warn', 0.22, function(d,s){ addOsc(d,s,0,0.19,360,560,0.62,'softsquare',0.025,1.7); addNoise(d,s,0.03,0.14,0.20,650,1800,0.02,2.0,16) })
+		makeSample('boss_attack_fire', 0.20, function(d,s){ addOsc(d,s,0,0.18,175,68,0.82,'triangle',0.008,1.9); addNoise(d,s,0,0.14,0.48,90,1150,0.004,2.4,17) })
+		makeSample('boss_phase', 0.48, function(d,s){ addOsc(d,s,0,0.38,125,55,0.72,'triangle',0.02,1.5); addNoise(d,s,0,0.24,0.35,120,1400,0.008,2.2,18); addOsc(d,s,0.12,0.32,380,680,0.34,'triangle',0.06,1.7) })
+
+		// Core skill identities.
+		makeSample('fire_contact', 0.18, function(d,s){ addNoise(d,s,0,0.17,0.58,280,1250,0.015,2.0,20); addOsc(d,s,0,0.15,230,150,0.30,'triangle',0.03,2.2) })
+		makeSample('shield_contact', 0.10, function(d,s){ addOsc(d,s,0,0.09,720,410,0.58,'triangle',0.015,2.7); addOsc(d,s,0.01,0.07,1320,880,0.20,'sine',0.02,2.8) })
+		makeSample('generic_hit', 0.085, function(d,s){ addNoise(d,s,0,0.055,0.40,220,1100,0.005,3,21); addOsc(d,s,0,0.075,300,170,0.34,'triangle',0.01,2.8) })
+		makeSample('crit_hit', 0.13, function(d,s){ addNoise(d,s,0,0.075,0.45,260,1500,0.005,2.6,22); addOsc(d,s,0,0.115,390,125,0.56,'triangle',0.008,2.3) })
+		makeSample('ice_throw', 0.14, function(d,s){ addNoise(d,s,0,0.11,0.28,700,2300,0.01,2.4,23); addOsc(d,s,0,0.125,1280,560,0.56,'sine',0.02,2.2) })
+		makeSample('ice_bloom', 0.24, function(d,s){ addOsc(d,s,0,0.20,390,840,0.44,'sine',0.05,1.8); addNoise(d,s,0.02,0.20,0.27,650,2200,0.04,1.9,24); addOsc(d,s,0.08,0.13,880,1120,0.22,'triangle',0.04,2.0) })
+		for (var bv = 1; bv <= 5; bv++) { (function(count){ makeSample('bolt_' + count, 0.09 + count * 0.027, function(d,s){ dartBurst(d,s,count,0.022,0,0.88); if (count >= 4) { addOsc(d,s,0.03,0.10,520,360,0.18,'triangle',0.03,2.5) } }) })(bv) }
+		for (var lv = 1; lv <= 5; lv++) { (function(level){ var pulses = [1,1,2,3,4][level-1]; makeSample('lightning_' + level, 0.14 + pulses * 0.028, function(d,s){ addNoise(d,s,0,0.09 + level*0.008,0.62,900,3000,0.004,2.6,30+level); addOsc(d,s,0,0.085 + level*0.006,1180+level*55,650+level*24,0.60,'softsquare',0.008,2.7); for (var p=0;p<pulses;p++){ addOsc(d,s,0.025+p*0.027,0.045,1650-p*110,980-p*55,0.30,'softsquare',0.006,3.0) } }) })(lv) }
+
+		// Combo identities = audible combination of their parent skills, not a new unrelated language.
+		makeSample('steam_blast', 0.25, function(d,s){ addOsc(d,s,0,0.20,195,78,0.76,'triangle',0.008,1.9); addNoise(d,s,0,0.22,0.55,430,1500,0.01,1.9,40); addOsc(d,s,0.05,0.15,720,1180,0.24,'sine',0.03,2.1) })
+		makeSample('electro_deploy', 0.20, function(d,s){ addOsc(d,s,0,0.18,210,580,0.52,'sine',0.04,1.8); addOsc(d,s,0.02,0.16,260,350,0.30,'triangle',0.03,2.0) })
+		makeSample('electro_fire', 0.19, function(d,s){ addOsc(d,s,0,0.17,185,70,0.88,'triangle',0.006,2.0); addNoise(d,s,0,0.12,0.48,110,1000,0.004,2.6,41); addOsc(d,s,0.008,0.065,560,225,0.30,'softsquare',0.005,3.0); addOsc(d,s,0.03,0.10,760,420,0.20,'triangle',0.02,2.4) })
+		makeSample('electro_end', 0.14, function(d,s){ addOsc(d,s,0,0.13,360,135,0.42,'sine',0.03,2.3) })
+		makeSample('burn_dart', 0.12, function(d,s){ dartBurst(d,s,1,0,0,0.90); addNoise(d,s,0.035,0.07,0.23,650,1500,0.02,2.5,42) })
+
+		// Progress/reward identities.
+		makeSample('gain_fire', 0.30, function(d,s){ addNoise(d,s,0,0.18,0.38,300,1300,0.02,2.0,50); noteSeq(d,s,[260,390,520],0.06,0.12,0.40,'triangle',0.04) })
+		makeSample('gain_ice', 0.30, function(d,s){ addOsc(d,s,0,0.22,460,850,0.35,'sine',0.05,1.8); noteSeq(d,s,[620,820,1040],0.055,0.10,0.33,'sine',0.05) })
+		makeSample('gain_bolt', 0.27, function(d,s){ dartBurst(d,s,3,0.035,0.02,0.68); addOsc(d,s,0.10,0.14,480,760,0.28,'triangle',0.04,2.0) })
+		makeSample('gain_shield', 0.30, function(d,s){ noteSeq(d,s,[420,620,840],0.06,0.13,0.38,'triangle',0.02); addOsc(d,s,0.04,0.20,240,340,0.20,'sine',0.06,1.8) })
+		makeSample('gain_lightning', 0.31, function(d,s){ addNoise(d,s,0,0.12,0.40,900,2800,0.005,2.4,51); addOsc(d,s,0,0.12,1100,650,0.44,'softsquare',0.01,2.5); noteSeq(d,s,[520,760,980],0.05,0.11,0.30,'triangle',0.10) })
+		makeSample('found_steamExplosion', 0.38, function(d,s){ addOsc(d,s,0,0.20,190,80,0.66,'triangle',0.01,1.9); addNoise(d,s,0.03,0.25,0.38,500,1600,0.02,1.8,52); addOsc(d,s,0.14,0.18,720,1100,0.24,'sine',0.04,2.0) })
+		makeSample('found_electroTurret', 0.38, function(d,s){ addOsc(d,s,0,0.17,220,560,0.38,'sine',0.04,1.9); addOsc(d,s,0.13,0.18,180,68,0.68,'triangle',0.01,2.0); addNoise(d,s,0.13,0.12,0.34,120,1100,0.005,2.7,53) })
+		makeSample('found_burningBarrage', 0.34, function(d,s){ dartBurst(d,s,3,0.055,0.03,0.76); addNoise(d,s,0.10,0.20,0.25,380,1300,0.03,2.0,54) })
+
+		// Enemy death/result. One event = one buffer voice even when internally layered.
+		makeSample('death_small', 0.13, function(d,s){ addNoise(d,s,0,0.11,0.50,110,820,0.005,2.5,60); addOsc(d,s,0,0.12,250,120,0.36,'triangle',0.008,2.5) })
+		makeSample('death_charger', 0.16, function(d,s){ addNoise(d,s,0,0.13,0.50,100,760,0.005,2.4,61); addOsc(d,s,0,0.15,205,90,0.48,'triangle',0.008,2.3) })
+		makeSample('death_elite', 0.22, function(d,s){ addNoise(d,s,0,0.17,0.54,80,700,0.004,2.2,62); addOsc(d,s,0,0.21,150,58,0.68,'triangle',0.008,2.0) })
+		makeSample('player_death', 0.72, function(d,s){ addNoise(d,s,0,0.24,0.36,120,1200,0.008,2.1,63); addOsc(d,s,0,0.62,285,82,0.60,'softsquare',0.02,1.5); noteSeq(d,s,[260,190,125],0.12,0.20,0.23,'triangle',0.08) })
+		makeSample('boss_defeat', 0.95, function(d,s){ addOsc(d,s,0,0.22,105,42,0.80,'triangle',0.006,1.8); addNoise(d,s,0,0.18,0.48,80,1200,0.004,2.2,64); noteSeq(d,s,[220,330,440,554],0.10,0.22,0.32,'triangle',0.24); addOsc(d,s,0.48,0.40,370,555,0.16,'sine',0.08,1.5) })
+		sampleBank.__ready = true
 	}
 
-	// Phase 1 sample-ready 接口：当前不强制引入素材；Phase 2 可把已解码 AudioBuffer 注册到同一 Bus/priority/voice-budget 管线。
-	var sampleBank = {}
-	function registerSample(id, buffer) {
-		if (!id || !buffer || typeof buffer.duration !== 'number') { return false }
-		sampleBank[id] = buffer; return true
-	}
-	function playSample(id, opt) {
+	function registerSample(id, buffer) { if (!id || !buffer || typeof buffer.duration !== 'number') { return false }; sampleBank[id] = buffer; return true }
+	var playbackSerial = 0
+	function playBank(id, opt) {
+		opt = opt || {}
 		if (muted || hardPaused || !ensure() || !sampleBank[id]) { return false }
-		opt = opt || {}; resume()
-		var out = opt.dest || (opt.family === 'ui' ? uiGain : sfxBus[opt.family]) || sfxBus.skill, list = (out === uiGain) ? uiNodes : sfxNodes, family = busFamily(out)
-		var priority = opt.priority == null ? 2 : opt.priority
-		if (!reserveVoice(list, priority, family)) { return false }
-		var src = ctx.createBufferSource(), g = ctx.createGain(), t = opt.when == null ? ctx.currentTime : opt.when
-		src.buffer = sampleBank[id]; src.playbackRate.value = opt.rate == null ? 1 : opt.rate; g.gain.value = opt.gain == null ? 1 : opt.gain
-		src.connect(g); g.connect(out); trackVoice(list, src, priority, family); src.start(t); return true
+		var family = opt.family || 'skill', out = family === 'ui' ? uiGain : (sfxBus[family] || sfxBus.skill)
+		var list = out === uiGain ? uiNodes : sfxNodes, priority = opt.priority == null ? 2 : opt.priority
+		if (out !== uiGain && !admitByDensity(priority, opt.weight == null ? 1 : opt.weight)) { return false }
+		if (!reserveVoice(list, priority, busFamily(out))) { return false }
+		resume()
+		var src = ctx.createBufferSource(), g = ctx.createGain(), when = opt.when == null ? ctx.currentTime : Math.max(ctx.currentTime, opt.when)
+		src.buffer = sampleBank[id]
+		var rate = opt.rate == null ? 1 : opt.rate
+		if (opt.vary) { playbackSerial++; rate *= 1 + (((playbackSerial * 17) % 7) - 3) * 0.006 }
+		src.playbackRate.value = Math.max(0.82, Math.min(1.22, rate)); g.gain.value = opt.gain == null ? 0.55 : opt.gain
+		src.connect(g); g.connect(out); trackVoice(list, src, priority, busFamily(out)); src.start(when); return true
 	}
+	function playSample(id, opt) { return playBank(id, opt) }
 
 	var _lastAt = {}
-	var electricGateAt = { lightning: -Infinity, electro: -Infinity }
-	function throttled(key, ms, fn) {
-		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
-		if (_lastAt[key] && (now - _lastAt[key]) < ms) { return }
-		_lastAt[key] = now; fn()
-	}
-	function electricGate(kind, fn) {
-		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now(), gate = ELECTRIC_AUDIO.gateMs
-		var last = electricGateAt[kind] == null ? -Infinity : electricGateAt[kind]
-		if (now - last < gate) { return }
-		electricGateAt[kind] = now; fn()
-	}
-	var sfxCount = 0, sfxWinStart = 0, densityOn = false, densityTimer = null
-	function sfxPing(weight) {
-		var now = (global.performance && global.performance.now) ? global.performance.now() : Date.now()
-		var win = MIX.densityWindowMs || 220, threshold = MIX.densityThreshold || 5
-		if (!sfxWinStart || (now - sfxWinStart) > win) { sfxCount = 0; sfxWinStart = now }
-		sfxCount += weight == null ? 1 : weight
-		if (sfxCount > threshold) {
-			if (!densityOn) { densityOn = true; densityDuckMul = MIX.densityDuckMul == null ? 0.76 : MIX.densityDuckMul; applyBgmGain(false) }
-			if (densityTimer) { clearTimeout(densityTimer) }
-			densityTimer = setTimeout(function () { densityTimer = null; densityOn = false; densityDuckMul = 1; applyBgmGain(false) }, MIX.densityReleaseMs || 260)
-		}
-	}
+	function throttled(key, ms, fn) { var now = nowMs(); if (_lastAt[key] != null && now - _lastAt[key] < ms) { return }; _lastAt[key] = now; fn() }
+	function ownedLevel(id) { var gs = global.GS || {}, owned = gs.ownedSkills || {}; return Math.max(1, Math.min(5, owned[id] || 1)) }
 
-	function ownedLevel(id) {
-		var gs = global.GS || {}, owned = gs.ownedSkills || {}
-		return Math.max(1, Math.min(5, owned[id] || 1))
-	}
-	function playFire() {
-		if (muted || hardPaused || !ensure()) { return }
-		var dur = HIT_AUDIO.fireDuration || 0.15
-		sfxPing(0.35)
-		filteredNoise({ dur: dur, gain: HIT_AUDIO.fireNoiseGain || 0.066, filterType: 'bandpass', freq: (HIT_AUDIO.fireNoiseMinHz || 760) + Math.random() * ((HIT_AUDIO.fireNoiseMaxHz || 1040) - (HIT_AUDIO.fireNoiseMinHz || 760)), freqTo: HIT_AUDIO.fireNoiseMinHz || 760, q: 0.75, priority: 1 }, sfxBus.skill)
-		tone({ freq: HIT_AUDIO.fireBodyStartHz || 235, freqTo: HIT_AUDIO.fireBodyEndHz || 155, dur: dur, type: 'triangle', gain: HIT_AUDIO.fireBodyGain || 0.032, priority: 1 }, sfxBus.skill)
-	}
-	function playGenericHit(d) {
-		d = d || {}; sfxPing(d.crit ? 1.0 : 0.55)
-		filteredNoise({ dur: HIT_AUDIO.genericNoiseDuration || 0.04, gain: HIT_AUDIO.genericNoiseGain || 0.04, filterType: 'lowpass', freq: HIT_AUDIO.genericNoiseHz || 980, freqTo: 520, q: 0.70, priority: d.crit ? 3 : 1 }, sfxBus.impact)
-		if (d.crit) {
-			tone({ freq: HIT_AUDIO.critBodyStartHz || 360, freqTo: HIT_AUDIO.critBodyEndHz || 125, dur: HIT_AUDIO.critBodyDuration || 0.09, type: 'triangle', gain: HIT_AUDIO.critBodyGain || 0.085, priority: 3 }, sfxBus.impact)
-			duck('light')
-		} else {
-			tone({ freq: HIT_AUDIO.genericBodyStartHz || 270, freqTo: HIT_AUDIO.genericBodyEndHz || 165, dur: HIT_AUDIO.genericBodyDuration || 0.055, type: 'triangle', gain: HIT_AUDIO.genericBodyGain || 0.052, priority: 1 }, sfxBus.impact)
-		}
-	}
-	function playShieldContact() {
-		sfxPing(0.35)
-		tone({ freq: HIT_AUDIO.shieldStartHz || 430, freqTo: HIT_AUDIO.shieldEndHz || 250, dur: HIT_AUDIO.shieldDuration || 0.075, type: 'triangle', gain: HIT_AUDIO.shieldGain || 0.05, priority: 1 }, sfxBus.skill)
-	}
-	function playBurnTick() {
-		sfxPing(0.30)
-		filteredNoise({ dur: HIT_AUDIO.burnDuration || 0.09, gain: HIT_AUDIO.burnNoiseGain || 0.04, filterType: 'bandpass', freq: HIT_AUDIO.burnNoiseHz || 1450, freqTo: 980, q: 0.8, crackle: true, priority: 1 }, sfxBus.skill)
-		tone({ freq: HIT_AUDIO.burnBodyStartHz || 390, freqTo: HIT_AUDIO.burnBodyEndHz || 230, dur: HIT_AUDIO.burnDuration || 0.09, type: 'triangle', gain: HIT_AUDIO.burnBodyGain || 0.035, priority: 1 }, sfxBus.skill)
-	}
-	function playBolt() {
-		var a = SKILL_SFX.bolt || {}, level = ownedLevel('bolt')
-		sfxPing(0.75)
-		filteredNoise({ dur: a.noiseDuration || 0.04, gain: audioLevelValue(a.noiseGainByLevel, level, 0.038), filterType: 'bandpass', freq: a.noiseHz || 1750, freqTo: 1120, q: 0.9, priority: 2 }, sfxBus.skill)
-		tone({ freq: audioLevelValue(a.startHzByLevel, level, 890), freqTo: audioLevelValue(a.endHzByLevel, level, 525), dur: audioLevelValue(a.durationByLevel, level, 0.072), type: 'square', gain: audioLevelValue(a.gainByLevel, level, 0.078), attack: 0.001, priority: 2 }, sfxBus.skill)
-	}
-	function playIceThrow() {
-		var a = SKILL_SFX.ice || {}, level = ownedLevel('ice')
-		sfxPing(0.55)
-		tone({ freq: audioLevelValue(a.throwStartHzByLevel, level, 1090), freqTo: a.throwEndHz || 520, dur: a.throwDuration || 0.105, type: 'sine', gain: audioLevelValue(a.throwGainByLevel, level, 0.064), priority: 2 }, sfxBus.skill)
-	}
-	function playIcePool() {
-		var a = SKILL_SFX.ice || {}, level = ownedLevel('ice')
-		sfxPing(0.60)
-		filteredNoise({ dur: a.poolDuration || 0.17, gain: a.poolAirGain || 0.032, filterType: 'highpass', freq: 1250, freqTo: 1900, q: 0.6, priority: 1 }, sfxBus.skill)
-		tone({ freq: audioLevelValue(a.poolStartHzByLevel, level, 455), freqTo: audioLevelValue(a.poolEndHzByLevel, level, 870), dur: a.poolDuration || 0.17, type: 'sine', gain: audioLevelValue(a.poolGainByLevel, level, 0.054), priority: 2 }, sfxBus.skill)
-	}
-	function playBurnDart() {
-		var a = SKILL_SFX.burnDart || {}
-		sfxPing(0.90)
-		filteredNoise({ dur: a.noiseDuration || 0.07, gain: a.noiseGain || 0.052, filterType: 'bandpass', freq: a.noiseHz || 1320, freqTo: 760, q: 0.85, crackle: true, priority: 2 }, sfxBus.combo)
-		tone({ freq: a.bodyStartHz || 460, freqTo: a.bodyEndHz || 205, dur: a.bodyDuration || 0.095, type: 'triangle', gain: a.bodyGain || 0.064, priority: 2 }, sfxBus.combo)
-		tone({ freq: a.emberStartHz || 980, freqTo: a.emberEndHz || 610, dur: a.emberDuration || 0.06, type: 'square', gain: a.emberGain || 0.03, priority: 1 }, sfxBus.combo)
-	}
-	function playSteamBlast(d) {
-		var a = SKILL_SFX.steam || {}, count = Math.max(1, Math.min(6, (d && d.hitCount) || 1)), weight = 1 + (count - 1) * 0.08
-		sfxPing(1.35); duck('light')
-		filteredNoise({ dur: a.noiseDuration || 0.145, gain: (a.noiseGain || 0.075) * weight, filterType: 'lowpass', freq: a.noiseHz || 1100, freqTo: 520, q: 0.65, priority: 3 }, sfxBus.combo)
-		tone({ freq: a.bodyStartHz || 185, freqTo: a.bodyEndHz || 78, dur: a.bodyDuration || 0.155, type: 'triangle', gain: (a.bodyGain || 0.105) * weight, priority: 3 }, sfxBus.combo)
-		tone({ freq: a.ventStartHz || 720, freqTo: a.ventEndHz || 1180, dur: a.ventDuration || 0.12, type: 'sine', gain: a.ventGain || 0.036, priority: 2 }, sfxBus.combo)
-	}
-
-	var deathCluster = { count: 0, kind: '', source: '', crit: false }, deathTimer = null
+	// Death aggregation: many kills become one collapse, not a rhythm machine.
+	var deathCluster = { count: 0, kind: '' }, deathTimer = null
 	function deathRank(kind) { return kind === 'elite' ? 4 : (kind === 'charger' ? 3 : (kind === 'chaser' ? 2 : 1)) }
-	function clearDeathCluster() {
-		if (deathTimer) { clearTimeout(deathTimer); deathTimer = null }
-		deathCluster.count = 0; deathCluster.kind = ''; deathCluster.source = ''; deathCluster.crit = false
-	}
+	function clearDeathCluster() { if (deathTimer) { clearTimeout(deathTimer); deathTimer = null }; deathCluster.count = 0; deathCluster.kind = '' }
 	function queueEnemyDeath(d) {
 		d = d || {}; if (d.kind === 'boss') { return }
-		deathCluster.count = Math.min(DEATH_AUDIO.maxClusterCount || 6, deathCluster.count + 1)
+		deathCluster.count = Math.min(8, deathCluster.count + 1)
 		if (!deathCluster.kind || deathRank(d.kind) > deathRank(deathCluster.kind)) { deathCluster.kind = d.kind || 'wanderer' }
-		deathCluster.source = d.source || deathCluster.source; deathCluster.crit = deathCluster.crit || !!d.crit
-		if (!deathTimer) { deathTimer = setTimeout(flushEnemyDeath, DEATH_AUDIO.clusterMs || 55) }
+		if (!deathTimer) { deathTimer = setTimeout(flushEnemyDeath, SFXCFG.deathClusterMs || 70) }
 	}
 	function flushEnemyDeath() {
-		deathTimer = null
-		if (!deathCluster.count || muted || hardPaused || !ensure()) { clearDeathCluster(); return }
-		var count = deathCluster.count, kind = deathCluster.kind || 'wanderer', src = deathCluster.source || '', elite = kind === 'elite'
-		var countMul = 1 + Math.min(5, count - 1) * 0.075
-		sfxPing(elite ? 1.6 : 0.8 + count * 0.12)
-		filteredNoise({ dur: DEATH_AUDIO.noiseDuration || 0.095, gain: (DEATH_AUDIO.noiseGain || 0.08) * countMul, filterType: 'lowpass', freq: DEATH_AUDIO.noiseHz || 620, freqTo: 280, q: 0.65, priority: elite ? 3 : 2 }, sfxBus.death)
-		var starts = DEATH_AUDIO.kindStartHz || {}, startHz = starts[kind] || starts.wanderer || 245
-		tone({ freq: startHz, freqTo: Math.max(52, startHz * 0.48), dur: DEATH_AUDIO.bodyDuration || 0.11, type: 'triangle', gain: (DEATH_AUDIO.bodyGain || 0.06) * countMul, priority: elite ? 3 : 2 }, sfxBus.death)
-		if (src === 'ice') { tone({ freq: 960, freqTo: 580, dur: 0.055, type: 'sine', gain: 0.022, priority: 1 }, sfxBus.death) }
-		else if (src === 'fire' || src === 'burn' || src === 'burning' || src === 'steam') { filteredNoise({ dur: 0.055, gain: 0.022, filterType: 'bandpass', freq: 1380, freqTo: 880, q: 0.8, crackle: true, priority: 1 }, sfxBus.death) }
-		else if (src === 'lightning' || src === 'electro') { tone({ freq: 1120, freqTo: 720, dur: 0.045, type: 'square', gain: 0.018, priority: 1 }, sfxBus.death) }
-		if (elite) {
-			tone({ freq: DEATH_AUDIO.eliteLowStartHz || 105, freqTo: DEATH_AUDIO.eliteLowEndHz || 48, dur: DEATH_AUDIO.eliteLowDuration || 0.18, type: 'triangle', gain: DEATH_AUDIO.eliteLowGain || 0.10, priority: 3 }, sfxBus.death)
-			duck('light')
-		}
+		deathTimer = null; if (!deathCluster.count) { return }
+		var kind = deathCluster.kind, count = deathCluster.count, id = kind === 'elite' ? 'death_elite' : (kind === 'charger' ? 'death_charger' : 'death_small')
+		var p = kind === 'elite' ? 3 : 2, gain = (kind === 'elite' ? 0.72 : 0.48) * (1 + Math.min(5, count - 1) * 0.045)
+		playBank(id, { family: 'death', priority: p, gain: gain, rate: Math.max(0.88, 1 - Math.min(5, count - 1) * 0.012), weight: 0.8 + count * 0.22, vary: true })
 		clearDeathCluster()
 	}
 
-	function playUiCue(notes, type, gain, spacing, when) {
-		if (muted || hardPaused || !ensure()) { return }
-		var t = when == null ? ctx.currentTime : when, step = spacing || 0.06
-		for (var i = 0; i < notes.length; i++) { tone({ freq: notes[i], dur: 0.12 + i * 0.02, type: type, gain: gain, priority: 4 }, uiGain, t + i * step) }
-	}
-	function playSfxCue(notes, type, gain, spacing, when) {
-		if (muted || hardPaused || !ensure()) { return }
-		var t = when == null ? ctx.currentTime : when, step = spacing || 0.06
-		for (var i = 0; i < notes.length; i++) { tone({ freq: notes[i], dur: 0.08 + i * 0.01, type: type, gain: gain, priority: 2 }, sfxBus.skill, t + i * step) }
-	}
-	function audioLevelValue(list, level, fallback) {
-		var i = Math.max(0, Math.min(4, (level || 1) - 1))
-		return list && list[i] != null ? list[i] : fallback
-	}
-	function playElectricLightning(d) {
-		if (muted || hardPaused || !ensure()) { return }
-		var meta = d && d.chain && d.chain.vfxMeta ? d.chain.vfxMeta : null
-		var level = Math.max(1, Math.min(5, meta && meta.level ? meta.level : ((d && d.level) || 1))), a = ELECTRIC_AUDIO.lightning, t = ctx.currentTime
-		var crackDur = audioLevelValue(a.crackleDurationByLevel, level, 0.10)
-		resume(); sfxPing(1.0)
-		filteredNoise({ dur: crackDur, gain: audioLevelValue(a.crackleGainByLevel, level, 0.09), filterType: 'bandpass', freq: audioLevelValue(a.crackleHzByLevel, level, 2700), freqTo: audioLevelValue(a.crackleHzByLevel, level, 2700) * 0.72, q: a.crackleQ, crackle: true, priority: 3 }, sfxBus.skill, t)
-		tone({ freq: audioLevelValue(a.snapStartHzByLevel, level, 1200), freqTo: audioLevelValue(a.snapEndHzByLevel, level, 680), dur: audioLevelValue(a.snapDurationByLevel, level, 0.085), type: 'sawtooth', gain: audioLevelValue(a.snapGainByLevel, level, 0.12), attack: 0.002, priority: 3 }, sfxBus.skill, t)
-		tone({ freq: audioLevelValue(a.tailStartHzByLevel, level, 1040), freqTo: audioLevelValue(a.tailEndHzByLevel, level, 1600), dur: audioLevelValue(a.tailDurationByLevel, level, 0.12), type: 'triangle', gain: audioLevelValue(a.tailGainByLevel, level, 0.043), attack: 0.004, priority: 2 }, sfxBus.skill, t + 0.012)
-		var pulses = audioLevelValue(a.pulseCountByLevel, level, 1), pulseGain = audioLevelValue(a.pulseGainByLevel, level, 0.03)
-		for (var i = 0; i < pulses; i++) {
-			tone({ freq: 1680 - i * 150, freqTo: 1080 - i * 90, dur: a.pulseDurationSec, type: 'square', gain: pulseGain, attack: 0.001, priority: 2 }, sfxBus.skill, t + 0.018 + i * a.pulseSpacingSec)
-		}
-	}
-	function playElectroDeploy(d) {
-		if (muted || hardPaused || !ensure()) { return }
-		var a = ELECTRIC_AUDIO.electro, t = ctx.currentTime
-		resume(); sfxPing(0.75)
-		tone({ freq: a.deployStartHz, freqTo: a.deployEndHz, dur: a.deployDuration, type: 'sine', gain: a.deployGain, attack: 0.012, priority: 2 }, sfxBus.combo, t)
-		tone({ freq: a.deployBodyStartHz, freqTo: a.deployBodyEndHz, dur: a.deployDuration * 0.90, type: 'triangle', gain: a.deployBodyGain, attack: 0.010, priority: 2 }, sfxBus.combo, t)
-	}
-	function playElectroFire(d) {
-		if (muted || hardPaused || !ensure()) { return }
-		var a = ELECTRIC_AUDIO.electro, level = Math.max(1, Math.min(5, (d && d.comboLevel) || 1)), t = ctx.currentTime
-		resume(); sfxPing(1.35); duck('light')
-		tone({ freq: audioLevelValue(a.fireBodyStartHzByLevel, level, 175), freqTo: a.fireBodyEndHz, dur: audioLevelValue(a.fireBodyDurationByLevel, level, 0.12), type: 'triangle', gain: audioLevelValue(a.fireBodyGainByLevel, level, 0.16), attack: 0.002, priority: 4 }, sfxBus.combo, t)
-		filteredNoise({ dur: a.blastNoiseDuration, gain: audioLevelValue(a.blastNoiseGainByLevel, level, 0.086), filterType: 'lowpass', freq: a.blastNoiseHz, freqTo: a.blastNoiseHz * 0.58, q: a.blastNoiseQ, priority: 3 }, sfxBus.combo, t)
-		tone({ freq: a.fireClickStartHz, freqTo: a.fireClickEndHz, dur: a.fireClickDuration, type: 'square', gain: audioLevelValue(a.fireClickGainByLevel, level, 0.065), attack: 0.001, priority: 3 }, sfxBus.combo, t + 0.006)
-		tone({ freq: audioLevelValue(a.energyStartHzByLevel, level, 810), freqTo: audioLevelValue(a.energyEndHzByLevel, level, 440), dur: a.energyDuration, type: 'triangle', gain: audioLevelValue(a.energyGainByLevel, level, 0.055), attack: 0.003, priority: 2 }, sfxBus.combo, t + 0.018)
-	}
-	function playElectroEnd(d) {
-		if (muted || hardPaused || !ensure()) { return }
-		var a = ELECTRIC_AUDIO.electro, t = ctx.currentTime
-		resume(); sfxPing(0.35); tone({ freq: a.endStartHz, freqTo: a.endEndHz, dur: a.endDuration, type: 'sine', gain: a.endGain, attack: 0.006, priority: 1 }, sfxBus.combo, t)
-	}
-
 	function playUiSemantic(d) {
-		d = d || {}
-		var cue = UI_AUDIO[d.kind] || UI_AUDIO.press
-		if (d.id === 'replay') { suppressStartCue = true }
-		playUiCue(cue.notes, 'sine', cue.gain, cue.spacing)
+		d = d || {}; if (!ensure()) { return }; var kind = d.kind || 'press', id = 'ui_' + kind
+		if (kind === 'pause_in' || kind === 'pause_out') { id = 'ui_' + kind }
+		else if (d.id === 'replay') { id = 'ui_replay'; suppressStartCue = true }
+		if (!sampleBank[id]) { id = kind === 'confirm' ? 'ui_confirm' : (kind === 'back' ? 'ui_back' : (kind === 'toggle' ? 'ui_toggle' : 'ui_press')) }
+		playBank(id, { family: 'ui', priority: 4, gain: kind === 'press' ? 0.38 : 0.48 })
 	}
-	function playSkillCue(id, level) {
-		var a = SKILL_AUDIO[id] || SKILL_AUDIO.fire, lv = Math.max(1, level || 1)
-		if (lv >= 5) {
-			playUiCue([a.base, a.base * a.rise, a.base * a.rise * 1.25], a.type, 0.16, 0.07)
-		} else if (lv > 1) {
-			playUiCue([a.base * 0.85, a.base * a.rise], a.type, 0.13, 0.08)
-		} else {
-			playUiCue([a.base, a.base * a.rise], a.type, 0.12, 0.09)
-		}
-	}
-	function playComboCue(id) {
-		var a = COMBO_AUDIO[id]
-		if (!a) { return }
-		playUiCue(a.notes, a.type, 0.18, 0.09)
-		duck('major')
-	}
-	function playPauseCue() { playUiCue([360, 540], 'triangle', 0.14, 0.07) }
-	function playStartCue(replay) { playUiCue(replay ? [300, 450, 600] : [220, 330], 'sine', 0.12, 0.08) }
-	function playDeathCue() {
-		if (muted || hardPaused || !ensure()) { return }
-		var at = ctx.currentTime + (MIX.deathSilenceSec == null ? 0.12 : MIX.deathSilenceSec)
-		playUiCue([260, 190, 120], 'sawtooth', 0.16, 0.10, at)
-	}
-	function playBossDefeatCue() {
-		if (muted || hardPaused || !ensure()) { return }
-		var t = ctx.currentTime
-		tone({ freq: BOSS_AUDIO.impactFreq, freqTo: BOSS_AUDIO.impactEndHz, dur: BOSS_AUDIO.impactDuration, type: 'triangle', gain: BOSS_AUDIO.impactGain, priority: 4 }, uiGain, t)
-		noise(BOSS_AUDIO.impactNoiseDuration, BOSS_AUDIO.impactNoiseGain, uiGain, t, 4)
-		var motiveAt = t + BOSS_AUDIO.restSec
-		playUiCue(BOSS_AUDIO.motive, 'triangle', BOSS_AUDIO.motiveGain, BOSS_AUDIO.motiveSpacing, motiveAt)
-		var atmosphereAt = t + BOSS_AUDIO.atmosphereDelay
-		for (var i = 0; i < BOSS_AUDIO.atmosphere.length; i++) { tone({ freq: BOSS_AUDIO.atmosphere[i], dur: BOSS_AUDIO.atmosphereDuration, type: 'sine', gain: BOSS_AUDIO.atmosphereGain, priority: 4 }, uiGain, atmosphereAt + i * 0.04) }
-	}
+	function playSkillGain(d) { d = d || {}; var id = 'gain_' + (d.id || 'fire'); playBank(sampleBank[id] ? id : 'ui_confirm', { family: 'ui', priority: 4, gain: 0.58 }); duck('major') }
+	function playComboFound(d) { d = d || {}; var id = 'found_' + d.id; if (!sampleBank[id]) { return }; playBank(id, { family: 'ui', priority: 5, gain: 0.68 }); duck('major') }
+	function playStartCue(replay) { playBank(replay ? 'ui_replay' : 'ui_start', { family: 'ui', priority: 4, gain: 0.50 }) }
+	function playPauseCue() { playUiSemantic({ kind: 'pause_out' }) }
+	function playDeathCue() { var at = ctx ? ctx.currentTime + (MIX.deathSilenceSec == null ? 0.10 : MIX.deathSilenceSec) : null; playBank('player_death', { family: 'ui', priority: 5, gain: 0.72, when: at }) }
+	function playBossDefeatCue() { playBank('boss_defeat', { family: 'ui', priority: 5, gain: 0.78 }) }
 
+	// ---------------- Event ownership ----------------
+	// P5: survival / must-react threat. P4: key outcome. P3: skill identity. P2/P1: expendable detail.
 	Bus.on('ui:feedback', playUiSemantic)
-	Bus.on('snake:hurt', function () {
-		sfxPing(2); tone({ freq: 180, freqTo: 70, dur: 0.22, type: 'sawtooth', gain: 0.30, priority: 5 }, sfxBus.player); duck('major')
-	})
-	Bus.on('snake:wall', function () { throttled('snake:wall', 110, function () { sfxPing(0.25); filteredNoise({ dur: 0.065, gain: 0.045, filterType: 'lowpass', freq: 720, freqTo: 360, q: 0.7, priority: 2 }, sfxBus.player) }) })
+	Bus.on('snake:hurt', function (d) { d = d || {}; var critical = Number(d.coreHp) <= 1; playBank(critical ? 'player_critical' : 'player_hurt', { family: 'player', priority: 5, gain: critical ? 0.84 : 0.76, weight: 2 }); duck('major') })
+	Bus.on('snake:wall', function () { throttled('snake:wall', SFXCFG.wallCooldownMs || 320, function () { playBank('wall_scrape', { family: 'player', priority: 1, gain: 0.28, weight: 0.45, vary: true }) }) })
+	Bus.on('enemy:charger_warn', function () { throttled('charger:warn', SFXCFG.chargerWarnCooldownMs || 180, function () { playBank('charger_warn', { family: 'threat', priority: 5, gain: 0.70, weight: 1.5 }); duck('light') }) })
+	Bus.on('enemy:charger_charge', function () { throttled('charger:charge', SFXCFG.chargerChargeCooldownMs || 150, function () { playBank('charger_charge', { family: 'threat', priority: 4, gain: 0.66, weight: 1.2 }) }) })
+	Bus.on('boss:attack_warn', function () { throttled('boss:attack_warn', SFXCFG.bossAttackWarnCooldownMs || 220, function () { playBank('boss_attack_warn', { family: 'threat', priority: 5, gain: 0.72, weight: 1.5 }); duck('light') }) })
+	Bus.on('boss:attack_fire', function () { throttled('boss:attack_fire', SFXCFG.bossAttackFireCooldownMs || 180, function () { playBank('boss_attack_fire', { family: 'boss', priority: 4, gain: 0.76, weight: 1.3 }) }) })
+	Bus.on('enemy:phase', function () { playBank('boss_phase', { family: 'boss', priority: 5, gain: 0.78, weight: 2 }); duck('major') })
+	Bus.on('wave:boss_warn', function () { playBank('boss_warn', { family: 'threat', priority: 5, gain: 0.78, weight: 2 }); duck('major') })
+
 	Bus.on('enemy:hit', function (d) {
 		d = d || {}
-		if (d.isDot && d.src === 'fire') { throttled('hit:fire', HIT_AUDIO.fireThrottleMs || 190, playFire); return }
-		if (d.isDot && d.src === 'shield') { throttled('hit:shield', HIT_AUDIO.shieldThrottleMs || 210, playShieldContact); return }
-		if (d.isDot && d.src === 'burn') { throttled('hit:burn', HIT_AUDIO.burnThrottleMs || 250, playBurnTick); return }
-		// 这些来源由对应 fx:* 事件拥有主要音效，禁止再叠通用命中音。
+		if (d.isDot && d.src === 'fire') { throttled('hit:fire', SFXCFG.fireCooldownMs || 360, function () { playBank('fire_contact', { family: 'skill', priority: 1, gain: 0.36, weight: 0.8, vary: true }) }); return }
+		if (d.isDot && d.src === 'shield') { throttled('hit:shield', SFXCFG.shieldCooldownMs || 280, function () { playBank('shield_contact', { family: 'skill', priority: 2, gain: 0.40, weight: 0.7, vary: true }) }); return }
+		if (d.isDot && d.src === 'burn') { return } // Burning Barrage projectile owns the audible identity; burn DOT is intentionally silent.
 		if (d.src === 'bolt' || d.src === 'burning' || d.src === 'steam' || d.src === 'lightning' || d.src === 'electro') { return }
-		throttled('hit:generic', HIT_AUDIO.genericThrottleMs || 85, function () { playGenericHit(d) })
+		throttled('hit:generic', SFXCFG.genericHitCooldownMs || 120, function () { playBank(d.crit ? 'crit_hit' : 'generic_hit', { family: 'impact', priority: d.crit ? 3 : 1, gain: d.crit ? 0.55 : 0.30, weight: d.crit ? 1.2 : 0.55, vary: !d.crit }) })
 	})
 	Bus.on('enemy:die', queueEnemyDeath)
-	Bus.on('enemy:phase', function () { sfxPing(2); tone({ freq: 110, freqTo: 60, dur: 0.50, type: 'triangle', gain: 0.26, priority: 5 }, sfxBus.boss); duck('major') })
-	Bus.on('skill:offer', function () { sfxPing(1.2); chooseDuckMul = MIX.chooseDuckMul == null ? 0.50 : MIX.chooseDuckMul; applyBgmGain(false); playUiCue([520, 660, 880], 'sine', 0.14, 0.08) })
-	Bus.on('skill:gained', function (d) { d = d || {}; chooseDuckMul = 1; applyBgmGain(false); playSkillCue(d.id, d.level); duck('major') })
-	Bus.on('combo:found', function (d) { sfxPing(1.8); playComboCue(d && d.id) })
-	Bus.on('wave:boss_warn', function () { sfxPing(2); tone({ freq: 92, freqTo: 46, dur: 0.20, type: 'triangle', gain: 0.13, attack: 0.003, priority: 4 }, sfxBus.boss); duck('major') })
-	Bus.on('pickup:eat', function (d) {
-		d = d || {}
-		if (d.kind === 'skill') { return }   // 技能球由 skill:offer 拥有声音，避免同帧双提示。
-		if (d.kind === 'heal') { sfxPing(0.8); playUiCue([300, 450], 'triangle', 0.10, 0.08) }
-		else { throttled('pickup:food', 85, function () { sfxPing(0.35); tone({ freq: 760, freqTo: 940, dur: 0.065, type: 'triangle', gain: 0.060, priority: 2 }, uiGain) }) }
-	})
-	Bus.on('fx:bolt', function () { var a = SKILL_SFX.bolt || {}; throttled('fx:bolt', a.throttleMs || 95, playBolt) })
-	Bus.on('fx:ice_throw', function () { var a = SKILL_SFX.ice || {}; throttled('fx:ice_throw', a.throwThrottleMs || 130, playIceThrow) })
-	Bus.on('fx:ice_pool', function () { var a = SKILL_SFX.ice || {}; throttled('fx:ice_pool', a.poolThrottleMs || 190, playIcePool) })
-	Bus.on('fx:lightning', function (d) { electricGate('lightning', function () { playElectricLightning(d) }) })
-	Bus.on('fx:electroturretdeploy', function (d) { electricGate('electro', function () { playElectroDeploy(d) }) })
-	Bus.on('fx:electroturretfire', function (d) { electricGate('electro', function () { playElectroFire(d) }) })
-	Bus.on('fx:electroturretend', playElectroEnd)
-	Bus.on('fx:steamblast', function (d) { var a = SKILL_SFX.steam || {}; throttled('fx:steamblast', a.throttleMs || 210, function () { playSteamBlast(d) }) })
-	Bus.on('fx:burndart', function () { var a = SKILL_SFX.burnDart || {}; throttled('fx:burndart', a.throttleMs || 125, playBurnDart) })
+	Bus.on('skill:offer', function () { chooseDuckMul = MIX.chooseDuckMul == null ? 0.56 : MIX.chooseDuckMul; applyBgmGain(false); playBank('ui_offer', { family: 'ui', priority: 4, gain: 0.52 }) })
+	Bus.on('skill:gained', function (d) { chooseDuckMul = 1; applyBgmGain(false); playSkillGain(d) })
+	Bus.on('combo:found', playComboFound)
+	Bus.on('pickup:eat', function (d) { d = d || {}; if (d.kind === 'skill') { return }; if (d.kind === 'heal') { playBank('pickup_heal', { family: 'ui', priority: 3, gain: 0.50 }) } else { throttled('pickup:food', 90, function () { playBank('pickup_food', { family: 'ui', priority: 2, gain: 0.34 }) }) } })
 
+	Bus.on('fx:bolt', function (d) { d = d || {}; if ((d.shotIndex || 0) !== 0) { return }; var count = Math.max(1, Math.min(5, Number(d.shotCount) || 1)), level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel('bolt'))); playBank('bolt_' + count, { family: 'skill', priority: 3, gain: 0.47 + level * 0.025, rate: 0.97 + level * 0.012, weight: 1.0 }) })
+	Bus.on('fx:ice_throw', function () { throttled('fx:ice_throw', 115, function () { playBank('ice_throw', { family: 'skill', priority: 3, gain: 0.46, weight: 1.0, vary: true }) }) })
+	Bus.on('fx:ice_pool', function () { throttled('fx:ice_pool', 160, function () { playBank('ice_bloom', { family: 'skill', priority: 3, gain: 0.50, weight: 1.0, vary: true }) }) })
+	Bus.on('fx:lightning', function (d) { d = d || {}; var meta = d.chain && d.chain.vfxMeta, level = Math.max(1, Math.min(5, Number(meta && meta.level) || ownedLevel('lightning'))); playBank('lightning_' + level, { family: 'skill', priority: 3, gain: 0.53 + level * 0.025, weight: 1.1 }) })
+	Bus.on('fx:electroturretdeploy', function () { playBank('electro_deploy', { family: 'combo', priority: 3, gain: 0.50, weight: 1.0 }) })
+	Bus.on('fx:electroturretfire', function (d) { d = d || {}; var level = Math.max(1, Math.min(5, Number(d.comboLevel) || 1)); playBank('electro_fire', { family: 'combo', priority: 4, gain: 0.58 + level * 0.025, rate: 1 - (level - 1) * 0.008, weight: 1.3 }) })
+	Bus.on('fx:electroturretend', function () { playBank('electro_end', { family: 'combo', priority: 2, gain: 0.34, weight: 0.5 }) })
+	Bus.on('fx:steamblast', function (d) { d = d || {}; throttled('fx:steamblast', SFXCFG.steamCooldownMs || 180, function () { var c = Math.max(1, Math.min(6, Number(d.hitCount) || 1)); playBank('steam_blast', { family: 'combo', priority: 4, gain: 0.55 + (c - 1) * 0.025, rate: 1 - (c - 1) * 0.006, weight: 1.4 }) }) })
+	Bus.on('fx:burndart', function (d) { d = d || {}; var delay = Math.max(0, Number(d.visualDelay) || 0), level = Math.max(1, Math.min(5, Number(d.level) || 1)); if (!ensure()) { return }; playBank('burn_dart', { family: 'combo', priority: 3, gain: 0.44 + level * 0.018, rate: 0.98 + (Number(d.shotIndex) || 0) * 0.012, when: ctx.currentTime + delay, weight: 0.8 }) })
 	// ================= Golden-Master Single-Source BGM =================
 	// Five clean loops only. No musical transition assets and no Boss-warning BGM.
 	// Stage changes are phase-locked to the current 4-bar cycle; gameplay owns all durations.
@@ -533,7 +379,7 @@
 	}
 	function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
 	function applyBgmGain(immediate) {
-		var v = (muted ? 0 : MASTER_GAIN * AUDIO.bgmVolume * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul)
+		var v = (muted ? 0 : MASTER_GAIN * (AUDIO.bgmVolume == null ? 0.37 : AUDIO.bgmVolume) * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul)
 		v = clamp(v, 0, 1)
 		for (var key in bgmMedia) {
 			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
@@ -542,7 +388,7 @@
 	}
 	function applySfxGain(immediate) {
 		if (!sfxGain || !ctx) { return }
-		var t = ctx.currentTime, g = sfxGain.gain, v = AUDIO.sfxVolume * sfxPauseMul; g.cancelScheduledValues(t)
+		var t = ctx.currentTime, g = sfxGain.gain, v = (AUDIO.sfxVolume == null ? 0.78 : AUDIO.sfxVolume) * sfxPauseMul; g.cancelScheduledValues(t)
 		if (immediate) { g.setValueAtTime(v, t) } else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + AUDIO_MIX.pauseRampSec) }
 	}
 	function normalizeMusicState(value) {
@@ -752,10 +598,8 @@
 		stopVoices(bgmNodes)
 	}
 	function clearAudioTimers() {
-		if (densityTimer) { clearTimeout(densityTimer); densityTimer = null }
 		if (duckTimer) { clearTimeout(duckTimer); duckTimer = null }
-		clearDeathCluster(); duckReleaseAt = 0
-		densityOn = false; densityDuckMul = 1; eventDuckMul = 1
+		clearDeathCluster(); duckReleaseAt = 0; resetDensity(); eventDuckMul = 1
 	}
 
 	// —— BGM 事件订阅（追加，不动既有 12 事件音效行）——
@@ -768,7 +612,7 @@
 		stopBgm(); stopVoices(sfxNodes); stopVoices(uiNodes)
 		pauseMul = 1; sfxPauseMul = 1; eventDuckMul = 1; densityDuckMul = 1; chooseDuckMul = 1
 		var initialMusic = initialMusicDescriptor(), initialState = resolveMusicState(initialMusic)
-		densityOn = false; sfxCount = 0; sfxWinStart = 0; _lastAt = {}; electricGateAt.lightning = -Infinity; electricGateAt.electro = -Infinity; currentStage = Number(initialMusic.stageId) || 1; pendingMusicStage = 0; currentMusicState = initialState; pendingMusicState = ''; curLayer = initialState; battleHeat = MUSIC_STATE_HEAT[initialState] == null ? 0 : MUSIC_STATE_HEAT[initialState]; stageBgmMul = 1; stageTransitionPending = 0; bossWarningActive = false; bossLoopAtGameTime = null
+		resetDensity(); _lastAt = {}; currentStage = Number(initialMusic.stageId) || 1; pendingMusicStage = 0; currentMusicState = initialState; pendingMusicState = ''; curLayer = initialState; battleHeat = MUSIC_STATE_HEAT[initialState] == null ? 0 : MUSIC_STATE_HEAT[initialState]; stageBgmMul = 1; stageTransitionPending = 0; bossWarningActive = false; bossLoopAtGameTime = null
 		pressureLevel = 0; pressureTarget = 0; buildLevel = 0; buildTarget = 0; pressureBgmMul = 1; lastPressureBgmMul = 1; musicSampleAt = 0; runCount++
 		if (ensure()) { applySfxGain(true); applyMusicState(initialState, currentStage) }
 		startBgm()
@@ -791,7 +635,8 @@
 	Bus.on('game:pause_changed', function () {
 		var st = global.GS && global.GS.status
 		if (st === 'paused') {
-			hardPaused = true; clearAudioTimers(); stopVoices(uiNodes); pauseBgm(); stopVoices(sfxNodes); pauseMul = 0; sfxPauseMul = 0; applyBgmGain(false); applySfxGain(false)
+			stopVoices(uiNodes); playUiSemantic({ kind: 'pause_in', id: 'pause' })
+			hardPaused = true; clearAudioTimers(); pauseBgm(); stopVoices(sfxNodes); pauseMul = 0; sfxPauseMul = 0; applyBgmGain(false); applySfxGain(false)
 		} else {
 			hardPaused = false; pauseMul = 1; sfxPauseMul = 1; applyBgmGain(false); applySfxGain(false); startBgm(); resume(function () { playPauseCue() })
 		}
@@ -809,6 +654,8 @@
 		isRunning: function () { return !!(ctx && ctx.state === 'running') },
 		registerSample: registerSample,
 		playSample: playSample,
+		previewSfx: function (id) { return playBank(id, { family: 'ui', priority: 5, gain: 0.55 }) },
+		listSfx: function () { ensure(); return Object.keys(sampleBank).filter(function (k) { return k !== '__ready' }).sort() },
 		debugState: function () {
 			var mediaPlaying = [], mediaAudible = []
 			for (var key in bgmMedia) {
@@ -817,10 +664,10 @@
 				if (!media.paused) { mediaPlaying.push(key) }
 				if (!media.paused && media.volume > 0.0001) { mediaAudible.push(key) }
 			}
-			return { context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, voices: voiceSnapshot() }
+			return { specVersion: 'AUDIO-FINAL-1.0', context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, sfxDensity: densityScore, sampleCount: Object.keys(sampleBank).length - (sampleBank.__ready ? 1 : 0), voices: voiceSnapshot() }
 		}
 	}
 	Registry.register('audio', Audio)
-	Log.info('audio 就绪：Golden Master 单源相位锁定 BGM + 可选阶段/Boss + Voice Budget')
+	Log.info('audio 就绪：AUDIO-FINAL-1.0 · Golden Master BGM冻结 + Sample Bank SFX + Priority/Voice Budget')
 
 })(typeof window !== 'undefined' ? window : this)

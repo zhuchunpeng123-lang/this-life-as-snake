@@ -220,7 +220,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		buildInfoLayer = mk('div', '', froot); buildInfoLayer.className = 'ui-v1-build-info-layer'
 		buildInfoBox = mk('div', '', buildInfoLayer); buildInfoBox.className = 'ui-v1-build-info'
 		buildInfoLayer.setAttribute('aria-hidden', 'true')
-		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { e.preventDefault(); hideBuildInfo() } }
+		buildInfoLayer.onclick = function (e) { if (e.target === buildInfoLayer) { e.preventDefault(); Bus.emit('ui:feedback', { kind: 'back', id: 'build_info_backdrop' }); hideBuildInfo() } }
 		buildInfoBox.onclick = function (e) { e.stopPropagation() }
 		global.addEventListener('keydown', function (e) { if (e.key === 'Escape' && buildInfoLayer && buildInfoLayer.style.display !== 'none') { hideBuildInfo() } })
 		hudSkills.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudSkills, 'data-skill', 'skill', 'skill_status') })
@@ -402,7 +402,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		after(stillMs + flashMs, function () {
 			var viewScore = mk('button', 'margin-top:12px;padding:9px 16px;border:1px solid ' + STYLE.ui + ';border-radius:999px;background:transparent;color:' + STYLE.textMain + ';font:700 14px system-ui;cursor:pointer', stage)
 			viewScore.textContent = '查看战绩'
-			viewScore.onclick = function () { resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) }
+			viewScore.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'view_score' }); resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) }
 		})
 		after(stillMs + flashMs + eulogyMs, function () { resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) })
 		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })
@@ -644,7 +644,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		buildInfoBox.innerHTML = '<h3>' + iconText(title) + '</h3><div class="ui-v1-build-info-card"><div class="ui-v1-info-icon">' + icon + '</div><div class="ui-v1-build-info-detail">' + iconText(detail) + '</div></div><button type="button" class="ui-v1-build-info-close">关闭</button>'
 		var close = buildInfoBox.querySelector('.ui-v1-build-info-close')
 		if (close) {
-			close.onclick = function (e) { e.preventDefault(); e.stopPropagation(); hideBuildInfo() }
+			close.onclick = function (e) { e.preventDefault(); e.stopPropagation(); Bus.emit('ui:feedback', { kind: 'back', id: 'build_info_close' }); hideBuildInfo() }
 		}
 		buildInfoLayer.setAttribute('aria-hidden', 'false')
 		buildInfoLayer.style.display = 'flex'
