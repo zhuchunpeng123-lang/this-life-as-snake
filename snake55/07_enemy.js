@@ -147,10 +147,16 @@
 		for (var i = 0; i < rp.length; i++) { if (now >= rp[i].startSec && now < rp[i].endSec) { return rp[i].speedMul } }
 		return 1
 	}
-	// 敌速 = min(raw, snakeSpeed×capRatio) × 新手mul × (1-slow)  → 保证玩家可甲脱
+	// 普通敌速 = min(raw, snakeSpeed×capRatio) × 新手mul × (1-slow)；明确的短时冲锋走 burstMoveSpeed 例外。
 	function moveSpeed(e, raw, sm) {
 		var cap = CONFIG.PLAYER.snakeSpeed * CB.enemySpeedCapRatio
 		var s = (raw > cap ? cap : raw) * sm
+		if (e.slowT > 0) { s *= (1 - e.slowPct) }
+		return s
+	}
+	// Third Wave：仅供明确的短时爆发行为绕过普通敌速上限；仍吃新手倍率与冰系减速。
+	function burstMoveSpeed(e, raw, sm) {
+		var s = raw * sm
 		if (e.slowT > 0) { s *= (1 - e.slowPct) }
 		return s
 	}
@@ -227,6 +233,13 @@
 		if (e.cd <= 0) { e.angle = Math.random() * M.PI2; e.cd = WANDER_REDIR_SEC }
 		e.x += Math.cos(e.angle) * spd * dt; e.y += Math.sin(e.angle) * spd * dt; clampWorld(e)
 	}
+	// Third Wave：Wanderer 只进入玩家周边火力区，不精准追蛇头。目标始终落在蛇头外圈，距离过近时会自然向外退回。
+	function approachWanderer(e, hx, hy, spd, dt) {
+		var r = EN.wanderer.approachRadius || 80
+		var dx = e.x - hx, dy = e.y - hy, L = M.len(dx, dy)
+		if (L < 0.001) { var a = (e.id * 2.3999632297) % M.PI2; dx = Math.cos(a); dy = Math.sin(a); L = 1 }
+		steer(e, hx + dx / L * r, hy + dy / L * r, spd, dt)
+	}
 	function sensesHead(e, hx, hy) { return e.senseRange < 0 ? true : M.distSq(e.x, e.y, hx, hy) <= e.senseRange * e.senseRange }
 	// 实时标定桥：读 GM 运行时覆盖（与 09_wave RT 同款语义），未命中回退 fb（config 真源）
 	function RT(path, fb) {
@@ -249,7 +262,7 @@
 			if (e.stateT <= 0) { e.state = 'charge'; e.stateT = CHARGE_DURATION_SEC }
 		} else if (e.state === 'charge') {
 			e.stateT -= dt
-			var cs = moveSpeed(e, cfg.chargeSpeed, sm)
+			var cs = burstMoveSpeed(e, cfg.chargeSpeed, sm)
 			e.x += Math.cos(e.angle) * cs * dt; e.y += Math.sin(e.angle) * cs * dt; clampWorld(e)
 			if (e.stateT <= 0) { e.state = 'stun'; e.stateT = cfg.stunSec }
 		} else { e.stateT -= dt; if (e.stateT <= 0) { e.state = 'seek'; e.cd = cfg.stunSec } }
@@ -291,12 +304,18 @@
 	}
 	if (e.stun > 0) { e._chasing = false; e.stun -= dt; applyKnockback(e); resolveContact(e, dt); return }
 		e._chasing = false
-		if (e.type === 'chaser' || e.type === 'elite') { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+		if (e.type === 'chaser') {
+			var chaserStageIdx = GS.stageId - 1
+			var chaserByStage = EN.chaser.speedByStage
+			var chaserSpeed = (chaserByStage && chaserByStage[chaserStageIdx]) || e.baseSpeed
+			e._chasing = true; steer(e, hx, hy, moveSpeed(e, chaserSpeed, sm), dt)
+		}
+		else if (e.type === 'elite') { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 		else if (e.type === 'wanderer') {
-		var stageIdx = GS.stageId - 1
-		var byStage = EN.wanderer.aggroRangeByStage
-		var aggro = RT('ENEMIES.wanderer.aggroRangeByStage.' + GS.stageId, (byStage && byStage[stageIdx]) || 0)   // First Wave：各阶段只要配置 aggro>0 即生效；保护期靠 rookieProtect 降速而不是让怪失联。
-		if (sensesHead(e, hx, hy) || (aggro > 0 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro)) { e._chasing = true; steer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
+			var stageIdx = GS.stageId - 1
+			var byStage = EN.wanderer.aggroRangeByStage
+			var aggro = RT('ENEMIES.wanderer.aggroRangeByStage.' + GS.stageId, (byStage && byStage[stageIdx]) || 0)
+			if (aggro > 0 && M.distSq(e.x, e.y, hx, hy) <= aggro * aggro) { approachWanderer(e, hx, hy, moveSpeed(e, e.baseSpeed, sm), dt) }
 			else { wander(e, moveSpeed(e, e.baseSpeed, sm) * 0.6, dt) }
 		}
 		else if (e.type === 'charger') { e._chasing = true; updateCharger(e, hx, hy, dt, sm) }
@@ -308,7 +327,7 @@
 	var Enemy = {
 		list: list, spawn: spawn, spawnDummy: spawnDummy, applyDamage: applyDamage, applySlow: applySlow, ignite: ignite,
 		countMobs: function () { var c = 0; for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type !== 'bossBullet' && !list[i].isDummy) { c++ } } return c },   // B-GM：假人不占刷怪 cap
-		chasingCount: function () { var c = 0; for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.active && e.type !== 'bossBullet' && !e.isDummy && e._chasing) { c++ } } return c },   // 段≥② aggro 读数：当前帧正向蛇头移动(追蛇)实敌数(含 chaser/elite/charger/boss/被aggro的wanderer；不含游荡中wanderer)；供 Debug HUD「追蛇数/总数」
+		chasingCount: function () { var c = 0; for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.active && e.type !== 'bossBullet' && !e.isDummy && e._chasing) { c++ } } return c },   // Third Wave：只统计真正追头/主动威胁单位（chaser/elite/charger/boss）；Wanderer 仅负责进场供割，不计入追蛇压力。
 		hasBoss: function () { for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].type === 'boss') { return true } } return false },
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }

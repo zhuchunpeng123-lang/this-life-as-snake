@@ -165,9 +165,9 @@
 
 		// —— §3 ENEMIES（senseRange: -1 = 全屏/无限） ——
 		ENEMIES: {
-			chaser: { hp: 20, atk: 1, speed: 120, senseRange: -1, radius: 11 },
-			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [800, 800, 800, 800, 0], wanderRedirSec: 1.5 },   // Second Wave：Stage1-4 aggro 均覆盖刷怪环520-760，使低威胁 wanderer 持续进入玩家火力区，减少屏外占 cap 导致的清场空窗。
-			charger: { hp: 60, atk: 1, speed: 90, chargeSpeed: 160, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },
+			chaser: { hp: 20, atk: 1, speed: 120, speedByStage: [120, 120, 140, 155, 120], senseRange: -1, radius: 11 },   // Third Wave：成长期保持120；割草/高潮逐步升至140/155制造路线压力；Boss段回120，本轮不改Boss压力。
+			wanderer: { hp: 15, atk: 1, speed: 80, senseRange: 250, radius: 10, aggroRangeByStage: [800, 800, 800, 800, 0], approachRadius: 80, wanderRedirSec: 1.5 },   // Third Wave：继续用800 aggro保证进场，但只靠近蛇头周边约80px，不再精准锁头；定位固定为低威胁割草素材。
+			charger: { hp: 60, atk: 1, speed: 90, chargeSpeed: 215, senseRange: 350, radius: 14, chargeWindupSec: 0.7, stunSec: 1.0 },   // Third Wave：冲锋短时允许超过普通敌速上限；0.7s预警后才爆发，保留可读闪避窗口。
 			elite: { hp: 260, atk: 1, speed: 60, senseRange: -1, radius: 24 },
 			boss: { hpTotal: 17500, hpPhase1: 8750, hpPhase2: 8750, atk: 1, speedPhase1: 110, speedPhase2: 70, phaseThresholdPct: 0.5, transitionInvulnSec: 2.0, fireIntervalSec: 3.4, phase2FireIntervalSec: 2.6, bulletSpeed: 140, radius: 60 }
 		},
