@@ -432,10 +432,29 @@
 					}
 				},
 				priority: { low: 0, normal: 1, high: 2, danger: 3 },
-				// 范围底色只作弱提示；技能本体由下方 skillVfx 的精灵和短时爆点承担，避免大面积色块吞掉战场。
-				fieldReadability: { fireFillAlpha: 0.09, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
+				// Fire V3：范围必须明显可读，但常驻态不与 Combo 抢峰值。底色负责“这里会烧”，PNG/炽痕负责“这是火”。
+				fieldReadability: { fireFillAlpha: 0.120, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
 				skillVfx: {
-					fire: { anchorStep: 2, maxAnchors: 5, rangeEdgeAlpha: 0.62, rangeEdgeWidthPx: 1.5, rangeArcGapRad: 0.62, pulseHz: 3.2, pulseAmount: 0.14 },
+					fire: {
+						// Fire先锋候选：方向中性的近圆簇火。大小只靠 scale，不再使用细长 accent 火舌。
+						coreSpriteSrc: 'assets/vfx/fire/vfx_fire_cluster_round_v1.png',
+						accentSpriteSrc: 'assets/vfx/fire/vfx_fire_cluster_round_v1.png',
+						fillOuterColor: '#ff5f27', fillOuterAlphaByLevel: [0.080, 0.084, 0.088, 0.092, 0.096],
+						// 火苗位置：按真实中心线生成左右/头尾 exposed candidates；数量随 Tube 周长增长。
+						candidateCenterSpacing: 22, targetVisibleSpacingByLevel: [92, 90, 88, 86, 84], minVisibleFlames: 6, maxVisibleFlames: 18,
+						occlusionInsetPx: 3, capCandidateCount: 5, mediumMinDistancePx: 128,
+						smallProbabilityByLevel: [0.80, 0.80, 0.79, 0.79, 0.78], mediumProbabilityByLevel: [0.20, 0.20, 0.21, 0.21, 0.22],
+						// 单个更小、整体更多：中火只负责节奏，不再出现超长火苗。
+						smallHeightMin: 12, smallHeightMax: 17, mediumHeightMin: 18, mediumHeightMax: 24,
+						flameRootInset: 3, flameAlpha: 0.82, flameSpriteBaseOffset: 0.90,
+						// 近圆簇火不随边界360°旋转；仅做极小固定倾角 + 呼吸/剪切，降低动态噪声。
+						staticLeanRad: 0.035, leanRad: 0.020, swayPx: 1.15, breathHz: 0.92, breathScaleY: 0.040, breathScaleX: 0.020,
+						rimCoreColor: '#ff9a45', rimGlowColor: '#ff5727', rimCoreWidth: 2.2, rimGlowWidth: 7, rimGlowAlpha: 0.080, rimCoreAlpha: 0.18, rimActivityByLevel: [0.70, 0.76, 0.82, 0.88, 0.94],
+						contactAlphaBoost: 0.16, cinderProbability: 0.28, cinderLifetime: 0.38, cinderRisePx: 8, cinderSpreadPx: 3, cinderSizePx: 0.95, cinderAlpha: 0.22, contactCinderAlphaBoost: 0.20, cinderColor: '#ffd06b',
+						contactDuration: 0.20, contactHeightBoost: 1.22, contactRimBoost: 0.70, contactAnchorSearchPx: 78, contactGlowRadiusPx: 22,
+						hitCoreColor: '#fff0b0', hitCoreLifeSec: 0.13, hitCoreSizePx: 3.2,
+						hitEmberColor: '#ff9d42', hitEmberHotColor: '#ffd27a', hitEmberCount: 3, hitEmberSpeed: 72, hitEmberSizePx: 1.6, hitEmberLifeSec: 0.18
+					},
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
 					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },
 					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 },

@@ -6,12 +6,16 @@
 	var GAME = CONFIG.GAME, PLAYER = CONFIG.PLAYER, CAM = PLAYER.camera, COL = CONFIG.COLORS, SHK = CONFIG.COMBAT.shake
 	var STYLE = CONFIG.STYLE   // §5.5 视觉真源（唯一引用；全文件禁再写 CONFIG.STYLE 或散色）
 	var SKILL_VFX = (STYLE.combatFx && STYLE.combatFx.skillVfx) || {}
+	var FIRE_VFX = SKILL_VFX.fire || {}
 	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
 	var SHIELD_ORB_SPRITE_SRC = 'assets/skill_shield_v1.png'
+	var FIRE_ORBIT_CORE_SRC = FIRE_VFX.coreSpriteSrc || 'assets/vfx/fire/vfx_fire_living_core_v3.png'
 	var iceBloomSprite = null, iceBloomSpriteReady = false, shieldOrbSprite = null, shieldOrbSpriteReady = false
+	var fireOrbitCoreSprite = null, fireOrbitCoreReady = false
 	if (global.Image) {
 		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
 		shieldOrbSprite = new global.Image(); shieldOrbSprite.onload = function () { shieldOrbSpriteReady = true }; shieldOrbSprite.onerror = function () { shieldOrbSpriteReady = false }; shieldOrbSprite.src = SHIELD_ORB_SPRITE_SRC
+		fireOrbitCoreSprite = new global.Image(); fireOrbitCoreSprite.onload = function () { fireOrbitCoreReady = true }; fireOrbitCoreSprite.onerror = function () { fireOrbitCoreReady = false }; fireOrbitCoreSprite.src = FIRE_ORBIT_CORE_SRC
 	}
 
 	// 配色红线：蛇身/蛇尾读 STYLE.player（= 蛇头 PNG 同一个绿）；旧 COL.snakeBody/snakeHead 仅兼容保留、新代码不引用
@@ -33,6 +37,27 @@
 	var SHIELD_GLOW_TRAIL = 0.18        // TODO: 护盾拖影角度占比（候选 0.12 / 0.25）
 	var bossWarnUntil = 0
 	var hurtVignetteUntil = 0
+	var _firePerimeterCenterScratch = { x: 0, y: 0, tx: 1, ty: 0 }
+	var _fireAnchorInsideScratch = { x: 0, y: 0 }
+	var _fireRimMetrics = { cum: [], lens: [], total: 0 }
+	var _fireFramePts = null, _fireFrameRadius = 0, _fireFrameLevel = -1
+	var _fireBoundaryCandidates = [], _fireSelectedFlames = []
+	var _fireContactBursts = []
+	if (Bus && typeof Bus.on === 'function') {
+		Bus.on('fx:firecontact', function (d) {
+			if (!d || d.x == null || d.y == null) { return }
+			var slot = null, oldest = Infinity
+			for (var i = 0; i < _fireContactBursts.length; i++) {
+				var b = _fireContactBursts[i], age = GS.timeSec - b.time
+				if (age > b.duration) { slot = b; break }
+				if (b.time < oldest) { oldest = b.time; slot = b }
+			}
+			if (!slot) { slot = { x: 0, y: 0, r: 0, time: 0, duration: 0, level: 1 }; _fireContactBursts.push(slot) }
+			slot.x = d.x; slot.y = d.y; slot.r = d.r || 0; slot.time = GS.timeSec; slot.level = d.level || 1
+			slot.duration = (FIRE_VFX.contactDuration || 0.20)
+		})
+		Bus.on('core:run_reset', function () { _fireContactBursts.length = 0; _fireFramePts = null })
+	}
 
 	var canvas = null, ctx = null, dpr = 1, _snapGrid = 0   // _snapGrid：设备像素吸附网格(_snap=ws*dpr)；每帧在 draw() 写入，供 _ix/_iy/snapW 把移动实体也吸附到整数设备像素(相机只吸静态世界→移动实体仍亚像素闪，本次补齐)
 	var worldScale = 1          // round6：视图缩放(0.8)已移除，还原 commit 无缩放原画面；worldScale 恒 1，碰撞/世界坐标不变，相机 1:1 跟随蛇身
@@ -163,6 +188,213 @@
 		var ed = Registry.get('editor')
 		if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } }
 		return fb
+	}
+
+	function firePointSegDistSq(px, py, ax, ay, bx, by) {
+		var vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay, vv = vx * vx + vy * vy
+		if (vv <= 0.000001) { return wx * wx + wy * wy }
+		var t = (wx * vx + wy * vy) / vv
+		if (t < 0) { t = 0 } else if (t > 1) { t = 1 }
+		var dx = px - (ax + vx * t), dy = py - (ay + vy * t)
+		return dx * dx + dy * dy
+	}
+	function buildFireMetrics(points, out) {
+		out = out || { cum: [], lens: [], total: 0 }
+		var cum = out.cum, lens = out.lens, total = 0
+		cum.length = 1; cum[0] = 0; lens.length = 0
+		for (var i = 1; i < points.length; i++) {
+			var dx = points[i].x - points[i - 1].x, dy = points[i].y - points[i - 1].y
+			var len = Math.sqrt(dx * dx + dy * dy)
+			lens.push(len); total += len; cum.push(total)
+		}
+		out.total = total
+		return out
+	}
+	function sampleFireCenter(points, metrics, s, out) {
+		out = out || {}
+		if (!points.length) { out.x = out.y = 0; out.tx = 1; out.ty = 0; return out }
+		if (points.length === 1 || metrics.total <= 0.000001) { out.x = points[0].x; out.y = points[0].y; out.tx = 1; out.ty = 0; return out }
+		if (s < 0) { s = 0 } else if (s > metrics.total) { s = metrics.total }
+		var j = 0
+		while (j < metrics.lens.length - 1 && metrics.cum[j + 1] < s) { j++ }
+		var len = metrics.lens[j] || 0.000001, t = (s - metrics.cum[j]) / len
+		var a = points[j], b = points[j + 1], dx = b.x - a.x, dy = b.y - a.y
+		out.x = a.x + dx * t; out.y = a.y + dy * t; out.tx = dx / len; out.ty = dy / len
+		return out
+	}
+	function fireBoundaryExposed(p, points, radius, inset) {
+		var rr = Math.max(0, radius - inset), rr2 = rr * rr
+		for (var i = 1; i < points.length; i++) {
+			if (firePointSegDistSq(p.x, p.y, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y) < rr2) { return false }
+		}
+		return true
+	}
+
+
+	// 单帧唯一 Snake Render Pose：蛇本体、Fire 底色、Fire 节点共用同一组插值点。
+	// Fire 不再从会追随头部的 segments[0] 起步，从根上消除“蛇走了、火域慢半拍”。
+	function fireSeed(index, salt) {
+		var n = Math.sin((index + 1) * (12.9898 + salt * 17.123) + salt * 78.233) * 43758.5453
+		return n - Math.floor(n)
+	}
+	function pushFireBoundaryCandidate(list, x, y, nx, ny, seedId, kind, side) {
+		var c = list[list.length] || {}
+		c.x = x; c.y = y; c.nx = nx; c.ny = ny; c.seedId = seedId; c.kind = kind || 'side'; c.side = side || 0
+		list.push(c); return c
+	}
+	function rotateFireVec(x, y, a, out) {
+		out = out || {}; var ca = Math.cos(a), sa = Math.sin(a)
+		out.x = x * ca - y * sa; out.y = x * sa + y * ca; return out
+	}
+	function buildFireBoundaryCandidates(points, metrics, radius, fireStyle, out) {
+		out = out || []; out.length = 0
+		if (!points.length || !(radius > 0)) { return out }
+		var inset = fireStyle.occlusionInsetPx || 3, spacing = fireStyle.candidateCenterSpacing || 22, center = _firePerimeterCenterScratch
+		if (points.length === 1 || metrics.total <= 0.000001) {
+			var circleCount = Math.max(8, Math.ceil(M.PI2 * radius / spacing))
+			for (var ci = 0; ci < circleCount; ci++) {
+				var ca = ci / circleCount * M.PI2, cnx = Math.cos(ca), cny = Math.sin(ca)
+				pushFireBoundaryCandidate(out, points[0].x + cnx * radius, points[0].y + cny * radius, cnx, cny, 10000 + ci, 'cap', 0)
+			}
+			return out
+		}
+		var sampleCount = Math.max(2, Math.ceil(metrics.total / spacing))
+		for (var i = 0; i < sampleCount; i++) {
+			var s = (i + 0.5) * metrics.total / sampleCount
+			sampleFireCenter(points, metrics, s, center)
+			var nx = -center.ty, ny = center.tx
+			for (var si = -1; si <= 1; si += 2) {
+				var px = center.x + nx * radius * si, py = center.y + ny * radius * si
+				var probe = { x: px, y: py }
+				if (fireBoundaryExposed(probe, points, radius, inset)) { pushFireBoundaryCandidate(out, px, py, nx * si, ny * si, i * 2 + (si > 0 ? 1 : 0), 'side', si) }
+			}
+		}
+		var capCount = Math.max(3, fireStyle.capCandidateCount || 5), half = (capCount - 1) * 0.5
+		sampleFireCenter(points, metrics, 0, center)
+		var hx = -center.tx, hy = -center.ty
+		for (var h = 0; h < capCount; h++) {
+			var ha = (h - half) / Math.max(1, half) * (M.PI * 0.42), hv = rotateFireVec(hx, hy, ha, _fireAnchorInsideScratch)
+			var hp = { x: center.x + hv.x * radius, y: center.y + hv.y * radius }
+			if (fireBoundaryExposed(hp, points, radius, inset)) { var hc = pushFireBoundaryCandidate(out, hp.x, hp.y, hv.x, hv.y, 20000 + h, 'head', 0); hc.capRank = Math.abs(h - half) }
+		}
+		sampleFireCenter(points, metrics, metrics.total, center)
+		var tx = center.tx, ty = center.ty
+		for (var t = 0; t < capCount; t++) {
+			var ta = (t - half) / Math.max(1, half) * (M.PI * 0.42), tv = rotateFireVec(tx, ty, ta, _fireAnchorInsideScratch)
+			var tp = { x: center.x + tv.x * radius, y: center.y + tv.y * radius }
+			if (fireBoundaryExposed(tp, points, radius, inset)) { var tc = pushFireBoundaryCandidate(out, tp.x, tp.y, tv.x, tv.y, 30000 + t, 'tail', 0); tc.capRank = Math.abs(t - half) }
+		}
+		return out
+	}
+	function fireSelectedHas(list, candidate) { for (var i = 0; i < list.length; i++) { if (list[i] === candidate) { return true } } return false }
+	function firePickKind(candidates, selected, kind) {
+		var best = null, bestRank = Infinity, bestTie = -Infinity
+		for (var i = 0; i < candidates.length; i++) {
+			var c = candidates[i]; if (c.kind !== kind || fireSelectedHas(selected, c)) { continue }
+			var rank = c.capRank != null ? c.capRank : 0, tie = fireSeed(c.seedId, 43.7)
+			if (rank < bestRank || (rank === bestRank && tie > bestTie)) { best = c; bestRank = rank; bestTie = tie }
+		}
+		if (best) { selected.push(best) }
+	}
+	function firePickSideCoverage(candidates, selected, side) {
+		var best = null, bestScore = -1
+		for (var i = 0; i < candidates.length; i++) {
+			var c = candidates[i]; if (c.kind !== 'side' || c.side !== side || fireSelectedHas(selected, c)) { continue }
+			var minD2 = Infinity
+			for (var si = 0; si < selected.length; si++) { var dx = c.x - selected[si].x, dy = c.y - selected[si].y, d2 = dx * dx + dy * dy; if (d2 < minD2) { minD2 = d2 } }
+			var score = minD2 * (0.97 + fireSeed(c.seedId, 44.9) * 0.06)
+			if (score > bestScore) { best = c; bestScore = score }
+		}
+		if (best) { selected.push(best) }
+	}
+	function selectFireBoundaryFlames(candidates, metrics, radius, fireStyle, fi, out) {
+		out = out || []; out.length = 0
+		if (!candidates.length) { return out }
+		var spacingList = fireStyle.targetVisibleSpacingByLevel || [], targetSpacing = spacingList[fi] != null ? spacingList[fi] : 90
+		var perimeterEstimate = metrics.total * 2 + M.PI2 * radius
+		var target = Math.round(perimeterEstimate / Math.max(1, targetSpacing))
+		target = M.clamp(target, fireStyle.minVisibleFlames || 6, fireStyle.maxVisibleFlames || 18); target = Math.min(target, candidates.length)
+		// 覆盖优先：头、尾、中心线左右两侧各至少一个；其余用最远点补齐，避免纯随机扎堆，也不做死板镜像。
+		firePickKind(candidates, out, 'head'); firePickKind(candidates, out, 'tail')
+		firePickSideCoverage(candidates, out, -1); firePickSideCoverage(candidates, out, 1)
+		while (out.length > target) { out.pop() }
+		while (out.length < target) {
+			var best = null, bestScore = -1
+			for (var ci = 0; ci < candidates.length; ci++) {
+				var c = candidates[ci]; if (fireSelectedHas(out, c)) { continue }
+				var minD2 = Infinity
+				for (var si = 0; si < out.length; si++) { var dx = c.x - out[si].x, dy = c.y - out[si].y, d2 = dx * dx + dy * dy; if (d2 < minD2) { minD2 = d2 } }
+				var score = minD2 * (0.94 + fireSeed(c.seedId, 47.1) * 0.12)
+				if (score > bestScore) { best = c; bestScore = score }
+			}
+			if (!best) { break } out.push(best)
+		}
+		var smallList = fireStyle.smallProbabilityByLevel || [], mediumList = fireStyle.mediumProbabilityByLevel || []
+		var smallP = smallList[fi] != null ? smallList[fi] : 0.80, mediumP = mediumList[fi] != null ? mediumList[fi] : 0.20, totalP = smallP + mediumP || 1
+		var mediumMin = fireStyle.mediumMinDistancePx || 128, mediumMin2 = mediumMin * mediumMin, mediums = []
+		for (var oi = 0; oi < out.length; oi++) {
+			var o = out[oi], tierSeed = fireSeed(o.seedId, 3.1), wantsMedium = tierSeed >= smallP / totalP
+			if (wantsMedium) {
+				for (var mi = 0; mi < mediums.length; mi++) { var mdx = o.x - mediums[mi].x, mdy = o.y - mediums[mi].y; if (mdx * mdx + mdy * mdy < mediumMin2) { wantsMedium = false; break } }
+			}
+			o.tier = wantsMedium ? 1 : 0; if (o.tier === 1) { mediums.push(o) }
+			o.heightSeed = fireSeed(o.seedId, 5.3); o.seedPhase = fireSeed(o.seedId, 17.1); o.seedCinder = fireSeed(o.seedId, 13.9)
+			o.cinderCount = o.seedCinder < (fireStyle.cinderProbability || 0.28) ? 1 : 0
+		}
+		return out
+	}
+	function strokeFireCenterline(points, width, color, alpha) {
+		if (!(points.length && width > 0 && alpha > 0)) { return }
+		ctx.beginPath(); for (var i = 0; i < points.length; i++) { if (i === 0) { ctx.moveTo(points[i].x, points[i].y) } else { ctx.lineTo(points[i].x, points[i].y) } }
+		ctx.lineWidth = width; ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.stroke()
+	}
+	function drawFireContactGlow(fireStyle) {
+		var duration = fireStyle.contactDuration || 0.20, rr = fireStyle.contactGlowRadiusPx || 22
+		for (var i = 0; i < _fireContactBursts.length; i++) {
+			var b = _fireContactBursts[i], age = GS.timeSec - b.time; if (age < 0 || age >= duration) { continue }
+			var pulse = 1 - age / duration, g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rr)
+			g.addColorStop(0, 'rgba(255,236,170,' + (0.22 * pulse) + ')'); g.addColorStop(0.35, 'rgba(255,126,45,' + (0.13 * pulse) + ')'); g.addColorStop(1, 'rgba(255,75,20,0)')
+			ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, M.PI2); ctx.fill()
+		}
+	}
+	function fireContactBoostAt(x, y, fireStyle) {
+		var best = 0, search = fireStyle.contactAnchorSearchPx || 82, search2 = search * search, duration = fireStyle.contactDuration || 0.20
+		for (var i = 0; i < _fireContactBursts.length; i++) {
+			var b = _fireContactBursts[i], age = GS.timeSec - b.time
+			if (age < 0 || age >= duration) { continue }
+			var dx = x - b.x, dy = y - b.y, d2 = dx * dx + dy * dy
+			if (d2 >= search2) { continue }
+			var pulse = 1 - age / duration, weight = pulse * (1 - Math.sqrt(d2 / search2))
+			if (weight > best) { best = weight }
+		}
+		return best
+	}
+	function drawFireRim(points, metrics, radius, fireStyle, fi) {
+		if (!points.length || !(radius > 0)) { return }
+		var activityList = fireStyle.rimActivityByLevel || [], activity = activityList[fi] != null ? activityList[fi] : 0.82
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalCompositeOperation = 'lighter'
+		// 直接对真实中心线做更宽的 stroke，随后由 fill 覆盖中间，只留下外壳；急弯/U-turn 不再依赖手工 offset perimeter。
+		strokeFireCenterline(points, radius * 2 + (fireStyle.rimGlowWidth || 7) * 2, fireStyle.rimGlowColor || '#ff5727', (fireStyle.rimGlowAlpha || 0.08) * activity)
+		strokeFireCenterline(points, radius * 2 + (fireStyle.rimCoreWidth || 2.2) * 2, fireStyle.rimCoreColor || '#ff9a45', (fireStyle.rimCoreAlpha || 0.18) * activity)
+		ctx.restore()
+	}
+	var _snakeRenderPts = [], _snakeRenderHead = { x: 0, y: 0, ang: 0 }, _snakeRenderSnap = false
+	function prepareSnakeRenderPose() {
+		_snakeRenderPts.length = 0
+		var s = Registry.get('snake'); if (!s || !s.head) { return _snakeRenderPts }
+		var ih = interpHead() || s.head, snap = DIR1_SNAP(), hx = ih.x, hy = ih.y
+		if (snap) { hx = snapWX(hx); hy = snapWY(hy) }
+		_snakeRenderHead.x = hx; _snakeRenderHead.y = hy; _snakeRenderHead.ang = ih.ang != null ? ih.ang : (s.head.angle || 0); _snakeRenderSnap = snap
+		var hp = _snakeRenderPts[0] || (_snakeRenderPts[0] = {}); hp.x = hx; hp.y = hy
+		var segs = s.segments || [], n = 1
+		for (var i = 1; i < segs.length; i++) {
+			var sg = segs[i], x = sg.x, y = sg.y
+			if (GS.status === 'playing' && sg.px != null) { x = M.lerp(sg.px, sg.x, _ra); y = M.lerp(sg.py, sg.y, _ra) }
+			if (snap) { x = snapWX(x); y = snapWY(y) }
+			var p = _snakeRenderPts[n] || (_snakeRenderPts[n] = {}); p.x = x; p.y = y; n++
+		}
+		_snakeRenderPts.length = n
+		return _snakeRenderPts
 	}
 
 	// —— 精灵子系统（#M0 美术管线基建，全落 render 分区，不新建 10_assets.js）——
@@ -1014,17 +1246,8 @@ function drawSnake() {
 		var bodyR = getSpriteRadius('PLAYER.bodyRadius')
 		// 插值中心线（head + 各节 prev→cur 插值）：整条蛇平滑，消 fixed-step 无插值导致的身体一顿一顿（与头部同源，165Hz 不再逐帧跳）
 		var h = s.head
-		var _ih = interpHead()   // 与相机同源插值基准：所画蛇头位姿 == 相机跟随目标，直行无 bob
-		var _snap = DIR1_SNAP()   // 调试开关：true=吸附蛇到整数设备像素(消亚像素 AA 摇摆)；false=方向1 浮点(复现卡顿)
-		var hx = _ih.x, hy = _ih.y, hAng = _ih.ang   // 方向1：蛇坐标走浮点(由外层残差补偿抵消相机锯齿),不再自身 snapWX→整条蛇连续投影
-		if (_snap) { hx = snapWX(hx); hy = snapWY(hy) }
-		var pts = [{ x: hx, y: hy }]
-		for (var _i = 1; _i < segs.length; _i++) {
-			var _g = segs[_i], _ix = _g.x, _iy = _g.y
-			if (GS.status === 'playing' && _g.px != null) { _ix = M.lerp(_g.px, _g.x, _ra); _iy = M.lerp(_g.py, _g.y, _ra) }
-			if (_snap) { _ix = snapWX(_ix); _iy = snapWY(_iy) }
-			pts.push({ x: _ix, y: _iy })   // 方向1：身体逐节浮点(残差补偿后整条蛇连续投影,无链内接缝)
-		}
+		var pts = _snakeRenderPts.length ? _snakeRenderPts : prepareSnakeRenderPose()
+		var hx = _snakeRenderHead.x, hy = _snakeRenderHead.y, hAng = _snakeRenderHead.ang
 		var _mi = Math.floor(pts.length / 2)   // 诊断采样点:身体中段(矢量圆)
 		_flkHead.x = hx; _flkHead.y = hy; _flkHead.has = true   // 实际绘制头坐标(浮点,post-6拆)→诊断 disp 据此算真值
 		_flkBody.x = pts[_mi].x; _flkBody.y = pts[_mi].y; _flkBody.has = true
@@ -1063,6 +1286,26 @@ function drawSnake() {
 		drawSnakeEyes(ctx, _snakeEyeR, _snakeEyeAng)
 		ctx.restore()
 	}
+	function drawFireFieldUnderlay() {
+		_fireFramePts = null; _fireFrameRadius = 0; _fireFrameLevel = -1
+		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
+		var s = Registry.get('snake'); if (!s || !s.segments || !s.segments.length) { return }
+		var fi = owned.fire - 1, fr = RT('SKILL.fire.radius.' + fi, CONFIG.SKILL.fire.radius[fi])
+		var fireStyle = SKILL_VFX.fire || {}, fieldFx = (STYLE.combatFx && STYLE.combatFx.fieldReadability) || {}
+		var firePts = _snakeRenderPts.length ? _snakeRenderPts : prepareSnakeRenderPose()
+		_fireFramePts = firePts; _fireFrameRadius = fr; _fireFrameLevel = fi
+		var fireMetrics = buildFireMetrics(firePts, _fireRimMetrics)
+		var outerList = fireStyle.fillOuterAlphaByLevel || [], outerAlpha = outerList[fi] != null ? outerList[fi] : fieldFx.fireFillAlpha
+		// Rim 先画、Fill 后盖：只保留 Tube 外壳亮边，几何与 gameplay 的 centerline + radius 语义一致。
+		drawFireRim(firePts, fireMetrics, fr, fireStyle, fi)
+		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalCompositeOperation = 'source-over'
+		ctx.beginPath()
+		for (var fp = 0; fp < firePts.length; fp++) { if (fp === 0) { ctx.moveTo(firePts[fp].x, firePts[fp].y) } else { ctx.lineTo(firePts[fp].x, firePts[fp].y) } }
+		ctx.lineWidth = fr * 2; ctx.globalAlpha = outerAlpha > 0 ? outerAlpha : 0; ctx.strokeStyle = fireStyle.fillOuterColor || '#ff5f27'; ctx.stroke()
+		ctx.restore()
+		ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawFireContactGlow(fireStyle); ctx.restore()
+	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
@@ -1075,34 +1318,46 @@ function drawSnake() {
 	if (_snapA) { _iax = snapWX(_iax); _iay = snapWY(_iay) }
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		ctx.save()
-		// —— 火墙：用户验收反馈 v2——保留"范围火墙"软光带(可见火墙范围) + 去掉沿身亮热边/flick 跳变(原被用户判为"蛇身细线/一闪一闪")；火焰反馈同时由 05_particle spawnFireEmbers 沿身余烬承担（零 gameplay，伤害判定在 08_skill 不动）——
+		// —— Fire Orbit：范围底色/炽痕在实体下层 drawFireFieldUnderlay；此处只画环流 PNG 与切向短尾，蛇本体保持绿色主体。——
 		// —— 护盾：球绕蛇头公转，半径/周期读 config（与 tickShield 同 orbitRadius/orbitSec，消双份真相源）——
-		// 火墙：连续橙色软光带，沿整条蛇身绘制；视觉范围来自火焰技能半径，零 gameplay
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0
 		var segs = s.segments || []
-		if (owned.fire > 0) {
-			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
-			ctx.save()
-			ctx.globalCompositeOperation = 'lighter'
-			ctx.beginPath()
-			for (var sf = 0; sf < segs.length; sf += stepF) {
-				var sg = segs[sf]
-				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x, sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y
-				if (_snapA) { sgx = snapWX(sgx); sgy = snapWY(sgy) }
-				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
-			}
-			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-			if (fieldFx.fireFillAlpha > 0) { ctx.lineWidth = fr * 2; ctx.globalAlpha = fieldFx.fireFillAlpha; ctx.strokeStyle = '#ff5f1e'; ctx.stroke(); ctx.globalAlpha = 1 }
-			ctx.restore()
-			var fireStyle = SKILL_VFX.fire || {}, fireStride = Math.max(fireStyle.anchorStep, Math.ceil(segs.length / fireStyle.maxAnchors))
-			if (!T3) {
-				ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round'
-				for (var fireIndex = 0; fireIndex < segs.length; fireIndex += fireStride) {
-					var fireSeg = segs[fireIndex], fireX = (fireSeg.px != null) ? M.lerp(fireSeg.px, fireSeg.x, _ra) : fireSeg.x, fireY = (fireSeg.py != null) ? M.lerp(fireSeg.py, fireSeg.y, _ra) : fireSeg.y
-					var fireNext = segs[Math.min(segs.length - 1, fireIndex + 1)], nextX = (fireNext.px != null) ? M.lerp(fireNext.px, fireNext.x, _ra) : fireNext.x, nextY = (fireNext.py != null) ? M.lerp(fireNext.py, fireNext.y, _ra) : fireNext.y
-					var fireAngle = Math.atan2(nextY - fireY, nextX - fireX), firePulse = 1 + Math.sin(GS.timeSec * fireStyle.pulseHz + fireIndex) * fireStyle.pulseAmount
-					ctx.globalAlpha = fireStyle.rangeEdgeAlpha * firePulse; ctx.strokeStyle = '#ffb05a'; ctx.lineWidth = fireStyle.rangeEdgeWidthPx
-					ctx.beginPath(); ctx.arc(fireX, fireY, fr, fireAngle + fireStyle.rangeArcGapRad, fireAngle + M.PI2 - fireStyle.rangeArcGapRad); ctx.stroke()
+		if (owned.fire > 0 && segs.length && !T3) {
+			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi])
+			var fireStyle = SKILL_VFX.fire || {}, firePts = _fireFramePts || (_snakeRenderPts.length ? _snakeRenderPts : prepareSnakeRenderPose()), fireMetrics = _fireFramePts ? _fireRimMetrics : buildFireMetrics(firePts, _fireRimMetrics)
+			var firePerimeter = fireMetrics.total * 2 + Math.PI * fr * 2
+			if (firePerimeter > 0) {
+				var candidates = buildFireBoundaryCandidates(firePts, fireMetrics, fr, fireStyle, _fireBoundaryCandidates)
+				var flames = selectFireBoundaryFlames(candidates, fireMetrics, fr, fireStyle, fi, _fireSelectedFlames)
+				var smallMin = fireStyle.smallHeightMin || 12, smallMax = fireStyle.smallHeightMax || 17, mediumMin = fireStyle.mediumHeightMin || 18, mediumMax = fireStyle.mediumHeightMax || 24
+				ctx.save(); ctx.lineCap = 'round'; ctx.globalCompositeOperation = 'source-over'
+				for (var fo = 0; fo < flames.length; fo++) {
+					var flame = flames[fo], contactBoost = fireContactBoostAt(flame.x, flame.y, fireStyle)
+					var heightMin = flame.tier === 1 ? mediumMin : smallMin, heightMax = flame.tier === 1 ? mediumMax : smallMax
+					var baseHeight = heightMin + (heightMax - heightMin) * flame.heightSeed, drawSize = baseHeight * (1 + contactBoost * ((fireStyle.contactHeightBoost || 1.22) - 1))
+					var drawX = flame.x - flame.nx * (fireStyle.flameRootInset || 3), drawY = flame.y - flame.ny * (fireStyle.flameRootInset || 3)
+					var wave = Math.sin(GS.timeSec * M.PI2 * (fireStyle.breathHz || 0.92) + flame.seedPhase * M.PI2)
+					var sx = 1 - wave * (fireStyle.breathScaleX || 0.020), sy = 1 + wave * (fireStyle.breathScaleY || 0.040)
+					// 圆簇火是方向中性素材：不按 normal 360°旋转，只保留稳定小倾角 + 极小动态 lean。
+					var staticLean = (fireSeed(flame.seedId, 51.9) - 0.5) * 2 * (fireStyle.staticLeanRad || 0.035)
+					var lean = staticLean + Math.sin(GS.timeSec * 2.8 + flame.seedPhase * 5.3) * (fireStyle.leanRad || 0.020)
+					var shear = Math.sin(GS.timeSec * 3.3 + flame.seedPhase * 6.1) * (fireStyle.swayPx || 1.15) / Math.max(drawSize, 1)
+					ctx.save(); ctx.translate(drawX, drawY); ctx.rotate(lean); ctx.transform(1, 0, shear, 1, 0, 0); ctx.scale(sx, sy)
+					ctx.globalAlpha = (fireStyle.flameAlpha || 0.82) * (0.96 + 0.04 * wave) * (1 + contactBoost * (fireStyle.contactAlphaBoost || 0.16))
+					if (fireOrbitCoreReady && fireOrbitCoreSprite && fireOrbitCoreSprite.naturalHeight) {
+						var fireW = drawSize * (fireOrbitCoreSprite.naturalWidth / fireOrbitCoreSprite.naturalHeight)
+						ctx.drawImage(fireOrbitCoreSprite, -fireW * 0.5, -drawSize * (fireStyle.flameSpriteBaseOffset || 0.90), fireW, drawSize)
+					} else {
+						ctx.fillStyle = fireStyle.cinderColor || '#ffd06b'; ctx.beginPath(); ctx.arc(0, -drawSize * 0.35, drawSize * 0.20, 0, M.PI2); ctx.fill()
+					}
+					ctx.restore()
+					if (flame.cinderCount > 0) {
+						var cinderLife = fireStyle.cinderLifetime || 0.38, cinderT = ((GS.timeSec * 0.72 + flame.seedPhase) % 1 + 1) % 1
+						if (cinderT < cinderLife) {
+							var ct = cinderT / cinderLife, cx = drawX + Math.sin(flame.seedCinder * 13.7) * ct * (fireStyle.cinderSpreadPx || 3), cy = drawY - drawSize * 0.62 - ct * (fireStyle.cinderRisePx || 8)
+							ctx.globalAlpha = ((fireStyle.cinderAlpha || 0.22) + contactBoost * (fireStyle.contactCinderAlphaBoost || 0.20)) * (1 - ct); ctx.fillStyle = fireStyle.cinderColor || '#ffd06b'; ctx.beginPath(); ctx.arc(cx, cy, fireStyle.cinderSizePx || 0.95, 0, M.PI2); ctx.fill()
+						}
+					}
 				}
 				ctx.restore()
 			}
@@ -1203,7 +1458,9 @@ function drawSnake() {
 	_camX = rcx; _camY = rcy   // 暴露未吸附真值相机给 snapWX/Y 做「相对相机单次取整」(中心闪修复·2026-07-23f)
 	if (window.__DIAG_FLICKER) { diagFlickerTick(rcx, rcy, rcxS, rcyS) }   // 中心闪诊断：每帧采样蛇头屏幕位置(受吸附 vs 真值)，供 GM 矩阵检测双重取整 toggle
 	ctx.translate(-rcxS, -rcyS)
+	prepareSnakeRenderPose()   // V3：本帧蛇、Fire 共用同一插值 Render Pose，消除火域慢半拍
 	drawBounds()
+	drawFireFieldUnderlay()   // Fire 范围是最低技能信息层：不染蛇/怪/拾取，也不压住其他技能世界粒子
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
 	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息
