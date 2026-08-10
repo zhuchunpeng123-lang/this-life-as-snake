@@ -921,7 +921,7 @@
 			electricTick(dt)
 			frameSpawn = 0   // 每帧预算归零（fixed-step 末尾 sim 已结算，下次 step 重新计）
 			dotTextThisFrame = 0   // P2-10：DOT 飘字抽稀计数归零
-			spawnFireEmbers()   // 火墙余烬：按固定间隔沿蛇身喷（视觉绑定火源，不随敌数膨胀；见 spawnFireEmbers）
+			spawnFireEmbers()   // 恢复 8 月 5 日前 Fire：每 fixed-step 沿蛇身随机喷余烬；函数内部已有 suppressFire / 粒子半池 / spawnBudget / low 优先门控。
 			for (i = particles.length - 1; i >= 0; i--) {
 				var p = particles[i]
 				p.life -= dt
@@ -1099,6 +1099,16 @@
 			if (!electro) { spawnBurst(d.x, d.y, 5, st ? st.color : COLORS.damageText, 160, 3, 0.3, 'low') }
 			spawnText(d.x, ty, (electro ? ((st && st.label) || '电磁 ') : (st ? st.label : '')) + dmg, col, electro ? (d.crit ? 20 : 16) : (d.crit ? 20 : 14), 'high', electro ? { strokeColor: COMBAT_E.textStroke, strokeWidth: COMBAT_TEXT.outlinePx || 2.5, customLife: COMBAT_TEXT.comboLifeSec || 0.72 } : null)   // 当前战斗标签体系保持一致：显示“电磁 数字”，图标系统留待专项统一
 		}
+	})
+	Bus.on('fx:firecontact', function (d) {
+		if (!d || d.x == null || d.y == null) { return }
+		var fireStyle = SKILL_VFX.fire || {}
+		var lowFire = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0
+		var emberCount = lowFire ? 1 : (fireStyle.hitEmberCount || 3)
+		if (!lowFire) { spawnSkillBurst('fire', d.x, d.y, Math.max(18, d.r || 18)) }
+		emitParticle(d.x, d.y, 0, -8, fireStyle.hitCoreLifeSec || 0.13, fireStyle.hitCoreSizePx || 3.0, fireStyle.hitCoreColor || '#fff0b0', 0.86, 'low')
+		spawnBurst(d.x, d.y, emberCount, fireStyle.hitEmberColor || '#ff9d42', fireStyle.hitEmberSpeed || 72, fireStyle.hitEmberSizePx || 1.6, fireStyle.hitEmberLifeSec || 0.18, 'low')
+		if (!lowFire && emberCount > 1) { spawnBurst(d.x, d.y, 1, fireStyle.hitEmberHotColor || '#ffd27a', (fireStyle.hitEmberSpeed || 72) * 0.72, (fireStyle.hitEmberSizePx || 1.6) * 0.9, fireStyle.hitEmberLifeSec || 0.18, 'low') }
 	})
 	Bus.on('enemy:die', function (d) { spawnBurst(d.x, d.y, 12, d.color || STYLE.enemy, 220, 4, 0.5) })   // 死亡爆花取威胁色（d.color 来自 07_enemy STYLE 色阶）
 	Bus.on('pickup:eat', function (d) { if (d && d.x != null) { spawnBurst(d.x, d.y, 6, STYLE.food, 120, 3, 0.35) } })   // 吃拾取金色爆花
