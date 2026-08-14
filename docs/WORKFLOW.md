@@ -31,3 +31,14 @@
 - 稳定架构只写 `docs/ARCHITECTURE.md`；流程只写本文件；通用 QA 写 `docs/QA.md`。
 - GDD 只维护设计意图；运行时数值只认 `snake55/02_config.js`；历史资料只作追溯。
 - 交付报告简要列出实际改动、验证结果、未验证事项和与既有 WIP 的隔离情况。
+
+## 6. Documentation impact routing
+
+仅在 durable fact 或 contract 改变时按 owner 路由：
+
+- 稳定运行时/模块架构 → `docs/ARCHITECTURE.md`；当前完成状态/开放问题 → `docs/STATUS.md`；核心设计意图 → `docs/design/GDD.md`。
+- 持久的世界观、美术、音频或资产规则 → 对应 canonical domain document；可复用的跨任务 Agent 方法 → 对应 Skill，一次实现成功不足以修改 Skill。
+- 仓库级永久运行规则 → `AGENTS.md`；Git/协作/发布流程 → `docs/WORKFLOW.md`；有意义的持久项目里程碑 → 需要时写入 `CHANGELOG.md`。
+- 运行时参数/数值只改代码或 CONFIG，不把数字镜像到文档。
+
+以上是 owner routing，不要求每类任务都更新文档。事实未变时不修改项目文档；未确认 WIP 不升级为正式事实；CHANGELOG 不是逐任务日志。不要为此预读全部 docs，只在影响存在或 owner 不明确时读取必要文件。

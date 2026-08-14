@@ -34,3 +34,10 @@
 - 音频稳定原则：`docs/audio/AUDIO.md`
 - 当前数值：`snake55/02_config.js`
 - 历史资料：`docs/archive/`，默认不作为当前规则。
+
+## Documentation impact
+
+- 任务结束前判断本次改动是否改变活动文档负责的 durable current fact / contract。
+- 未改变时不为记录过程修改文档；改变时只同步 canonical owner，不复制源码/CONFIG 已拥有的 runtime facts。
+- 实验性、未确认或未验收 WIP 不得写成稳定基线。
+- 最终回复写 `Docs impact: none` 或 `Docs impact: <updated owner docs>`。
