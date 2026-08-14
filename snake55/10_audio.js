@@ -2,7 +2,7 @@
  * AUDIO CHANGE CONTRACT
  * Before changing BGM, SFX, UI feedback, skill/combo sound, threat cues, voice budgets or ducking,
  * read: docs/AUDIO_SYSTEM_SPEC.md and docs/AUDIO_EVENT_MATRIX.md
- * Locked baseline: AUDIO-FINAL-1.0 (2026-08-08).
+ * Locked baseline: AUDIO-FINAL-1.1 (2026-08-08).
  */
 ;(function (global) {
 	'use strict'
@@ -12,12 +12,13 @@
 	// gameplay CONFIG owns only user-facing master/BGM/SFX/UI volume + enabled state.
 	// SFX mix/voice/density tuning is local to this module so gameplay/balance edits never collide with audio patches.
 	var MIX = {
-		maxSfxVoices: 12, maxUiVoices: 4,
-		voiceBudget: { skill: 4, combo: 4, player: 2, impact: 2, death: 2, boss: 3, threat: 3, ui: 3 },
-		skillBusGain: 0.86, comboBusGain: 0.94, playerBusGain: 1.00, impactBusGain: 0.48,
-		deathBusGain: 0.62, bossBusGain: 0.96, threatBusGain: 1.00,
+		maxSfxVoices: 16, maxUiVoices: 4,
+		voiceBudget: { skill: 6, combo: 5, player: 2, impact: 1, death: 2, boss: 3, threat: 3, ui: 3 },
+		skillBusGain: 0.98, comboBusGain: 1.02, playerBusGain: 1.00, impactBusGain: 0.36,
+		deathBusGain: 0.52, bossBusGain: 0.96, threatBusGain: 1.00,
 		lightDuckMul: 0.88, lightDuckSec: 0.14, majorDuckMul: 0.68, majorDuckSec: 0.24,
 		chooseDuckMul: 0.56, pauseRampSec: 0.05, deathSilenceSec: 0.10,
+		startHandoffSec: 0.18,
 		limiterThresholdDb: -7, limiterKneeDb: 8, limiterRatio: 3.5, limiterAttackSec: 0.002, limiterReleaseSec: 0.14,
 		bgmPressureStart: 1.35, bgmPressureEnd: 2.90, bgmPressureFloor: 0.94
 	}
@@ -55,6 +56,7 @@
 	var currentStage = 1, pendingMusicStage = 0, targetStepDur = 60 / 88 / 4
 	var curLayer = 'protection', battleHeat = 0, stageBgmMul = 1, stageTransitionPending = 0
 	var pauseMul = 1, eventDuckMul = 1, densityDuckMul = 1, chooseDuckMul = 1
+	var startHandoffTimer = null, startHandoffGain = 1
 
 	// SFX density does NOT pump BGM. It only decides which low-value events may consume voices.
 	var densityScore = 0, densityWinStart = 0
@@ -112,7 +114,9 @@
 			var p = rec.priority == null ? 2 : rec.priority, started = rec.startedAt || 0
 			if (p < lowest || (p === lowest && started < oldest)) { lowest = p; oldest = started; pick = i }
 		}
-		if (pick < 0 || lowest > priority) { return -1 }
+		// Identity rule: only a STRICTLY higher-priority event may cut an active voice.
+		// Same-priority skills must finish their transient instead of chopping each other.
+		if (pick < 0 || lowest >= priority) { return -1 }
 		return pick
 	}
 	function evictVoice(list, pick) { if (pick < 0) { return false }; var old = list.splice(pick, 1)[0]; try { old.node.stop(ctx.currentTime) } catch (_) {}; return true }
@@ -146,7 +150,7 @@
 	// All runtime SFX below are AudioBufferSourceNode voices: internal layers are pre-rendered once.
 	var sampleBank = {}, synthSeed = 0x51a7f00d
 	function rngFor(salt) { var s = (synthSeed ^ salt) >>> 0; return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 } }
-	function wave(type, ph) { var s = Math.sin(ph); if (type === 'triangle') { return (2 / Math.PI) * Math.asin(s) }; if (type === 'softsquare') { return Math.tanh(2.2 * s) }; return s }
+	function wave(type, ph) { var sn = Math.sin(ph); if (type === 'triangle') { return (2 / Math.PI) * Math.asin(sn) }; if (type === 'softsquare') { return Math.tanh(2.2 * sn) }; if (type === 'softsaw') { var x = ((ph / (2 * Math.PI)) % 1 + 1) % 1; return Math.tanh(1.8 * (2 * x - 1)) }; return sn }
 	function envPerc(u, attack, power) { var a = attack <= 0 ? 1 : Math.min(1, u / attack); return a * Math.pow(Math.max(0, 1 - u), power == null ? 2 : power) }
 	function addOsc(data, sr, start, dur, f0, f1, amp, type, attack, power) {
 		var i0 = Math.max(0, Math.floor(start * sr)), n = Math.max(1, Math.floor(dur * sr)), phase = 0, ratio = f0 > 0 && f1 > 0 ? f1 / f0 : 1
@@ -164,7 +168,15 @@
 	function normalizeSample(data, target) { var peak = 0; for (var i = 0; i < data.length; i++) { var a = Math.abs(data[i]); if (a > peak) { peak = a } }; var mul = peak > 0 ? (target || 0.86) / peak : 1; for (var j = 0; j < data.length; j++) { data[j] = Math.max(-0.98, Math.min(0.98, data[j] * mul)) } }
 	function makeSample(id, dur, draw, target) { var sr = ctx.sampleRate, n = Math.max(32, Math.floor(dur * sr)), data = new Float32Array(n); draw(data, sr); normalizeSample(data, target || 0.86); var b = ctx.createBuffer(1, n, sr); if (b.copyToChannel) { b.copyToChannel(data, 0) } else { b.getChannelData(0).set(data) }; sampleBank[id] = b }
 	function noteSeq(data, sr, notes, gap, dur, amp, type, start) { start = start || 0; for (var i = 0; i < notes.length; i++) { addOsc(data, sr, start + i * gap, dur, notes[i], notes[i] * 1.02, amp, type || 'triangle', 0.04, 2.2) } }
-	function dartBurst(data, sr, count, gap, start, gain) { for (var i = 0; i < count; i++) { var at = (start || 0) + i * gap; addNoise(data, sr, at, 0.045, 0.42 * gain, 850, 2400, 0.01, 3, 1200 + i); addOsc(data, sr, at, 0.075, 980 - i * 35, 480 - i * 20, 0.60 * gain, 'triangle', 0.02, 2.7) } }
+	function dartBurst(data, sr, count, gap, start, gain) {
+		// Projectile identity = air snap + hard edge. Avoid repeated low-mid descending glides ("croak").
+		for (var i = 0; i < count; i++) {
+			var at = (start || 0) + i * gap
+			addNoise(data, sr, at, 0.036, 0.48 * gain, 1100, 4200, 0.004, 3.6, 1200 + i)
+			addOsc(data, sr, at, 0.042, 2050 - i * 35, 1320 - i * 20, 0.34 * gain, 'softsquare', 0.004, 3.8)
+			addOsc(data, sr, at + 0.004, 0.050, 650 - i * 10, 430 - i * 8, 0.13 * gain, 'triangle', 0.005, 4.0)
+		}
+	}
 	function buildSampleBank() {
 		if (sampleBank.__ready || !ctx) { return }
 		// UI language: press / confirm / back / toggle / pause. Short, mid-band, non-piercing.
@@ -196,17 +208,76 @@
 		makeSample('shield_contact', 0.10, function(d,s){ addOsc(d,s,0,0.09,720,410,0.58,'triangle',0.015,2.7); addOsc(d,s,0.01,0.07,1320,880,0.20,'sine',0.02,2.8) })
 		makeSample('generic_hit', 0.085, function(d,s){ addNoise(d,s,0,0.055,0.40,220,1100,0.005,3,21); addOsc(d,s,0,0.075,300,170,0.34,'triangle',0.01,2.8) })
 		makeSample('crit_hit', 0.13, function(d,s){ addNoise(d,s,0,0.075,0.45,260,1500,0.005,2.6,22); addOsc(d,s,0,0.115,390,125,0.56,'triangle',0.008,2.3) })
-		makeSample('ice_throw', 0.14, function(d,s){ addNoise(d,s,0,0.11,0.28,700,2300,0.01,2.4,23); addOsc(d,s,0,0.125,1280,560,0.56,'sine',0.02,2.2) })
-		makeSample('ice_bloom', 0.24, function(d,s){ addOsc(d,s,0,0.20,390,840,0.44,'sine',0.05,1.8); addNoise(d,s,0.02,0.20,0.27,650,2200,0.04,1.9,24); addOsc(d,s,0.08,0.13,880,1120,0.22,'triangle',0.04,2.0) })
-		for (var bv = 1; bv <= 5; bv++) { (function(count){ makeSample('bolt_' + count, 0.09 + count * 0.027, function(d,s){ dartBurst(d,s,count,0.022,0,0.88); if (count >= 4) { addOsc(d,s,0.03,0.10,520,360,0.18,'triangle',0.03,2.5) } }) })(bv) }
-		for (var lv = 1; lv <= 5; lv++) { (function(level){ var pulses = [1,1,2,3,4][level-1]; makeSample('lightning_' + level, 0.14 + pulses * 0.028, function(d,s){ addNoise(d,s,0,0.09 + level*0.008,0.62,900,3000,0.004,2.6,30+level); addOsc(d,s,0,0.085 + level*0.006,1180+level*55,650+level*24,0.60,'softsquare',0.008,2.7); for (var p=0;p<pulses;p++){ addOsc(d,s,0.025+p*0.027,0.045,1650-p*110,980-p*55,0.30,'softsquare',0.006,3.0) } }) })(lv) }
+		makeSample('ice_throw', 0.14, function(d,s){ addNoise(d,s,0,0.11,0.30,800,2800,0.008,2.5,23); addOsc(d,s,0,0.125,1320,590,0.60,'sine',0.018,2.3) })
+		makeSample('ice_bloom', 0.24, function(d,s){ addOsc(d,s,0,0.20,420,900,0.48,'sine',0.045,1.8); addNoise(d,s,0.02,0.20,0.30,700,2600,0.035,1.9,24); addOsc(d,s,0.08,0.13,920,1220,0.24,'triangle',0.035,2.0) })
 
-		// Combo identities = audible combination of their parent skills, not a new unrelated language.
-		makeSample('steam_blast', 0.25, function(d,s){ addOsc(d,s,0,0.20,195,78,0.76,'triangle',0.008,1.9); addNoise(d,s,0,0.22,0.55,430,1500,0.01,1.9,40); addOsc(d,s,0.05,0.15,720,1180,0.24,'sine',0.03,2.1) })
-		makeSample('electro_deploy', 0.20, function(d,s){ addOsc(d,s,0,0.18,210,580,0.52,'sine',0.04,1.8); addOsc(d,s,0.02,0.16,260,350,0.30,'triangle',0.03,2.0) })
-		makeSample('electro_fire', 0.19, function(d,s){ addOsc(d,s,0,0.17,185,70,0.88,'triangle',0.006,2.0); addNoise(d,s,0,0.12,0.48,110,1000,0.004,2.6,41); addOsc(d,s,0.008,0.065,560,225,0.30,'softsquare',0.005,3.0); addOsc(d,s,0.03,0.10,760,420,0.20,'triangle',0.02,2.4) })
-		makeSample('electro_end', 0.14, function(d,s){ addOsc(d,s,0,0.13,360,135,0.42,'sine',0.03,2.3) })
-		makeSample('burn_dart', 0.12, function(d,s){ dartBurst(d,s,1,0,0,0.90); addNoise(d,s,0.035,0.07,0.23,650,1500,0.02,2.5,42) })
+		// Bolt = one projectile volley voice. Count changes micro-click density, not the main timbre.
+		for (var bv = 1; bv <= 5; bv++) { (function(count){
+			makeSample('bolt_' + count, 0.082 + count * 0.010, function(d,s){
+				addNoise(d,s,0,0.050,0.50,1200,4300,0.004,3.4,25+count)
+				addOsc(d,s,0,0.055,1880 + count*35,1120 + count*22,0.42,'softsquare',0.004,3.5)
+				addOsc(d,s,0.006,0.060,610,420,0.12,'triangle',0.005,4.0)
+				for (var q=1;q<count;q++) {
+					var at=0.012*q
+					addNoise(d,s,at,0.018,0.16,1500,4600,0.003,4.0,1250+count*10+q)
+					addOsc(d,s,at,0.023,2450-q*55,1640-q*35,0.13,'softsquare',0.003,4.2)
+				}
+			}, 0.80)
+		})(bv) }
+
+		// Lightning restores the older game-skill DNA, pre-rendered into ONE voice:
+		// crackle + hard snap + electric tail + level-dependent pulses.
+		for (var lv = 1; lv <= 5; lv++) { (function(level){
+			var crackHz=[2350,2550,2750,3000,3300][level-1]
+			var snap0=[1080,1140,1210,1290,1380][level-1], snap1=[610,640,680,730,790][level-1]
+			var pulses=[1,1,2,2,3][level-1]
+			makeSample('lightning_' + level, 0.155 + pulses*0.030, function(d,s){
+				addNoise(d,s,0,0.085+level*0.010,0.72,1200,crackHz,0.0025,2.9,30+level)
+				addOsc(d,s,0,0.076+level*0.006,snap0,snap1,0.72,'softsaw',0.003,3.0)
+				addOsc(d,s,0.010,0.105+level*0.008,920+level*60,1380+level*100,0.26,'triangle',0.006,2.5)
+				for (var p=0;p<pulses;p++) {
+					addOsc(d,s,0.020+p*0.029,0.035,1760-p*130,1120-p*80,0.30,'softsquare',0.0025,3.4)
+					addNoise(d,s,0.020+p*0.029,0.025,0.16,1350,3900,0.002,4.0,300+level*10+p)
+				}
+			}, 0.90)
+		})(lv) }
+
+		// Combo identities = parent-skill DNA with phone-readable mid-band body.
+		makeSample('steam_blast', 0.29, function(d,s){
+			addOsc(d,s,0,0.205,390,145,0.58,'triangle',0.006,2.0)
+			addNoise(d,s,0,0.235,0.76,680,3200,0.005,1.9,40)
+			addOsc(d,s,0.045,0.175,1180,2450,0.42,'sine',0.016,2.0)
+			addNoise(d,s,0.075,0.17,0.32,1500,5000,0.016,2.1,401)
+		}, 0.92)
+
+		makeSample('electro_deploy', 0.20, function(d,s){
+			addOsc(d,s,0,0.18,260,620,0.52,'sine',0.035,1.8)
+			addOsc(d,s,0.015,0.15,430,330,0.30,'triangle',0.025,2.2)
+			addNoise(d,s,0.02,0.07,0.16,700,2400,0.006,3.0,402)
+		})
+		makeSample('electro_fire', 0.205, function(d,s){
+			// "砰": low body + phone-speaker mid punch + short electrical edge.
+			addOsc(d,s,0,0.175,340,118,0.78,'triangle',0.004,2.1)
+			addNoise(d,s,0,0.125,0.62,180,1900,0.003,2.7,41)
+			addOsc(d,s,0.004,0.060,760,330,0.48,'softsquare',0.0025,3.5)
+			addOsc(d,s,0.024,0.105,930,500,0.26,'triangle',0.008,2.8)
+		}, 0.92)
+		makeSample('electro_end', 0.14, function(d,s){ addOsc(d,s,0,0.13,440,180,0.44,'sine',0.025,2.4) })
+
+		// Burning Barrage: the whole 3-dart volley is ONE buffer voice.
+		for (var bl=1; bl<=5; bl++) { (function(level){
+			makeSample('burn_barrage_' + level, 0.27, function(d,s){
+				for (var q=0;q<3;q++) {
+					var at=q*0.045
+					dartBurst(d,s,1,0,at,0.86+level*0.025)
+					addOsc(d,s,at+0.008,0.060,560+level*18,270+level*8,0.22,'triangle',0.004,3.2)
+				}
+				addNoise(d,s,0.065,0.18,0.28+level*0.012,500,1900,0.015,2.2,420+level)
+				addOsc(d,s,0.075,0.15,900+level*25,620+level*18,0.16,'softsquare',0.010,2.8)
+			}, 0.88)
+		})(bl) }
+
+		makeSample('burn_dart', 0.11, function(d,s){ dartBurst(d,s,1,0,0,0.88); addNoise(d,s,0.030,0.065,0.18,700,1900,0.012,2.8,42) })
 
 		// Progress/reward identities.
 		makeSample('gain_fire', 0.30, function(d,s){ addNoise(d,s,0,0.18,0.38,300,1300,0.02,2.0,50); noteSeq(d,s,[260,390,520],0.06,0.12,0.40,'triangle',0.04) })
@@ -308,15 +379,15 @@
 	Bus.on('combo:found', playComboFound)
 	Bus.on('pickup:eat', function (d) { d = d || {}; if (d.kind === 'skill') { return }; if (d.kind === 'heal') { playBank('pickup_heal', { family: 'ui', priority: 3, gain: 0.50 }) } else { throttled('pickup:food', 90, function () { playBank('pickup_food', { family: 'ui', priority: 2, gain: 0.34 }) }) } })
 
-	Bus.on('fx:bolt', function (d) { d = d || {}; if ((d.shotIndex || 0) !== 0) { return }; var count = Math.max(1, Math.min(5, Number(d.shotCount) || 1)), level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel('bolt'))); playBank('bolt_' + count, { family: 'skill', priority: 3, gain: 0.47 + level * 0.025, rate: 0.97 + level * 0.012, weight: 1.0 }) })
+	Bus.on('fx:bolt', function (d) { d = d || {}; if ((d.shotIndex || 0) !== 0) { return }; var count = Math.max(1, Math.min(5, Number(d.shotCount) || 1)), level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel('bolt'))); playBank('bolt_' + count, { family: 'skill', priority: 2, gain: 0.38 + level * 0.018, rate: 0.99 + level * 0.006, weight: 0.85 }) })
 	Bus.on('fx:ice_throw', function () { throttled('fx:ice_throw', 115, function () { playBank('ice_throw', { family: 'skill', priority: 3, gain: 0.46, weight: 1.0, vary: true }) }) })
 	Bus.on('fx:ice_pool', function () { throttled('fx:ice_pool', 160, function () { playBank('ice_bloom', { family: 'skill', priority: 3, gain: 0.50, weight: 1.0, vary: true }) }) })
-	Bus.on('fx:lightning', function (d) { d = d || {}; var meta = d.chain && d.chain.vfxMeta, level = Math.max(1, Math.min(5, Number(meta && meta.level) || ownedLevel('lightning'))); playBank('lightning_' + level, { family: 'skill', priority: 3, gain: 0.53 + level * 0.025, weight: 1.1 }) })
-	Bus.on('fx:electroturretdeploy', function () { playBank('electro_deploy', { family: 'combo', priority: 3, gain: 0.50, weight: 1.0 }) })
-	Bus.on('fx:electroturretfire', function (d) { d = d || {}; var level = Math.max(1, Math.min(5, Number(d.comboLevel) || 1)); playBank('electro_fire', { family: 'combo', priority: 4, gain: 0.58 + level * 0.025, rate: 1 - (level - 1) * 0.008, weight: 1.3 }) })
+	Bus.on('fx:lightning', function (d) { d = d || {}; var meta = d.chain && d.chain.vfxMeta, level = Math.max(1, Math.min(5, Number(meta && meta.level) || ownedLevel('lightning'))); playBank('lightning_' + level, { family: 'skill', priority: 4, gain: 0.64 + level * 0.026, weight: 1.2 }) })
+	Bus.on('fx:electroturretdeploy', function () { playBank('electro_deploy', { family: 'combo', priority: 4, gain: 0.58, weight: 1.0 }) })
+	Bus.on('fx:electroturretfire', function (d) { d = d || {}; var level = Math.max(1, Math.min(5, Number(d.comboLevel) || 1)); playBank('electro_fire', { family: 'combo', priority: 5, gain: 0.70 + level * 0.020, rate: 1 - (level - 1) * 0.006, weight: 1.35 }) })
 	Bus.on('fx:electroturretend', function () { playBank('electro_end', { family: 'combo', priority: 2, gain: 0.34, weight: 0.5 }) })
-	Bus.on('fx:steamblast', function (d) { d = d || {}; throttled('fx:steamblast', SFXCFG.steamCooldownMs || 180, function () { var c = Math.max(1, Math.min(6, Number(d.hitCount) || 1)); playBank('steam_blast', { family: 'combo', priority: 4, gain: 0.55 + (c - 1) * 0.025, rate: 1 - (c - 1) * 0.006, weight: 1.4 }) }) })
-	Bus.on('fx:burndart', function (d) { d = d || {}; var delay = Math.max(0, Number(d.visualDelay) || 0), level = Math.max(1, Math.min(5, Number(d.level) || 1)); if (!ensure()) { return }; playBank('burn_dart', { family: 'combo', priority: 3, gain: 0.44 + level * 0.018, rate: 0.98 + (Number(d.shotIndex) || 0) * 0.012, when: ctx.currentTime + delay, weight: 0.8 }) })
+	Bus.on('fx:steamblast', function (d) { d = d || {}; throttled('fx:steamblast', SFXCFG.steamCooldownMs || 180, function () { var c = Math.max(1, Math.min(6, Number(d.hitCount) || 1)); playBank('steam_blast', { family: 'combo', priority: 5, gain: 0.68 + (c - 1) * 0.018, rate: 1 - (c - 1) * 0.004, weight: 1.45 }) }) })
+	Bus.on('fx:burndart', function (d) { d = d || {}; if ((Number(d.shotIndex) || 0) !== 0) { return }; var level = Math.max(1, Math.min(5, Number(d.level) || 1)); playBank('burn_barrage_' + level, { family: 'combo', priority: 4, gain: 0.60 + level * 0.020, weight: 1.15 }) })
 	// ================= Golden-Master Single-Source BGM =================
 	// Five clean loops only. No musical transition assets and no Boss-warning BGM.
 	// Stage changes are phase-locked to the current 4-bar cycle; gameplay owns all durations.
@@ -379,7 +450,7 @@
 	}
 	function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
 	function applyBgmGain(immediate) {
-		var v = (muted ? 0 : MASTER_GAIN * (AUDIO.bgmVolume == null ? 0.37 : AUDIO.bgmVolume) * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul)
+		var v = (muted ? 0 : MASTER_GAIN * (AUDIO.bgmVolume == null ? 0.37 : AUDIO.bgmVolume) * pauseMul * eventDuckMul * densityDuckMul * chooseDuckMul * pressureBgmMul * startHandoffGain)
 		v = clamp(v, 0, 1)
 		for (var key in bgmMedia) {
 			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
@@ -476,6 +547,18 @@
 	}
 	function clearStageRequestTimer() {
 		if (bgmStageRequestTimer) { clearTimeout(bgmStageRequestTimer); bgmStageRequestTimer = null }
+	}
+	function clearStartHandoff() {
+		if (startHandoffTimer) { clearTimeout(startHandoffTimer); startHandoffTimer = null }
+		startHandoffGain = 1
+	}
+	function beginStartHandoff() {
+		clearStartHandoff(); startHandoffGain = 0
+		var delayMs = Math.max(0, Math.round((MIX.startHandoffSec == null ? 0.18 : MIX.startHandoffSec) * 1000))
+		if (!delayMs) { startHandoffGain = 1; return }
+		startHandoffTimer = setTimeout(function () {
+			startHandoffTimer = null; startHandoffGain = 1; applyBgmGain(true)
+		}, delayMs)
 	}
 	function nextBeatDelayMs() {
 		if (!bgmActive || !isFinite(bgmActive.currentTime)) { return 0 }
@@ -583,12 +666,12 @@
 		if (pendingMusicState && pendingMusicState !== currentMusicState && !bossWarningActive) { setMusicState({ stageId: pendingMusicStage, musicState: pendingMusicState }) }
 	}
 	function pauseBgm() {
-		clearStageRequestTimer(); bgmRunning = false
+		clearStageRequestTimer(); clearStartHandoff(); bgmRunning = false
 		if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null }
 		if (bgmActive) { try { bgmActive.pause() } catch (_) {} }
 	}
 	function stopBgm() {
-		bgmLifecycleToken++; bgmPlaySerial++; bgmWanted = false; bgmRunning = false; clearStageRequestTimer(); bossLoopAtGameTime = null; bossWarningActive = false; pendingMusicState = ''
+		bgmLifecycleToken++; bgmPlaySerial++; bgmWanted = false; bgmRunning = false; clearStageRequestTimer(); clearStartHandoff(); bossLoopAtGameTime = null; bossWarningActive = false; pendingMusicState = ''
 		if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null }
 		for (var key in bgmMedia) {
 			if (!Object.prototype.hasOwnProperty.call(bgmMedia, key) || !bgmMedia[key]) { continue }
@@ -615,8 +698,10 @@
 		resetDensity(); _lastAt = {}; currentStage = Number(initialMusic.stageId) || 1; pendingMusicStage = 0; currentMusicState = initialState; pendingMusicState = ''; curLayer = initialState; battleHeat = MUSIC_STATE_HEAT[initialState] == null ? 0 : MUSIC_STATE_HEAT[initialState]; stageBgmMul = 1; stageTransitionPending = 0; bossWarningActive = false; bossLoopAtGameTime = null
 		pressureLevel = 0; pressureTarget = 0; buildLevel = 0; buildTarget = 0; pressureBgmMul = 1; lastPressureBgmMul = 1; musicSampleAt = 0; runCount++
 		if (ensure()) { applySfxGain(true); applyMusicState(initialState, currentStage) }
+		if (!skipStartCue) { playStartCue(runCount > 1) }
+		beginStartHandoff()
 		startBgm()
-		resume(function () { if (!skipStartCue) { playStartCue(runCount > 1) } })
+		resume()
 	})
 	Bus.on('wave:stage', function (d) {
 		if (!bgmRunning) { startBgm() }
@@ -664,10 +749,10 @@
 				if (!media.paused) { mediaPlaying.push(key) }
 				if (!media.paused && media.volume > 0.0001) { mediaAudible.push(key) }
 			}
-			return { specVersion: 'AUDIO-FINAL-1.0', context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, sfxDensity: densityScore, sampleCount: Object.keys(sampleBank).length - (sampleBank.__ready ? 1 : 0), voices: voiceSnapshot() }
+			return { specVersion: 'AUDIO-FINAL-1.1', context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, sfxDensity: densityScore, sampleCount: Object.keys(sampleBank).length - (sampleBank.__ready ? 1 : 0), voices: voiceSnapshot() }
 		}
 	}
 	Registry.register('audio', Audio)
-	Log.info('audio 就绪：AUDIO-FINAL-1.0 · Golden Master BGM冻结 + Sample Bank SFX + Priority/Voice Budget')
+	Log.info('audio 就绪：AUDIO-FINAL-1.1 · Golden Master BGM冻结 + 技能身份优先 Sample Bank + Priority/Voice Budget')
 
 })(typeof window !== 'undefined' ? window : this)
