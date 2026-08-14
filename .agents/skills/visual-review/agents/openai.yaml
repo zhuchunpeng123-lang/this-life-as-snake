@@ -1,7 +1,0 @@
-interface:
-  display_name: "视觉验收"
-  short_description: "本地游戏的浏览器实测、视觉证据与结果自审完整工作流程"
-  default_prompt: "Use $visual-review to run the local game, inspect the rendered result, and return the minimum visual evidence needed to support acceptance."
-
-policy:
-  allow_implicit_invocation: false

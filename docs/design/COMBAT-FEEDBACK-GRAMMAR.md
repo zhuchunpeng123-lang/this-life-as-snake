@@ -18,7 +18,7 @@ Presentation Foundation v2 的战斗反馈语法。它只管理表现，不改�
 
 唯一运行时入口是 `05_particle.js` 的 `resolveCombatText()` / `emitCombatText()`，token 位于 `CONFIG.STYLE.combatFx.text.tiers`。每个 role 集中定义：字号、字重、填充、描边、生命周期、上移速度和优先级。
 
-元素与技能来源只能提供轻度 `accent`；它们继续通过 `SKILL-VFX-GUIDE.md` 管理 projectile、beam、deploy、impact identity 和专属音频。它们不能决定通用文字字号、通用暴击样式或文本优先级。
+元素与技能来源只能提供轻度 `accent`；VFX Skill 负责 projectile、beam、deploy、impact 等视觉 presentation identity。Audio 的事件 ownership、专属声音边界、密度与生命周期由 `docs/audio/AUDIO.md` 和 Audio Skill 管理。它们不能决定通用文字字号、通用暴击样式或文本优先级。
 
 ## 信息 ownership
 

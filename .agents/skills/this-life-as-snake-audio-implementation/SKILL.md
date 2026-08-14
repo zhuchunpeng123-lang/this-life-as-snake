@@ -1,68 +1,27 @@
 ---
 name: this-life-as-snake-audio-implementation
-description: Implement or debug skill and Combo audio in 《此生为蛇》 using Web Audio. Use for event routing, dedicated skill sounds, generic hit ownership, throttling, priority, reset behavior, level layers, and mobile-safe verification. Do not use for unrelated BGM composition.
+description: Implement or debug audio in 此生为蛇 when work involves Web Audio event tracing, ownership, skill or combo feedback, throttling, priority, density, lifecycle, mix interaction, or mobile-safe verification. Use the current audio implementation and project audio contract; current sound aesthetics are not permanent answers.
 ---
 
-# Skill audio implementation workflow
+# Audio implementation
 
-## Required reads
+## Scope
 
-1. `AGENTS.md`
-2. `docs/audio/SKILL-AUDIO-GUIDE.md`
-3. Current task brief
-4. `02_config.js`
-5. `10_audio.js`
-6. Skill event source in `08_skill.js`
-7. Damage and enemy events when relevant
+Use for audio implementation, event routing, ownership, density/voice management, lifecycle, mix interaction, and verification. Do not use to decide the project’s final creative sound direction without a current task and user acceptance.
 
-## First review the event chain
+## Required context
 
-Trace:
+Read `AGENTS.md`, `docs/audio/AUDIO.md`, `snake55/10_audio.js`, the current task, and the event source in the relevant gameplay/UI module. Read other source only as needed to trace the event.
 
-```text
-skill trigger
-→ hurt/applyDamage
-→ enemy:hit
-→ dedicated fx event
-→ enemy:dead
-```
+## Workflow
 
-Never review only the dedicated `fx:*` listener.
+1. Trace the semantic event from trigger through damage/feedback to dedicated audio and lifecycle events.
+2. Identify one main owner for each sound. Decide explicitly whether a generic hit, death, or UI cue is suppressed when a dedicated owner plays.
+3. Check family gates, priority, density, voice budgets, BGM interaction, and mobile-speaker readability.
+4. Check pause, resume, death, restart, mute, unlock, and page lifecycle reset paths.
+5. Implement only the approved audio scope. Keep gameplay values, damage, VFX behavior, and unrelated WIP unchanged.
+6. Run relevant syntax/static checks and describe what still requires human listening on desktop, phone, or standalone.
 
-## Ownership rule
+## Review standard
 
-For each source, identify one main sound owner.
-
-If a source has a dedicated skill sound, explicitly decide whether generic `enemy:hit` is suppressed. Keep enemy death sound separate unless the task says otherwise.
-
-## Gating rule
-
-- Maintain per-family gates by default.
-- Do not let lightning and electro share one gate unless the intended priority behavior is fully specified.
-- Cross-family priority must not suppress the dedicated sound while leaving a generic hit sound audible.
-- Reset gate state on run reset and relevant audio lifecycle events.
-
-## Sound identity
-
-Define:
-
-- frequency range;
-- transient;
-- tail;
-- level layers;
-- volume;
-- throttle;
-- priority;
-- mobile speaker readability.
-
-Base skill and Combo must differ in more than pitch alone.
-
-## Definition of done
-
-- No unintended double trigger.
-- Same level has stable sound identity.
-- Dense events are throttled.
-- Dedicated sound and generic hit ownership are explicit.
-- Reset, pause, death, restart, mute, and mobile unlock paths remain valid.
-- Gameplay and VFX files are unchanged unless explicitly allowed.
-- JS syntax, project check, and diff check pass.
+No unintended double trigger, no unbounded dense-event voice creation, clear ownership, valid lifecycle reset, and no accidental gameplay coupling. Do not copy a historical Lightning/Electro timbre, oscillator recipe, or event matrix as a permanent design answer.

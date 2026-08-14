@@ -1,72 +1,28 @@
 ---
 name: this-life-as-snake-vfx-implementation
-description: Implement or debug battle skill and Combo visuals in 《此生为蛇》 after the visual direction is frozen. Use for Canvas VFX, PNG integration, layers, moving targets, hit feedback, level growth, performance, and verified patch application. Do not use to invent final art direction.
+description: Implement or debug browser-visible battle skill and Combo VFX in 此生为蛇 after the current visual direction and asset scope are clear. Use for Canvas VFX, PNG integration, motion, hit feedback, level readability, performance, and verified implementation patches; do not use historical skills as final art direction.
 ---
 
-# VFX implementation workflow
+# VFX implementation
 
-## Required reads
+## Scope and context
 
-1. `AGENTS.md`
-2. `docs/design/ART-BIBLE.md`
-3. `docs/design/ASSET-SPEC.md`
-4. `docs/design/SKILL-VFX-GUIDE.md`
-5. Current task brief
-6. Relevant current source and assets
+Use for skill, Combo, projectile, beam, area, summon, hit, status, and battle feedback presentation. Read `AGENTS.md`, the current task, `docs/design/ART-BIBLE.md`, and relevant source/assets. When the task adds or replaces an asset, also read `docs/design/ASSET-SPEC.md`; when it changes hit, damage, or status feedback, also read `docs/design/COMBAT-FEEDBACK-GRAMMAR.md`; when it depends on current WIP or acceptance state, read `docs/STATUS.md`.
 
-Read the electric retrospective only when the task involves similar layer, beam, moving-target, hit-flash, baseline, or handoff failures.
+## Workflow
 
-## Preconditions
+1. Understand the current mechanic and build the complete mental sequence: `trigger → appear → attack → hit → end`.
+2. Separate Gameplay from Presentation. Do not let VFX retarget, re-apply damage, change timing, or become a second gameplay truth source.
+3. Define the visual identity for this task from current evidence; do not copy a historical skill’s exact shape, color, node layout, or motion as a universal answer.
+4. Check real scale, motion, target follow, density, occlusion, level growth, and identity hierarchy in the actual scene.
+5. Keep PNG/resource and program VFX responsibilities explicit; implement the smallest reliable layer set.
+6. Check particle, text, beam, node, lifetime, and dense-mode budgets; remove decoration before identity-defining feedback.
+7. Run relevant syntax/static/functional checks and conduct an adversarial review for readability, performance, and gameplay leakage.
 
-- Confirm whether the task is:
-  - Codex implementation; or
-  - mechanical application of a ChatGPT verified patch.
-- Never mix the two modes.
-- Confirm Gameplay invariants and allowed files.
-- If visual direction or final asset is not frozen, stop and report the missing decision.
+## Visual evidence
 
-## Code-chain review
+Only when the user explicitly asks Codex for browser visual evidence should Codex run the game, capture/read screenshots or recordings, and self-review the rendered result. Otherwise complete engineering verification and mark final visual acceptance as user real-device acceptance. If requested evidence is unavailable or inconclusive, report visual acceptance as blocked.
 
-Inspect as relevant:
+## Patch safety and done
 
-```text
-02_config.js
-08_skill.js
-05_particle.js
-07_enemy.js
-11_render.js
-10_audio.js
-index.html
-```
-
-Do not assume a Particle-only change is sufficient.
-
-## Rules
-
-- Keep PNG and program VFX responsibilities explicit.
-- Draw a beam's outer layer, main line, core, and hit nodes as one logical unit unless a documented reason says otherwise.
-- For moving targets, use target IDs for visual follow only; do not re-target or re-apply damage.
-- Use source-specific hit feedback.
-- Lv1 must be readable; Lv5 must show multi-dimensional growth.
-- Set fixed maxima for targets, nodes, particles, and lifetimes.
-- In dense mode, remove decoration before identity-defining feedback.
-- Do not use per-frame random paths.
-- Do not change Gameplay when it is frozen.
-
-## Verified patch mode
-
-- Check workspace and hashes.
-- Run `git apply --check`.
-- Stop on mismatch.
-- Do not use `--3way`, `--reject`, manual conflict guessing, or full-file overwrite.
-- Run specified checks and inspect actual diff.
-
-## Definition of done
-
-- Relevant JS syntax checks pass.
-- Project static check passes.
-- `git diff --check` passes.
-- Actual changed files match scope.
-- Gameplay invariants are unchanged.
-- `index.html` cache stamps are updated when required.
-- Report unverified real-device visual items honestly.
+For an approved patch, verify the current worktree and anchors, run `git apply --check`, do not use `--3way`, `--reject`, manual conflict guessing, or rollback unrelated WIP, then inspect the final diff. Done means scoped files only, gameplay invariants preserved, relevant checks passed, and remaining visual uncertainty stated.

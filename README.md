@@ -1,45 +1,27 @@
-# 《此生为蛇》5.5
+# 《此生为蛇》
 
-网页版“贪吃蛇 + Roguelike + 叙事”融合原型。当前主线由 Codex 接手维护，正式工作区是本 Git 仓库。
+网页端「贪吃蛇 + Roguelike 割草 + AI 叙事结算」项目，运行代码位于 `snake55/`。
 
 ## 快速入口
 
-- 项目简报：`docs/PROJECT-BRIEF.md`
-- 当前状态：`docs/PROJECT-STATUS.md`
-- Codex 守则：`AGENTS.md`
-- 当前开放问题：`docs/DEBT.md`
-- 架构概要：`docs/ARCHITECTURE.md`
-- AI 协作规范：`docs/AI-COLLABORATION.md`
-- 视觉总规范：`docs/design/ART-BIBLE.md`
-- 美术资源技术规范：`docs/design/ASSET-SPEC.md`
-- 世界观与冠夜鸮视觉规范：`docs/design/`
-- 文档目录：`docs/README.md`
+- 项目定位：`docs/PROJECT.md`
+- 当前状态与开放问题：`docs/STATUS.md`
+- Codex 工程规则：`AGENTS.md`
+- 协作与验收：`docs/WORKFLOW.md`、`docs/QA.md`
+- 稳定架构：`docs/ARCHITECTURE.md`
+- 设计意图：`docs/design/GDD.md`
+- 音频规范：`docs/audio/AUDIO.md`
+- 当前运行时数值：`snake55/02_config.js`
 
 ## 运行
 
-静态托管 `snake55/` 目录，然后浏览器打开 `index.html`。
+在 `snake55/` 上启动任意可靠的静态 HTTP 服务，再打开 `index.html`。移动端和 iOS standalone 验证必须使用 HTTP/HTTPS，不使用 `file://` 作为验收依据。
 
-移动端和 iOS standalone 测试必须走 http/https；`file://` 不能可靠验证音频手势解锁。
-
-## 重要约束
-
-- 无构建流程、无 import/export。
-- 所有脚本由 `snake55/index.html` 顺序加载。
-- 改任意 `snake55/*.js` 后必须同步 bump `index.html` 的 `?v=` 缓存戳。
-- 执行权限和确认边界以 `AGENTS.md` 为准；已授权的低风险任务不重复确认。
-
-## 提交前静态检查
-
-在提交前执行：
+## 检查
 
 ```bash
 node tools/check-project.mjs
+git diff --check
 ```
 
-该检查不需要 `npm install`，用于校验 `snake55/*.js` 语法、禁止的模块语法、`index.html` 脚本顺序与缓存戳，以及正式 Markdown 入口的本地链接。退出码 `0` 表示全部通过，非 `0` 表示至少存在一项错误。
-
-## Git
-
-- 远程：`https://github.com/zhuchunpeng123-lang/this-life-as-snake.git`
-- 主线：`main`
-- Codex 接手标签：`codex-handoff-20260727`
+检查器覆盖 JS 语法、模块语法、脚本顺序与 cache stamp、活动文档路径和治理入口回归；它不替代真实浏览器、移动设备或用户视觉验收。

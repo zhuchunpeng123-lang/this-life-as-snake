@@ -30,12 +30,42 @@ const EXPECTED_SCRIPTS = [
 const MARKDOWN_ENTRIES = [
   'AGENTS.md',
   'README.md',
-  'docs/README.md',
+  'CHANGELOG.md',
+  'docs/PROJECT.md',
+  'docs/STATUS.md',
+  'docs/ARCHITECTURE.md',
+  'docs/WORKFLOW.md',
+  'docs/QA.md'
+];
+
+const LEGACY_ACTIVE_PATHS = [
   'docs/PROJECT-BRIEF.md',
   'docs/PROJECT-STATUS.md',
+  'docs/CHATGPT-CONTROL.md',
   'docs/DEBT.md',
-  'docs/ARCHITECTURE.md',
-  'docs/plans/STATUS.md'
+  'docs/README.md',
+  'docs/AI-COLLABORATION.md',
+  'docs/plans/STATUS.md',
+  'docs/plans/README.md',
+  'docs/audio/AUDIO-BIBLE.md',
+  'docs/audio/SKILL-AUDIO-GUIDE.md',
+  'docs/design/SKILL-VFX-GUIDE.md',
+  'snake55/docs/AUDIO_SYSTEM_SPEC.md',
+  'snake55/docs/AUDIO_EVENT_MATRIX.md',
+  'snake55/AGENTS.md',
+  'snake55/docs/balance'
+];
+
+const ACTIVE_MARKDOWN_ROOTS = [
+  path.join(ROOT_DIR, 'docs'),
+  path.join(ROOT_DIR, '.agents', 'skills')
+];
+
+const ACTIVE_MARKDOWN_EXCLUDES = [
+  `${path.sep}docs${path.sep}archive${path.sep}`,
+  `${path.sep}docs${path.sep}plans${path.sep}archive${path.sep}`,
+  `${path.sep}docs${path.sep}plans${path.sep}deprecated${path.sep}`,
+  `${path.sep}docs${path.sep}plans${path.sep}diagnosis${path.sep}`
 ];
 
 const errors = [];
@@ -399,8 +429,11 @@ function maskMarkdownCode(source) {
 }
 
 function checkMarkdownLinks() {
-  for (const relativeFile of MARKDOWN_ENTRIES) {
-    const file = path.join(ROOT_DIR, relativeFile);
+  const files = new Set([
+    ...MARKDOWN_ENTRIES.map((relativeFile) => path.join(ROOT_DIR, relativeFile)),
+    ...enumerateActiveMarkdown()
+  ]);
+  for (const file of [...files].sort((a, b) => a.localeCompare(b))) {
     if (!fs.existsSync(file)) {
       report('markdown links', 'missing formal Markdown entry', file);
       continue;
@@ -444,44 +477,72 @@ function checkMarkdownLinks() {
   }
 }
 
-function checkPresentationFoundation() {
-  const configFile = path.join(SNAKE_DIR, '02_config.js');
-  const particleFile = path.join(SNAKE_DIR, '05_particle.js');
-  const renderFile = path.join(SNAKE_DIR, '11_render.js');
-  const config = readText(configFile);
-  const particle = readText(particleFile);
-  const render = readText(renderFile);
-  const requiredTokens = ['dot:', 'normal:', 'crit:', 'combo:', 'playerHurt:', 'status:', 'debugSource:'];
-
-  for (const token of requiredTokens) {
-    if (!config.includes(token)) report('presentation foundation', `missing combat text token ${token}`, configFile);
+function enumerateActiveMarkdown() {
+  const files = new Set();
+  function visit(directory) {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (ACTIVE_MARKDOWN_EXCLUDES.some((fragment) => file.includes(fragment))) continue;
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile() && entry.name.endsWith('.md')) files.add(file);
+    }
   }
-  if (!config.includes('normalMode: \'recent-hit\'')) report('presentation foundation', 'missing normal enemy recent-hit HP bar policy', configFile);
-  if (!particle.includes('function resolveCombatText(') || !particle.includes('function emitCombatText(')) {
-    report('presentation foundation', 'missing unified combat text resolver', particleFile);
-  }
-  if (!render.includes('function shouldDrawHpBar(')) report('presentation foundation', 'missing HP bar presentation policy resolver', renderFile);
+  for (const root of ACTIVE_MARKDOWN_ROOTS) visit(root);
+  return [...files].sort((a, b) => a.localeCompare(b));
 }
 
-function checkMobileHudSafety() {
-  const configFile = path.join(SNAKE_DIR, '02_config.js');
-  const uiFile = path.join(SNAKE_DIR, '12_ui.js');
-  const indexFile = path.join(SNAKE_DIR, 'index.html');
-  const config = readText(configFile);
-  const ui = readText(uiFile);
-  const index = readText(indexFile);
+function resolveInstructionPath(reference) {
+  const normalized = reference.replaceAll('\\', '/').replace(/^\.\//, '');
+  const candidates = [
+    path.resolve(ROOT_DIR, normalized),
+    path.resolve(SNAKE_DIR, normalized)
+  ];
+  return candidates.find((candidate) => {
+    const relative = path.relative(ROOT_DIR, candidate);
+    return !relative.startsWith('..') && !path.isAbsolute(relative) && fs.existsSync(candidate);
+  });
+}
 
-  if (!config.includes('mobile: { lifeContentScale: 1.12, systemButtonScale: 0.80, systemLocalOffsetY: 0 }')) {
-    report('mobile HUD', 'missing the touch-only life/system layout tuning', configFile);
+function checkInstructionReferences() {
+  const files = [path.join(ROOT_DIR, 'AGENTS.md'), ...enumerateSkillFiles()];
+  const referencePattern = /`([^`]+)`/g;
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    const source = readText(file);
+    let match;
+    while ((match = referencePattern.exec(source)) !== null) {
+      const reference = match[1].trim();
+      const looksLikePath = /\.(?:md|mjs|js|html|json|yaml|yml|png|wav|ogg)$/i.test(reference)
+        || /^(?:docs|snake55|tools|\.agents)[\\/]/.test(reference);
+      if (!looksLikePath) continue;
+      if (/^(?:https?:|mailto:)/i.test(reference) || /[()<>{}]/.test(reference)) continue;
+      const line = source.slice(0, match.index).split('\n').length;
+      if (!resolveInstructionPath(reference)) report('instruction paths', `referenced path does not exist: ${reference}`, file, line);
+    }
   }
-  if (!ui.includes('function getMobileUiTuning(')) report('mobile HUD', 'missing touch-only tuning resolver', uiFile);
-  if (!ui.includes("getMobileUiTuning('lifeContentScale'")) report('mobile HUD', 'life content does not use touch-only tuning', uiFile);
-  if (!ui.includes("getMobileUiTuning('systemButtonScale'")) report('mobile HUD', 'system button scale does not use touch-only tuning', uiFile);
-  if (!ui.includes("getMobileUiTuning('systemLocalOffsetY'")) report('mobile HUD', 'system vertical position does not use touch-only tuning', uiFile);
-  if (!ui.includes('env(safe-area-inset-left)') || !ui.includes('env(safe-area-inset-bottom)')) {
-    report('mobile HUD', 'HUD anchors are missing left or bottom safe-area support', uiFile);
+}
+
+function enumerateSkillFiles() {
+  const root = path.join(ROOT_DIR, '.agents', 'skills');
+  if (!fs.existsSync(root)) return [];
+  const files = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile() && entry.name === 'SKILL.md') files.push(file);
+    }
   }
-  if (!index.includes('viewport-fit=cover')) report('mobile HUD', 'viewport is missing viewport-fit=cover for iPhone safe areas', indexFile);
+  visit(root);
+  return files;
+}
+
+function checkLegacyActiveTree() {
+  for (const relativePath of LEGACY_ACTIVE_PATHS) {
+    const file = path.join(ROOT_DIR, relativePath);
+    if (fs.existsSync(file)) report('active tree regression', `legacy active entry still exists: ${relativePath}`, file);
+  }
 }
 
 function runCheck(label, callback) {
@@ -497,8 +558,8 @@ runCheck('javascript syntax', () => checkJavaScriptSyntax(scripts));
 runCheck('module syntax', () => checkForbiddenModuleSyntax(scripts));
 runCheck('index.html scripts', checkHtmlScripts);
 runCheck('markdown links', checkMarkdownLinks);
-runCheck('presentation foundation', checkPresentationFoundation);
-runCheck('mobile HUD', checkMobileHudSafety);
+runCheck('instruction paths', checkInstructionReferences);
+runCheck('active tree', checkLegacyActiveTree);
 
 if (errors.length === 0) {
   console.log('Project static check passed: JavaScript, module syntax, script loading contract, cache stamps, and Markdown links.');

@@ -1,56 +1,36 @@
-# AGENTS.md · 《此生为蛇》Codex 项目守则
+# 《此生为蛇》Codex 项目规则
 
-> 本文件只放每次开工必须加载的最小规则。详细流程、历史和设计资料按任务需要读取；聊天记录不是项目真理源。
+本文件是每次任务的最小工程入口；当前用户指令优先，当前 worktree 与源码优先于历史文档。
 
-## 0. 开工读取
+## 1. 读取与范围
 
-- 主工作区：`F:\贪吃蛇游戏项目-Codex\_git-main`；外层目录只作交接快照。
-- 常规任务：本文件 + 当前任务相关源码。
-- 状态/排期任务：加读 `docs/PROJECT-STATUS.md`、`docs/plans/STATUS.md`。
-- Git、调参、多窗口或文档治理：加读 `docs/workflow.md`。
-- 世界观/美术/设计任务：加读相关 GDD、`docs/design/` 文档。
-- 技能、Combo、投射物、范围、受击或战场 VFX 实现任务：读取 `docs/design/SKILL-VFX-GUIDE.md`，并调用 `$this-life-as-snake-vfx-implementation`。
-- 技能音效、Web Audio、音频事件、节流或混音任务：读取 `docs/audio/SKILL-AUDIO-GUIDE.md`，并调用 `$this-life-as-snake-audio-implementation`。
-- 美术方向和最终素材默认由 ChatGPT 美术窗口冻结；方向未确认时，Codex 不自行替换最终素材。
-- `DEBT`、`RETRO`、`HANDOFF`、`RELEASE`、`archive` 只在问题相关时读取，不默认全文扫描。
+- 默认读取本文件、当前任务直接相关的源码和文档；只有涉及当前完成度、WIP、开放问题、发布或跨模块决策时才读取 `docs/STATUS.md`。不默认扫描 archive、旧报告或历史计划。
+- 保护既有 staged、unstaged 和 untracked WIP；不得为获得干净基线而覆盖、回滚、stash 或混入无关修改。
+- 只修改任务直接相关内容；发现无关问题先报告。
 
-## 1. 执行权限与硬规则
+## 2. 工程契约
 
-- 项目内执行权限优先级：用户当前明确指令 → `AGENTS.md` → 当前任务专项真理源。流程、复盘、交接和历史文档不得增加新的暂停条件。
-- 目标清楚、范围局部、可回滚的任务，用户明确写出“直接执行”或“无需二次确认”时，AI 可先做简短内部计划后连续实施。
-- 用户只要求计划、使用 Plan 模式，或没有授权执行时，不修改文件。
-- 以下情况仍须先输出计划并等待用户确认：`03_core.js` / `04_collision.js`；改变脚本加载顺序或模块模型；改变玩法规则、平衡、产品方向或视觉 DNA；破坏性删除、迁移、大范围重命名；跨系统架构重构；发布开关或 Git 历史改写；范围不清、存在明显方案取舍；无法安全隔离当前 WIP。
-- 已授权范围内，AI 可自主决定低风险实现细节和完成任务所必需的伴随修改，并在交付时说明。
-- 未经明确确认，不改变 `index.html` 脚本加载顺序，不引入 `import/export`；业务数值不得以裸数字散落在业务代码中。
+- `snake55/index.html` 的脚本加载顺序是硬契约；不引入 `import/export`，模块通过 `window` 全局连接。
+- 运行时业务数值以 `snake55/02_config.js` 为唯一入口；不要在业务代码散落裸数值。
+- 系统间通过同名 `Bus.on` / `Bus.emit` 事件通信；伤害统一经过 `Core.Formula.damage` 或既有技能包装；DOT 只承担既定持续伤害语义，不在表现层重算。
+- `03_core.js`、`04_collision.js`、脚本加载模型、玩法/平衡方向和大范围迁移删除属于高风险范围，先说明影响与验收方式并等待确认。
 
-## 2. 架构速查
+## 3. 执行与验证
 
-- L1 数据：`02_config.js`，运行时配置唯一入口；业务数值必须来自 `CONFIG`。
-- L3 引擎：`03_core.js`（Bus/Registry/Formula/GS/对象池）、`04_collision.js`（空间哈希）。
-- L5 系统：`05_particle.js`、`06_snake.js`、`07_enemy.js`、`08_skill.js`、`09_wave.js`、`10_audio.js`、`12_ui.js`、`16_skill_econ.js`。
-- L6 渲染：`11_render.js`；L7 调试：`13_editor.js`、`15_profiler.js`；入口：`14_main.js` fixed-step 主循环。
-- 所有脚本由 `snake55/index.html` 顺序加载并挂到 `window` 全局。
+- 用户已明确授权的局部低风险任务可先做内部计划后连续实施；计划不自动构成等待关卡。
+- 代码修改后按任务执行可用的语法、静态、功能或实机检查，审查实际 diff，并明确未验证事项。
+- 正式落地的 JS 修改需要同步 `snake55/index.html` 的统一 `?v=` cache stamp；临时隔离实验除外。
+- 用户提供精确 patch 时，先核对当前基线，使用 `git apply --check`；禁止 `--3way`、`--reject`、手工猜测合并或为应用 patch 回滚 WIP。
+- 不在本规则中固化具体技能音色、VFX 造型、敌人分类、候选数量或历史成功方案。
 
-## 3. 计划与验收
+## 4. 文档入口
 
-- 计划主要用于内部自审，不自动构成等待确认的关卡。至少覆盖目标、涉及文件、风险边界和验收方式。
-- 仅高风险、跨模块、跨会话、需要长期跟踪或用户明确要求时，建立正式计划文件并更新 `docs/plans/STATUS.md`。
-- 落地后执行当前环境可完成的检查并审查实际 diff，简要报告改动、验证结果、计划偏差和未验证事项。
-
-## 4. 工程铁律
-
-- 系统间优先通过 `Bus('系统:动作')` 通信；新增事件的 `on` 与 `emit` 必须同名。
-- 所有伤害经 `Core.Formula.damage(base, GS.segments, crit)`；技能层用 `hurt()` 包装。
-- `isDot=true` 只结算血量和 DOT 飘字，不击退、不硬直、不闪白；分源 `dotMap` 独立聚合并传 `src`。
-
-## 5. 数值调参
-
-- 仅调整 `02_config.js` 数值或使用 `~` 调参器试探时，先完成轻量调参自审：明确目标、依据、影响、CONFIG 落点和验收；是否提供多个候选由问题是否存在实质取舍决定。
-- 改数值结构、公式或伤害管线时，完成完整影响分析与验证；触及第 1 节高风险边界时暂停确认。当前运行时以 `02_config.js` 为准。
-
-## 6. 发布护栏
-
-- Git、代理、认证、提交和推送流程见 `docs/workflow.md` 与 `docs/AI-COLLABORATION.md`；禁止 `push -f` / `push --all`。
-- 修改任意 `snake55/*.js` 后，必须统一 bump `snake55/index.html` 中全部脚本的 `?v=` 缓存戳，避免线上假更新。
-- ChatGPT 提供精确补丁时，Codex 只做基线核对、`git apply --check`、应用、检查和 Git 闭环；禁止同时重新设计或自行重写。
-- 基线不一致时停止，不使用 `--3way`、`--reject` 或猜测覆盖。
+- 项目定位与稳定产品事实：`docs/PROJECT.md`
+- 当前状态、WIP、开放问题：`docs/STATUS.md`
+- 稳定架构契约：`docs/ARCHITECTURE.md`
+- 协作、Git、patch 与验收流程：`docs/WORKFLOW.md`
+- 通用 QA 方法：`docs/QA.md`
+- 设计意图：`docs/design/GDD.md` 与同目录领域文档
+- 音频稳定原则：`docs/audio/AUDIO.md`
+- 当前数值：`snake55/02_config.js`
+- 历史资料：`docs/archive/`，默认不作为当前规则。

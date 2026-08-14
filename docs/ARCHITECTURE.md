@@ -1,45 +1,31 @@
-# ARCHITECTURE.md · 架构概要
+# 《此生为蛇》稳定架构契约
 
-> 本项目是无构建的原生 JavaScript 游戏。架构优先保持简单、显式、可静态审查。
+## 运行模型
 
-## 加载模型
+- `snake55/index.html` 以固定顺序加载原生 JavaScript 文件；不使用构建流程、`import/export` 或模块打包。
+- 各文件通过 `window` 暴露的全局对象连接；`14_main.js` 驱动 fixed-step 主循环和渲染调度。
+- 运行时数值由 `snake55/02_config.js` 集中提供。设计文档描述意图，不回写或镜像运行时数值。
 
-- `snake55/index.html` 按固定顺序加载脚本。
-- 禁止 import/export。
-- 模块通过 `window` 暴露全局对象。
-- 改任意 JS 后必须同步更新所有脚本 `?v=` 缓存戳。
-
-## 层级
+## 模块职责
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| L1 数据 | `02_config.js` | 配置与数值落点，业务数值从 `CONFIG` 读取 |
-| L3 引擎 | `03_core.js` | Bus、Registry、Formula、GS、对象池、自检 |
-| L3 碰撞 | `04_collision.js` | SpatialHash、碰撞查询 |
-| L5 粒子 | `05_particle.js` | 粒子、飘字、光束、爆环与特效预算 |
-| L5 蛇 | `06_snake.js` | 蛇身、移动、转向、受击 |
-| L5 敌人 | `07_enemy.js` | 敌人 AI、Boss、弹幕、训练假人 |
-| L5 技能 | `08_skill.js` | 技能、Combo、伤害包装 |
-| L5 波次 | `09_wave.js` | 波次、拾取、技能球、危险偏向 |
-| L5 音频 | `10_audio.js` | Web Audio BGM 与音效 |
-| L6 渲染 | `11_render.js` | Canvas 渲染、相机、精灵、调试绘制 |
-| L5 UI | `12_ui.js` | HUD、按钮、移动端遮罩 |
-| L7 调参 | `13_editor.js` | GM 面板、运行时调参桥 |
-| 入口 | `14_main.js` | fixed-step 主循环、输入、启动 |
-| L7 性能 | `15_profiler.js` | 性能日志 |
-| L5 经济 | `16_skill_econ.js` | 技能经济诊断 |
+| 数据 | `02_config.js` | CONFIG、表现配置、运行时开关和资源入口 |
+| 引擎 | `03_core.js`、`04_collision.js` | Bus、Registry、Formula、GS、对象池、空间哈希与基础碰撞 |
+| 系统 | `05_particle.js`、`06_snake.js`、`07_enemy.js`、`08_skill.js`、`09_wave.js`、`10_audio.js`、`12_ui.js`、`16_skill_econ.js` | 粒子、玩家、敌人、技能、波次、音频、UI、经济 |
+| 表现 | `11_render.js` | Canvas 场景、HUD、实体和战斗反馈绘制 |
+| 调试 | `13_editor.js`、`15_profiler.js` | 受开关保护的调试、运行时观察和性能信息 |
+| 入口 | `14_main.js` | 初始化、输入、固定步进和循环编排 |
 
-## 核心约定
+## 通信与伤害
 
-- 系统间优先通过 `Bus('system:action')` 通信。
-- 伤害统一经 `Core.Formula.damage(base, GS.segments, crit)`。
-- 技能层用 `hurt()` 包装伤害，不让下游各算各的。
-- DOT 只结算血量和飘字，不触发击退/硬直/闪白。
-- `03_core.js` / `04_collision.js` 是底层，默认不动。
+- 系统间使用语义事件通信；新增事件必须保持 `Bus.on` 与 `Bus.emit` 名称一致，避免跨层直接调用。
+- 伤害进入统一的 `Core.Formula.damage` / 既有 `hurt` 或技能包装；表现层只消费事件和元数据，不重新结算伤害。
+- `isDot=true` 表示持续伤害语义：按既有 DOT 聚合和来源规则结算，不触发普通击退、硬直或闪白，除非当前玩法契约明确规定。
+- 目标 ID、命中来源、技能等级等元数据可以供音频和 VFX 使用，但不得借表现事件重新触发 gameplay。
 
-## 已知架构风险
+## 表现与资源边界
 
-- CONFIG 深冻结实际未递归生效，需专项处理。
-- RT 调参桥存在单位/索引双口径，需要加护栏。
-- AOE 命中口径不统一，涉及手感与数值平衡，不能静默修。
-- B-TUNE / dev-only 工具已完成代码门控，当前待按测试清单复验。
+PNG/静态资源负责身份、姿态和基础材质；Canvas、粒子和音频负责运行时节奏、命中、状态与层级。资源入口由 CONFIG 或对应表现模块引用，具体资产状态以当前文件和代码为准。
+
+当前 bug、WIP、发布阻塞和待用户验收项统一记录在 `docs/STATUS.md`，不在本架构文档复制进度表。
