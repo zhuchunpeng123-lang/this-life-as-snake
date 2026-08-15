@@ -496,27 +496,32 @@
 				},
 				priority: { low: 0, normal: 1, high: 2, danger: 3 },
 				// Fire V3：范围必须明显可读，但常驻态不与 Combo 抢峰值。底色负责“这里会烧”，PNG/炽痕负责“这是火”。
-				fieldReadability: { fireFillAlpha: 0.120, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
+				// Fire baseline repair: 07884be (2026-08-03) restored the July31 Fire visual,
+				// unchanged through 9774a6d (2026-08-04 23:19, last snapshot before Aug 5).
+				fieldReadability: { fireFillAlpha: 0.22, iceFillBaseAlpha: 0.04, iceFillLifeAlpha: 0.06, shieldHitRingAlpha: 0 },
 				skillVfx: {
 					fire: {
-						// Fire先锋候选：方向中性的近圆簇火。大小只靠 scale，不再使用细长 accent 火舌。
-						coreSpriteSrc: 'assets/vfx/fire/vfx_fire_cluster_round_v1.png',
-						accentSpriteSrc: 'assets/vfx/fire/vfx_fire_cluster_round_v1.png',
-						fillOuterColor: '#ff5f27', fillOuterAlphaByLevel: [0.080, 0.084, 0.088, 0.092, 0.096],
-						// 火苗位置：按真实中心线生成左右/头尾 exposed candidates；数量随 Tube 周长增长。
-						candidateCenterSpacing: 22, targetVisibleSpacingByLevel: [92, 90, 88, 86, 84], minVisibleFlames: 6, maxVisibleFlames: 18,
-						occlusionInsetPx: 3, capCandidateCount: 5, mediumMinDistancePx: 128,
-						smallProbabilityByLevel: [0.80, 0.80, 0.79, 0.79, 0.78], mediumProbabilityByLevel: [0.20, 0.20, 0.21, 0.21, 0.22],
-						// 单个更小、整体更多：中火只负责节奏，不再出现超长火苗。
-						smallHeightMin: 12, smallHeightMax: 17, mediumHeightMin: 18, mediumHeightMax: 24,
-						flameRootInset: 3, flameAlpha: 0.82, flameSpriteBaseOffset: 0.90,
-						// 近圆簇火不随边界360°旋转；仅做极小固定倾角 + 呼吸/剪切，降低动态噪声。
-						staticLeanRad: 0.035, leanRad: 0.020, swayPx: 1.15, breathHz: 0.92, breathScaleY: 0.040, breathScaleX: 0.020,
-						rimCoreColor: '#ff9a45', rimGlowColor: '#ff5727', rimCoreWidth: 2.2, rimGlowWidth: 7, rimGlowAlpha: 0.080, rimCoreAlpha: 0.18, rimActivityByLevel: [0.70, 0.76, 0.82, 0.88, 0.94],
-						contactAlphaBoost: 0.16, cinderProbability: 0.28, cinderLifetime: 0.38, cinderRisePx: 8, cinderSpreadPx: 3, cinderSizePx: 0.95, cinderAlpha: 0.22, contactCinderAlphaBoost: 0.20, cinderColor: '#ffd06b',
-						contactDuration: 0.20, contactHeightBoost: 1.22, contactRimBoost: 0.70, contactAnchorSearchPx: 78, contactGlowRadiusPx: 22,
-						hitCoreColor: '#fff0b0', hitCoreLifeSec: 0.13, hitCoreSizePx: 3.2,
-						hitEmberColor: '#ff9d42', hitEmberHotColor: '#ffd27a', hitEmberCount: 3, hitEmberSpeed: 72, hitEmberSizePx: 1.6, hitEmberLifeSec: 0.18
+						// Fire V1.6：冻结稳定 Tube，只重分配原有余烬预算。所有常驻粒子从蛇身/火域内部出生，墙外不放固定热点。
+						embers: {
+							tailShare: 0.34, innerEdgeShare: 0.18, tailStartRatio: 0.72, bodyJitterPx: 6,
+							innerEdgeMinRadiusRatio: 0.52, innerEdgeMaxRadiusRatio: 0.68,
+							bodySpeedMin: 26, bodySpeedMax: 50, bodyLifeMin: 0.34, bodyLifeMax: 0.50,
+							tailSpeedMin: 30, tailSpeedMax: 54, tailLifeMin: 0.26, tailLifeMax: 0.40,
+							edgeOutSpeedMin: 8, edgeOutSpeedMax: 16, edgeLifeMin: 0.20, edgeLifeMax: 0.28,
+							riseSpeed: 24, sizeMin: 1.35, sizeMax: 2.75, edgeSizeMul: 0.82, hotChance: 0.28, tailHotChance: 0.38,
+							color: '#ff9a3c', hotColor: '#ffd27a'
+						},
+						// Fire V1.7：火墙只表现“环境高温热蚀”，与 Burning Barrage 的附着火苗状态彻底分离。
+						heatScorch: {
+							exitFadeSec: 0.22, pulseHz: 1.15, lowAlphaMul: 0.55,
+							rimColor: '#ff8f38', rimOuterAlpha: 0.22, rimCoreAlpha: 0.38, bodyTintAlpha: 0.07,
+							maskBakePx: 128, outlineSpreadRatio: 0.014, outlineOuterScale: 1.035,
+							wispColor: '#ff9b55', wispAlpha: 0.12, wispCount: 2, wispHeightPx: 20, wispWidthPx: 1.6
+						},
+						// 怪物首次进入 Fire 仍使用现有局部 PNG burst + 火星；不把视觉峰值搬到常驻态。
+						burstSizeMul: 1.08, burstLifeSec: 0.24, maxBursts: 6,
+						hitCoreColor: '#fff0b0', hitCoreLifeSec: 0.14, hitCoreSizePx: 3.4,
+						hitEmberColor: '#ff9d42', hitEmberHotColor: '#ffd27a', hitEmberCount: 4, hitEmberSpeed: 72, hitEmberSizePx: 1.55, hitEmberLifeSec: 0.22
 					},
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
 					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },

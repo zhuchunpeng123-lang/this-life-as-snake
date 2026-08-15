@@ -6,16 +6,12 @@
 	var GAME = CONFIG.GAME, PLAYER = CONFIG.PLAYER, CAM = PLAYER.camera, COL = CONFIG.COLORS, SHK = CONFIG.COMBAT.shake
 	var STYLE = CONFIG.STYLE   // §5.5 视觉真源（唯一引用；全文件禁再写 CONFIG.STYLE 或散色）
 	var SKILL_VFX = (STYLE.combatFx && STYLE.combatFx.skillVfx) || {}
-	var FIRE_VFX = SKILL_VFX.fire || {}
 	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
 	var SHIELD_ORB_SPRITE_SRC = 'assets/skill_shield_v1.png'
-	var FIRE_ORBIT_CORE_SRC = FIRE_VFX.coreSpriteSrc || 'assets/vfx/fire/vfx_fire_living_core_v3.png'
 	var iceBloomSprite = null, iceBloomSpriteReady = false, shieldOrbSprite = null, shieldOrbSpriteReady = false
-	var fireOrbitCoreSprite = null, fireOrbitCoreReady = false
 	if (global.Image) {
 		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
 		shieldOrbSprite = new global.Image(); shieldOrbSprite.onload = function () { shieldOrbSpriteReady = true }; shieldOrbSprite.onerror = function () { shieldOrbSpriteReady = false }; shieldOrbSprite.src = SHIELD_ORB_SPRITE_SRC
-		fireOrbitCoreSprite = new global.Image(); fireOrbitCoreSprite.onload = function () { fireOrbitCoreReady = true }; fireOrbitCoreSprite.onerror = function () { fireOrbitCoreReady = false }; fireOrbitCoreSprite.src = FIRE_ORBIT_CORE_SRC
 	}
 
 	// 配色红线：蛇身/蛇尾读 STYLE.player（= 蛇头 PNG 同一个绿）；旧 COL.snakeBody/snakeHead 仅兼容保留、新代码不引用
@@ -37,28 +33,6 @@
 	var SHIELD_GLOW_TRAIL = 0.18        // TODO: 护盾拖影角度占比（候选 0.12 / 0.25）
 	var bossWarnUntil = 0
 	var hurtVignetteUntil = 0
-	var _firePerimeterCenterScratch = { x: 0, y: 0, tx: 1, ty: 0 }
-	var _fireAnchorInsideScratch = { x: 0, y: 0 }
-	var _fireRimMetrics = { cum: [], lens: [], total: 0 }
-	var _fireFramePts = null, _fireFrameRadius = 0, _fireFrameLevel = -1
-	var _fireBoundaryCandidates = [], _fireSelectedFlames = []
-	var _fireContactBursts = []
-	if (Bus && typeof Bus.on === 'function') {
-		Bus.on('fx:firecontact', function (d) {
-			if (!d || d.x == null || d.y == null) { return }
-			var slot = null, oldest = Infinity
-			for (var i = 0; i < _fireContactBursts.length; i++) {
-				var b = _fireContactBursts[i], age = GS.timeSec - b.time
-				if (age > b.duration) { slot = b; break }
-				if (b.time < oldest) { oldest = b.time; slot = b }
-			}
-			if (!slot) { slot = { x: 0, y: 0, r: 0, time: 0, duration: 0, level: 1 }; _fireContactBursts.push(slot) }
-			slot.x = d.x; slot.y = d.y; slot.r = d.r || 0; slot.time = GS.timeSec; slot.level = d.level || 1
-			slot.duration = (FIRE_VFX.contactDuration || 0.20)
-		})
-		Bus.on('core:run_reset', function () { _fireContactBursts.length = 0; _fireFramePts = null })
-	}
-
 	var canvas = null, ctx = null, dpr = 1, _snapGrid = 0   // _snapGrid：设备像素吸附网格(_snap=ws*dpr)；每帧在 draw() 写入，供 _ix/_iy/snapW 把移动实体也吸附到整数设备像素(相机只吸静态世界→移动实体仍亚像素闪，本次补齐)
 	var worldScale = 1          // round6：视图缩放(0.8)已移除，还原 commit 无缩放原画面；worldScale 恒 1，碰撞/世界坐标不变，相机 1:1 跟随蛇身
 	var cam = { x: GAME.worldWidth / 2, y: GAME.worldHeight / 2 }
@@ -190,194 +164,6 @@
 		return fb
 	}
 
-	function firePointSegDistSq(px, py, ax, ay, bx, by) {
-		var vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay, vv = vx * vx + vy * vy
-		if (vv <= 0.000001) { return wx * wx + wy * wy }
-		var t = (wx * vx + wy * vy) / vv
-		if (t < 0) { t = 0 } else if (t > 1) { t = 1 }
-		var dx = px - (ax + vx * t), dy = py - (ay + vy * t)
-		return dx * dx + dy * dy
-	}
-	function buildFireMetrics(points, out) {
-		out = out || { cum: [], lens: [], total: 0 }
-		var cum = out.cum, lens = out.lens, total = 0
-		cum.length = 1; cum[0] = 0; lens.length = 0
-		for (var i = 1; i < points.length; i++) {
-			var dx = points[i].x - points[i - 1].x, dy = points[i].y - points[i - 1].y
-			var len = Math.sqrt(dx * dx + dy * dy)
-			lens.push(len); total += len; cum.push(total)
-		}
-		out.total = total
-		return out
-	}
-	function sampleFireCenter(points, metrics, s, out) {
-		out = out || {}
-		if (!points.length) { out.x = out.y = 0; out.tx = 1; out.ty = 0; return out }
-		if (points.length === 1 || metrics.total <= 0.000001) { out.x = points[0].x; out.y = points[0].y; out.tx = 1; out.ty = 0; return out }
-		if (s < 0) { s = 0 } else if (s > metrics.total) { s = metrics.total }
-		var j = 0
-		while (j < metrics.lens.length - 1 && metrics.cum[j + 1] < s) { j++ }
-		var len = metrics.lens[j] || 0.000001, t = (s - metrics.cum[j]) / len
-		var a = points[j], b = points[j + 1], dx = b.x - a.x, dy = b.y - a.y
-		out.x = a.x + dx * t; out.y = a.y + dy * t; out.tx = dx / len; out.ty = dy / len
-		return out
-	}
-	function fireBoundaryExposed(p, points, radius, inset) {
-		var rr = Math.max(0, radius - inset), rr2 = rr * rr
-		for (var i = 1; i < points.length; i++) {
-			if (firePointSegDistSq(p.x, p.y, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y) < rr2) { return false }
-		}
-		return true
-	}
-
-
-	// 单帧唯一 Snake Render Pose：蛇本体、Fire 底色、Fire 节点共用同一组插值点。
-	// Fire 不再从会追随头部的 segments[0] 起步，从根上消除“蛇走了、火域慢半拍”。
-	function fireSeed(index, salt) {
-		var n = Math.sin((index + 1) * (12.9898 + salt * 17.123) + salt * 78.233) * 43758.5453
-		return n - Math.floor(n)
-	}
-	function pushFireBoundaryCandidate(list, x, y, nx, ny, seedId, kind, side) {
-		var c = list[list.length] || {}
-		c.x = x; c.y = y; c.nx = nx; c.ny = ny; c.seedId = seedId; c.kind = kind || 'side'; c.side = side || 0
-		list.push(c); return c
-	}
-	function rotateFireVec(x, y, a, out) {
-		out = out || {}; var ca = Math.cos(a), sa = Math.sin(a)
-		out.x = x * ca - y * sa; out.y = x * sa + y * ca; return out
-	}
-	function buildFireBoundaryCandidates(points, metrics, radius, fireStyle, out) {
-		out = out || []; out.length = 0
-		if (!points.length || !(radius > 0)) { return out }
-		var inset = fireStyle.occlusionInsetPx || 3, spacing = fireStyle.candidateCenterSpacing || 22, center = _firePerimeterCenterScratch
-		if (points.length === 1 || metrics.total <= 0.000001) {
-			var circleCount = Math.max(8, Math.ceil(M.PI2 * radius / spacing))
-			for (var ci = 0; ci < circleCount; ci++) {
-				var ca = ci / circleCount * M.PI2, cnx = Math.cos(ca), cny = Math.sin(ca)
-				pushFireBoundaryCandidate(out, points[0].x + cnx * radius, points[0].y + cny * radius, cnx, cny, 10000 + ci, 'cap', 0)
-			}
-			return out
-		}
-		var sampleCount = Math.max(2, Math.ceil(metrics.total / spacing))
-		for (var i = 0; i < sampleCount; i++) {
-			var s = (i + 0.5) * metrics.total / sampleCount
-			sampleFireCenter(points, metrics, s, center)
-			var nx = -center.ty, ny = center.tx
-			for (var si = -1; si <= 1; si += 2) {
-				var px = center.x + nx * radius * si, py = center.y + ny * radius * si
-				var probe = { x: px, y: py }
-				if (fireBoundaryExposed(probe, points, radius, inset)) { pushFireBoundaryCandidate(out, px, py, nx * si, ny * si, i * 2 + (si > 0 ? 1 : 0), 'side', si) }
-			}
-		}
-		var capCount = Math.max(3, fireStyle.capCandidateCount || 5), half = (capCount - 1) * 0.5
-		sampleFireCenter(points, metrics, 0, center)
-		var hx = -center.tx, hy = -center.ty
-		for (var h = 0; h < capCount; h++) {
-			var ha = (h - half) / Math.max(1, half) * (M.PI * 0.42), hv = rotateFireVec(hx, hy, ha, _fireAnchorInsideScratch)
-			var hp = { x: center.x + hv.x * radius, y: center.y + hv.y * radius }
-			if (fireBoundaryExposed(hp, points, radius, inset)) { var hc = pushFireBoundaryCandidate(out, hp.x, hp.y, hv.x, hv.y, 20000 + h, 'head', 0); hc.capRank = Math.abs(h - half) }
-		}
-		sampleFireCenter(points, metrics, metrics.total, center)
-		var tx = center.tx, ty = center.ty
-		for (var t = 0; t < capCount; t++) {
-			var ta = (t - half) / Math.max(1, half) * (M.PI * 0.42), tv = rotateFireVec(tx, ty, ta, _fireAnchorInsideScratch)
-			var tp = { x: center.x + tv.x * radius, y: center.y + tv.y * radius }
-			if (fireBoundaryExposed(tp, points, radius, inset)) { var tc = pushFireBoundaryCandidate(out, tp.x, tp.y, tv.x, tv.y, 30000 + t, 'tail', 0); tc.capRank = Math.abs(t - half) }
-		}
-		return out
-	}
-	function fireSelectedHas(list, candidate) { for (var i = 0; i < list.length; i++) { if (list[i] === candidate) { return true } } return false }
-	function firePickKind(candidates, selected, kind) {
-		var best = null, bestRank = Infinity, bestTie = -Infinity
-		for (var i = 0; i < candidates.length; i++) {
-			var c = candidates[i]; if (c.kind !== kind || fireSelectedHas(selected, c)) { continue }
-			var rank = c.capRank != null ? c.capRank : 0, tie = fireSeed(c.seedId, 43.7)
-			if (rank < bestRank || (rank === bestRank && tie > bestTie)) { best = c; bestRank = rank; bestTie = tie }
-		}
-		if (best) { selected.push(best) }
-	}
-	function firePickSideCoverage(candidates, selected, side) {
-		var best = null, bestScore = -1
-		for (var i = 0; i < candidates.length; i++) {
-			var c = candidates[i]; if (c.kind !== 'side' || c.side !== side || fireSelectedHas(selected, c)) { continue }
-			var minD2 = Infinity
-			for (var si = 0; si < selected.length; si++) { var dx = c.x - selected[si].x, dy = c.y - selected[si].y, d2 = dx * dx + dy * dy; if (d2 < minD2) { minD2 = d2 } }
-			var score = minD2 * (0.97 + fireSeed(c.seedId, 44.9) * 0.06)
-			if (score > bestScore) { best = c; bestScore = score }
-		}
-		if (best) { selected.push(best) }
-	}
-	function selectFireBoundaryFlames(candidates, metrics, radius, fireStyle, fi, out) {
-		out = out || []; out.length = 0
-		if (!candidates.length) { return out }
-		var spacingList = fireStyle.targetVisibleSpacingByLevel || [], targetSpacing = spacingList[fi] != null ? spacingList[fi] : 90
-		var perimeterEstimate = metrics.total * 2 + M.PI2 * radius
-		var target = Math.round(perimeterEstimate / Math.max(1, targetSpacing))
-		target = M.clamp(target, fireStyle.minVisibleFlames || 6, fireStyle.maxVisibleFlames || 18); target = Math.min(target, candidates.length)
-		// 覆盖优先：头、尾、中心线左右两侧各至少一个；其余用最远点补齐，避免纯随机扎堆，也不做死板镜像。
-		firePickKind(candidates, out, 'head'); firePickKind(candidates, out, 'tail')
-		firePickSideCoverage(candidates, out, -1); firePickSideCoverage(candidates, out, 1)
-		while (out.length > target) { out.pop() }
-		while (out.length < target) {
-			var best = null, bestScore = -1
-			for (var ci = 0; ci < candidates.length; ci++) {
-				var c = candidates[ci]; if (fireSelectedHas(out, c)) { continue }
-				var minD2 = Infinity
-				for (var si = 0; si < out.length; si++) { var dx = c.x - out[si].x, dy = c.y - out[si].y, d2 = dx * dx + dy * dy; if (d2 < minD2) { minD2 = d2 } }
-				var score = minD2 * (0.94 + fireSeed(c.seedId, 47.1) * 0.12)
-				if (score > bestScore) { best = c; bestScore = score }
-			}
-			if (!best) { break } out.push(best)
-		}
-		var smallList = fireStyle.smallProbabilityByLevel || [], mediumList = fireStyle.mediumProbabilityByLevel || []
-		var smallP = smallList[fi] != null ? smallList[fi] : 0.80, mediumP = mediumList[fi] != null ? mediumList[fi] : 0.20, totalP = smallP + mediumP || 1
-		var mediumMin = fireStyle.mediumMinDistancePx || 128, mediumMin2 = mediumMin * mediumMin, mediums = []
-		for (var oi = 0; oi < out.length; oi++) {
-			var o = out[oi], tierSeed = fireSeed(o.seedId, 3.1), wantsMedium = tierSeed >= smallP / totalP
-			if (wantsMedium) {
-				for (var mi = 0; mi < mediums.length; mi++) { var mdx = o.x - mediums[mi].x, mdy = o.y - mediums[mi].y; if (mdx * mdx + mdy * mdy < mediumMin2) { wantsMedium = false; break } }
-			}
-			o.tier = wantsMedium ? 1 : 0; if (o.tier === 1) { mediums.push(o) }
-			o.heightSeed = fireSeed(o.seedId, 5.3); o.seedPhase = fireSeed(o.seedId, 17.1); o.seedCinder = fireSeed(o.seedId, 13.9)
-			o.cinderCount = o.seedCinder < (fireStyle.cinderProbability || 0.28) ? 1 : 0
-		}
-		return out
-	}
-	function strokeFireCenterline(points, width, color, alpha) {
-		if (!(points.length && width > 0 && alpha > 0)) { return }
-		ctx.beginPath(); for (var i = 0; i < points.length; i++) { if (i === 0) { ctx.moveTo(points[i].x, points[i].y) } else { ctx.lineTo(points[i].x, points[i].y) } }
-		ctx.lineWidth = width; ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.stroke()
-	}
-	function drawFireContactGlow(fireStyle) {
-		var duration = fireStyle.contactDuration || 0.20, rr = fireStyle.contactGlowRadiusPx || 22
-		for (var i = 0; i < _fireContactBursts.length; i++) {
-			var b = _fireContactBursts[i], age = GS.timeSec - b.time; if (age < 0 || age >= duration) { continue }
-			var pulse = 1 - age / duration, g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rr)
-			g.addColorStop(0, 'rgba(255,236,170,' + (0.22 * pulse) + ')'); g.addColorStop(0.35, 'rgba(255,126,45,' + (0.13 * pulse) + ')'); g.addColorStop(1, 'rgba(255,75,20,0)')
-			ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, M.PI2); ctx.fill()
-		}
-	}
-	function fireContactBoostAt(x, y, fireStyle) {
-		var best = 0, search = fireStyle.contactAnchorSearchPx || 82, search2 = search * search, duration = fireStyle.contactDuration || 0.20
-		for (var i = 0; i < _fireContactBursts.length; i++) {
-			var b = _fireContactBursts[i], age = GS.timeSec - b.time
-			if (age < 0 || age >= duration) { continue }
-			var dx = x - b.x, dy = y - b.y, d2 = dx * dx + dy * dy
-			if (d2 >= search2) { continue }
-			var pulse = 1 - age / duration, weight = pulse * (1 - Math.sqrt(d2 / search2))
-			if (weight > best) { best = weight }
-		}
-		return best
-	}
-	function drawFireRim(points, metrics, radius, fireStyle, fi) {
-		if (!points.length || !(radius > 0)) { return }
-		var activityList = fireStyle.rimActivityByLevel || [], activity = activityList[fi] != null ? activityList[fi] : 0.82
-		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalCompositeOperation = 'lighter'
-		// 直接对真实中心线做更宽的 stroke，随后由 fill 覆盖中间，只留下外壳；急弯/U-turn 不再依赖手工 offset perimeter。
-		strokeFireCenterline(points, radius * 2 + (fireStyle.rimGlowWidth || 7) * 2, fireStyle.rimGlowColor || '#ff5727', (fireStyle.rimGlowAlpha || 0.08) * activity)
-		strokeFireCenterline(points, radius * 2 + (fireStyle.rimCoreWidth || 2.2) * 2, fireStyle.rimCoreColor || '#ff9a45', (fireStyle.rimCoreAlpha || 0.18) * activity)
-		ctx.restore()
-	}
 	var _snakeRenderPts = [], _snakeRenderHead = { x: 0, y: 0, ang: 0 }, _snakeRenderSnap = false
 	function prepareSnakeRenderPose() {
 		_snakeRenderPts.length = 0
@@ -452,6 +238,7 @@
 		// snake_body/snake_tail 已不用：身体改纯代码逐节圆(drawBodyTube) → 删除其 manifest 项消 404 控制台噪音；待接真图时再加回并量 solidDiameterPx
 	}
 	var _spriteCache = {}   // key → Image（init 一次性创建，每帧复用，绝不 new）
+	var _enemyHeatCache = {}   // Fire V1.7：按敌人 PNG alpha 一次性烘焙热蚀轮廓/暖染；每帧只 drawImage，不做像素处理
 	// 敌人贴图清单（守卫式）：按 type 加载；缺图/失败 → drawEnemySprite 返回 false → 调用方按 type 走代码画兜底（零破功）。
 	// 文件名严格对应 type；当前 v1 源图为透明 PNG（本身不带发光/背景），威胁色光环由代码叠加（见 drawEnemySpriteWithFx）。
 	var ENEMY_SPRITE_FILE = {
@@ -558,9 +345,55 @@
 		ctx.drawImage(img, -d / 2, -d / 2, d, d)     // 512 源图等比缩到直径 d（billboard：调用方已做 flipX/缩放变换）
 		return true
 	}
+	// Fire V1.7 热蚀：从当前敌人透明 PNG alpha 烘焙贴身热边。与 Burning Barrage 头顶火苗完全分离。
+	function getEnemyHeatSprite(type) {
+		var fire = SKILL_VFX.fire || {}, hs = fire.heatScorch || {}, key = 'enemy_' + type, rec = _spriteCache[key]
+		if (!rec || rec.failed || !rec.ready || !rec.img) { return null }
+		var img = rec.img, nw = img.naturalWidth, nh = img.naturalHeight
+		if (!(nw > 0 && nh > 0)) { return null }
+		var bake = hs.maskBakePx || 128, col = hs.rimColor || '#ff8f38', ck = type + '|' + col + '|' + bake
+		if (_enemyHeatCache[ck]) { return _enemyHeatCache[ck] }
+		var tint = document.createElement('canvas'); tint.width = bake; tint.height = bake
+		var tg = tint.getContext('2d'); tg.drawImage(img, 0, 0, bake, bake); tg.globalCompositeOperation = 'source-in'; tg.fillStyle = col; tg.fillRect(0, 0, bake, bake); tg.globalCompositeOperation = 'source-over'
+		var outline = document.createElement('canvas'); outline.width = bake; outline.height = bake
+		var og = outline.getContext('2d'), spread = Math.max(1, Math.round(bake * (hs.outlineSpreadRatio || 0.014)))
+		var dirs = [[-spread,0],[spread,0],[0,-spread],[0,spread],[-spread,-spread],[spread,-spread],[-spread,spread],[spread,spread]]
+		for (var di = 0; di < dirs.length; di++) { og.drawImage(tint, dirs[di][0], dirs[di][1]) }
+		og.globalCompositeOperation = 'destination-out'; og.drawImage(img, 0, 0); og.globalCompositeOperation = 'source-over'
+		var out = { tint: tint, outline: outline }; _enemyHeatCache[ck] = out; return out
+	}
+	function drawEnemyHeatSpriteLocal(type, d, alpha, t, suppressFire) {
+		if (!(alpha > 0)) { return }
+		var fire = SKILL_VFX.fire || {}, hs = fire.heatScorch || {}, heat = getEnemyHeatSprite(type)
+		if (!heat) { return }
+		var pulse = 0.5 + 0.5 * Math.sin(t * M.PI2 * (hs.pulseHz || 1.15)), tier = suppressFire ? (hs.lowAlphaMul || 0.55) : 1
+		var outerScale = hs.outlineOuterScale || 1.035, outerD = d * outerScale
+		ctx.globalAlpha = alpha * tier * (hs.rimOuterAlpha || 0.22) * (0.85 + pulse * 0.15)
+		ctx.drawImage(heat.outline, -outerD / 2, -outerD / 2, outerD, outerD)
+		ctx.globalAlpha = alpha * tier * (hs.rimCoreAlpha || 0.38) * (0.88 + pulse * 0.12)
+		ctx.drawImage(heat.outline, -d / 2, -d / 2, d, d)
+		ctx.globalAlpha = alpha * tier * (hs.bodyTintAlpha || 0.07)
+		ctx.drawImage(heat.tint, -d / 2, -d / 2, d, d)
+		ctx.globalAlpha = 1
+	}
+	function drawEnemyHeatWisps(e, t, ix, iy, visualR, alpha, suppressFire) {
+		if (!(alpha > 0) || suppressFire) { return }
+		var fire = SKILL_VFX.fire || {}, hs = fire.heatScorch || {}, count = hs.wispCount || 2
+		var h = hs.wispHeightPx || 20, wa = hs.wispAlpha || 0.12, pulse = 0.5 + 0.5 * Math.sin(t * M.PI2 * (hs.pulseHz || 1.15))
+		ctx.save(); ctx.strokeStyle = hs.wispColor || '#ff9b55'; ctx.lineWidth = hs.wispWidthPx || 1.6; ctx.lineCap = 'round'
+		ctx.globalAlpha = alpha * wa * (0.72 + pulse * 0.28)
+		for (var wi = 0; wi < count; wi++) {
+			var side = count === 1 ? 0 : (wi / (count - 1) - 0.5), phase = t * M.PI2 * 0.72 + e.id * 0.71 + wi * 1.9
+			var x0 = ix + side * visualR * 0.58, y0 = iy - visualR * 0.58
+			ctx.beginPath(); ctx.moveTo(x0, y0)
+			ctx.bezierCurveTo(x0 + Math.sin(phase) * 4, y0 - h * 0.32, x0 - Math.cos(phase * 0.9) * 5, y0 - h * 0.70, x0 + Math.sin(phase * 1.2) * 3, y0 - h)
+			ctx.stroke()
+		}
+		ctx.restore(); ctx.globalAlpha = 1
+	}
 	// 敌人贴图 + 威胁色光环 + 程序化动画（idle bob + squash&stretch）；billboard 只 flipX 不旋转。
 	// 缺图/失败 → 返回 false → drawEnemies 走代码画兜底。贴图任何情况都画出来（glowMax 超量只降发光、不降贴图本身）。
-	function drawEnemySpriteWithFx(e, t, ix, iy, hx, hy) {
+	function drawEnemySpriteWithFx(e, t, ix, iy, hx, hy, fireHeatAlpha, suppressFire) {
 		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
 		var vs = vsTab[e.type] || 1.2
 		var d = e.radius * 2 * vs
@@ -578,7 +411,9 @@
 		ctx.scale(flipX ? -1 : 1, 1)   // 水平翻转（billboard）
 		ctx.scale(sx, sy)              // squash&stretch
 		var ok = drawEnemySprite(ctx, e.type, d)
+		if (ok && fireHeatAlpha > 0) { drawEnemyHeatSpriteLocal(e.type, d, fireHeatAlpha, t, suppressFire) }
 		ctx.restore()
+		if (ok && fireHeatAlpha > 0) { drawEnemyHeatWisps(e, t, ix, iy + bob, d * 0.5, fireHeatAlpha, suppressFire) }
 		return ok
 	}
 	// 来源专属受击覆盖：普通飞镖不触发；电磁只做短促冷青薄染+轮廓环，避免整只怪突兀白球闪。
@@ -800,6 +635,15 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 	function drawEnemyFlash(e, hx, hy, t) {   // 代码画兜底：仅来源专属短闪
 		ctx.save(); ctx.globalAlpha = e.flashKind === 'electro' ? 0.62 : 0.48; ctx.beginPath(); addEnemyShape(e, e.type, t, hx, hy, 1); ctx.fillStyle = enemyFlashColor(e); ctx.fill(); ctx.restore()
 	}
+	function drawEnemyHeatFallback(e, t, hx, hy, alpha, suppressFire) {   // PNG 未就绪/训练假人兜底：同语义热边，不造火苗
+		if (!(alpha > 0) || e.type === 'bossBullet') { return }
+		var fire = SKILL_VFX.fire || {}, hs = fire.heatScorch || {}, tier = suppressFire ? (hs.lowAlphaMul || 0.55) : 1
+		var pulse = 0.5 + 0.5 * Math.sin(t * M.PI2 * (hs.pulseHz || 1.15))
+		ctx.save(); ctx.beginPath(); addEnemyShape(e, e.type, t, hx, hy, 1.04); ctx.strokeStyle = hs.rimColor || '#ff8f38'; ctx.lineWidth = 2.2
+		ctx.globalAlpha = alpha * tier * (hs.rimCoreAlpha || 0.38) * (0.88 + pulse * 0.12); ctx.stroke()
+		ctx.beginPath(); addEnemyShape(e, e.type, t, hx, hy, 1); ctx.fillStyle = hs.rimColor || '#ff8f38'; ctx.globalAlpha = alpha * tier * (hs.bodyTintAlpha || 0.07); ctx.fill(); ctx.restore()
+		drawEnemyHeatWisps(e, t, _ix(e), _iy(e), e.radius, alpha, suppressFire)
+	}
 	function drawChargerWindup(e, t) {   // ⑤ 冲锋蓄力 telegraph：梭形沿朝向拉长闪（scale 视觉，不改 e.radius/碰撞）+ 方向箭头
 		var x = _ix(e), y = _iy(e), r = e.radius
 		var blink = (Math.floor(t * TELEGRAPH_BLINK_HZ) % 2 === 0)
@@ -983,7 +827,7 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 		}
 		return state.releaseAt >= 0 ? t - state.releaseAt : -1
 	}
-	function drawBossBody(b, t) {   // Boss=冠夜鸮 Idle/Charge PNG + 纯视觉释放反馈；缺图逐级回退
+	function drawBossBody(b, t, fireHeatAlpha, suppressFire) {   // Boss=冠夜鸮 Idle/Charge PNG + 纯视觉释放反馈；缺图逐级回退
 		var x = _ix(b), y = _iy(b), r = b.radius
 		var vsTab = CONFIG.RENDER.spriteVisualScale || {}
 		var idleVs = vsTab.bossIdle || vsTab.boss || 2.4
@@ -1023,11 +867,13 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			if (releaseHold) { auraAlpha += (1 - releaseAge / BOSS_VISUAL.releaseHoldSec) * BOSS_VISUAL.chargeAuraAlpha }
 			drawHalo('boss', 0, 0, d * 0.72, ringCol, auraAlpha)
 			drawEnemySprite(ctx, spriteType, d)
+			if (fireHeatAlpha > 0) { drawEnemyHeatSpriteLocal(spriteType, d, fireHeatAlpha, t, suppressFire) }
 		} else {
 			ctx.scale(1 / breath, 1 / breath)                 // 回退路径撤销呼吸/释放缩放
 			drawBossFallback(ctx, r, t, b)
 		}
 		ctx.restore()
+		if (fireHeatAlpha > 0) { drawEnemyHeatWisps(b, t, x, visualY, d * breath * 0.5, fireHeatAlpha, suppressFire) }
 		// 受击浅闪 / 换阶段无敌白热闪（套在贴图之上，与随从敌一致）
 		if (b.flashT > 0) { var hitCol = enemyFlashColor(b); ctx.globalAlpha = 0.16; circle(x, visualY, d * 0.5, hitCol); ctx.globalAlpha = 0.72; ctx.strokeStyle = hitCol; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, visualY, d * 0.49, 0, M.PI2); ctx.stroke(); ctx.globalAlpha = 1 }
 		else if (b.invuln > 0 && Math.floor(t * 12) % 2 === 0) { ctx.globalAlpha = 0.5; circle(x, visualY, d * 0.5, '#ffffff'); ctx.globalAlpha = 1 }
@@ -1070,18 +916,21 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 	function drawEnemies() {
 		var En = Registry.get('enemy'); if (!En || !En.list) { return }
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0   // 自适应分级：LOW/POTATO 档自动关火焰系 per-enemy 视觉；GM 经 editor.rtSet 仍优先
+		var Skill = Registry.get('skill'), fireAlphaFor = Skill && Skill.getFireFieldVisualAlpha
 		var l = En.list, t = GS.timeSec
 		var sn = Registry.get('snake'), hx = sn && sn.head ? sn.head.x : 0, hy = sn && sn.head ? sn.head.y : 0
 	// 第一遍：boss 单独处理；其余先试守卫式贴图（成功→画贴图+光环+动画，并保留受击白闪套在贴图上），失败→走代码画兜底（逐字保留原分组填充优化）
-	var groups = {}, elites = [], bosses = [], fallbackFlashes = []
+	var groups = {}, elites = [], bosses = [], fallbackFlashes = [], fallbackFireHeat = []
 	for (var i = 0; i < l.length; i++) {
 		var e = l[i]; if (!e.active) { continue }
 		if (e.type === 'boss') { bosses.push(e); continue }
 		// 守卫式贴图：成功 → 画贴图(+光环+动画)；受击白闪套在贴图之上（不替换贴图）；失败 → 走下方代码画兜底
-		if (drawEnemySpriteWithFx(e, t, _ix(e), _iy(e), hx, hy)) {
+		var fireHeatAlpha = fireAlphaFor ? fireAlphaFor(e.id) : 0
+		if (drawEnemySpriteWithFx(e, t, _ix(e), _iy(e), hx, hy, fireHeatAlpha, T3)) {
 			if (e.flashT > 0) { drawEnemyFlashOverlay(e, _ix(e), _iy(e)) }   // ⑥ 电磁受击短闪（套在贴图之上）
 			continue
 		}
+		if (fireHeatAlpha > 0) { fallbackFireHeat.push(e) }
 		if (e.flashT > 0) { fallbackFlashes.push(e) }   // 代码画兜底先正常绘制，随后叠加电磁短闪；不再用闪色替换敌人本体。
 		if (e.type === 'charger' && e.state === 'windup') { drawChargerWindup(e, t); continue }   // ⑤ 蓄力 telegraph
 		if (e.type === 'elite') { elites.push(e) }
@@ -1094,8 +943,9 @@ function perfFB(field, def) { return (global.PerfTier && global.PerfTier[field] 
 			ctx.fillStyle = enemyColorByType(gk); ctx.fill()
 		}
 		for (var fi = 0; fi < fallbackFlashes.length; fi++) { drawEnemyFlash(fallbackFlashes[fi], hx, hy, t) }
+		for (var fh = 0; fh < fallbackFireHeat.length; fh++) { var fe = fallbackFireHeat[fh]; drawEnemyHeatFallback(fe, t, hx, hy, fireAlphaFor ? fireAlphaFor(fe.id) : 0, T3) }
 		for (var ei = 0; ei < elites.length; ei++) { drawEliteAura(elites[ei], t) }   // 精英光环（少量）
-		for (var bi = 0; bi < bosses.length; bi++) { drawBossBody(bosses[bi], t) }     // Boss 专属
+		for (var bi = 0; bi < bosses.length; bi++) { var be = bosses[bi]; drawBossBody(be, t, fireAlphaFor ? fireAlphaFor(be.id) : 0, T3) }     // Boss 专属 + Fire 热蚀同位叠加
 		// 第二遍：标记 + 血条（单敌少量，保留原逻辑）
 		for (var k = 0; k < l.length; k++) {
 			var e2 = l[k]; if (!e2.active) { continue }
@@ -1286,26 +1136,6 @@ function drawSnake() {
 		drawSnakeEyes(ctx, _snakeEyeR, _snakeEyeAng)
 		ctx.restore()
 	}
-	function drawFireFieldUnderlay() {
-		_fireFramePts = null; _fireFrameRadius = 0; _fireFrameLevel = -1
-		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
-		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
-		var s = Registry.get('snake'); if (!s || !s.segments || !s.segments.length) { return }
-		var fi = owned.fire - 1, fr = RT('SKILL.fire.radius.' + fi, CONFIG.SKILL.fire.radius[fi])
-		var fireStyle = SKILL_VFX.fire || {}, fieldFx = (STYLE.combatFx && STYLE.combatFx.fieldReadability) || {}
-		var firePts = _snakeRenderPts.length ? _snakeRenderPts : prepareSnakeRenderPose()
-		_fireFramePts = firePts; _fireFrameRadius = fr; _fireFrameLevel = fi
-		var fireMetrics = buildFireMetrics(firePts, _fireRimMetrics)
-		var outerList = fireStyle.fillOuterAlphaByLevel || [], outerAlpha = outerList[fi] != null ? outerList[fi] : fieldFx.fireFillAlpha
-		// Rim 先画、Fill 后盖：只保留 Tube 外壳亮边，几何与 gameplay 的 centerline + radius 语义一致。
-		drawFireRim(firePts, fireMetrics, fr, fireStyle, fi)
-		ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalCompositeOperation = 'source-over'
-		ctx.beginPath()
-		for (var fp = 0; fp < firePts.length; fp++) { if (fp === 0) { ctx.moveTo(firePts[fp].x, firePts[fp].y) } else { ctx.lineTo(firePts[fp].x, firePts[fp].y) } }
-		ctx.lineWidth = fr * 2; ctx.globalAlpha = outerAlpha > 0 ? outerAlpha : 0; ctx.strokeStyle = fireStyle.fillOuterColor || '#ff5f27'; ctx.stroke()
-		ctx.restore()
-		ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawFireContactGlow(fireStyle); ctx.restore()
-	}
 	function drawSkillAura() {
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
 		var s = Registry.get('snake'); if (!s || !s.head) { return }
@@ -1318,49 +1148,30 @@ function drawSnake() {
 	if (_snapA) { _iax = snapWX(_iax); _iay = snapWY(_iay) }
 		function RTA(path, fb) { var ed = Registry.get('editor'); if (ed && typeof ed.rtGet === 'function') { var v = ed.rtGet(path); if (v !== undefined && v !== null) { return v } } return fb }   // B-GM 标定：绘制读运行时覆盖，无覆盖回退冻结 CONFIG（与 08_skill RT() 同步，仅换视觉输入来源，几何算法不动）
 		ctx.save()
-		// —— Fire Orbit：范围底色/炽痕在实体下层 drawFireFieldUnderlay；此处只画环流 PNG 与切向短尾，蛇本体保持绿色主体。——
+		// —— Fire：恢复 8 月 5 日前稳定基线 ——
+		// 07884be (2026-08-03) 明确恢复 July31 Fire；同一 Fire 逻辑持续到 9774a6d (2026-08-04 23:19)。
+		// 常驻表现只有连续圆角 Tube + 05_particle 沿蛇身余烬；无逐节点 fr 半径圆弧、无常驻 PNG。
 		// —— 护盾：球绕蛇头公转，半径/周期读 config（与 tickShield 同 orbitRadius/orbitSec，消双份真相源）——
 		var T3 = RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0
 		var segs = s.segments || []
-		if (owned.fire > 0 && segs.length && !T3) {
-			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi])
-			var fireStyle = SKILL_VFX.fire || {}, firePts = _fireFramePts || (_snakeRenderPts.length ? _snakeRenderPts : prepareSnakeRenderPose()), fireMetrics = _fireFramePts ? _fireRimMetrics : buildFireMetrics(firePts, _fireRimMetrics)
-			var firePerimeter = fireMetrics.total * 2 + Math.PI * fr * 2
-			if (firePerimeter > 0) {
-				var candidates = buildFireBoundaryCandidates(firePts, fireMetrics, fr, fireStyle, _fireBoundaryCandidates)
-				var flames = selectFireBoundaryFlames(candidates, fireMetrics, fr, fireStyle, fi, _fireSelectedFlames)
-				var smallMin = fireStyle.smallHeightMin || 12, smallMax = fireStyle.smallHeightMax || 17, mediumMin = fireStyle.mediumHeightMin || 18, mediumMax = fireStyle.mediumHeightMax || 24
-				ctx.save(); ctx.lineCap = 'round'; ctx.globalCompositeOperation = 'source-over'
-				for (var fo = 0; fo < flames.length; fo++) {
-					var flame = flames[fo], contactBoost = fireContactBoostAt(flame.x, flame.y, fireStyle)
-					var heightMin = flame.tier === 1 ? mediumMin : smallMin, heightMax = flame.tier === 1 ? mediumMax : smallMax
-					var baseHeight = heightMin + (heightMax - heightMin) * flame.heightSeed, drawSize = baseHeight * (1 + contactBoost * ((fireStyle.contactHeightBoost || 1.22) - 1))
-					var drawX = flame.x - flame.nx * (fireStyle.flameRootInset || 3), drawY = flame.y - flame.ny * (fireStyle.flameRootInset || 3)
-					var wave = Math.sin(GS.timeSec * M.PI2 * (fireStyle.breathHz || 0.92) + flame.seedPhase * M.PI2)
-					var sx = 1 - wave * (fireStyle.breathScaleX || 0.020), sy = 1 + wave * (fireStyle.breathScaleY || 0.040)
-					// 圆簇火是方向中性素材：不按 normal 360°旋转，只保留稳定小倾角 + 极小动态 lean。
-					var staticLean = (fireSeed(flame.seedId, 51.9) - 0.5) * 2 * (fireStyle.staticLeanRad || 0.035)
-					var lean = staticLean + Math.sin(GS.timeSec * 2.8 + flame.seedPhase * 5.3) * (fireStyle.leanRad || 0.020)
-					var shear = Math.sin(GS.timeSec * 3.3 + flame.seedPhase * 6.1) * (fireStyle.swayPx || 1.15) / Math.max(drawSize, 1)
-					ctx.save(); ctx.translate(drawX, drawY); ctx.rotate(lean); ctx.transform(1, 0, shear, 1, 0, 0); ctx.scale(sx, sy)
-					ctx.globalAlpha = (fireStyle.flameAlpha || 0.82) * (0.96 + 0.04 * wave) * (1 + contactBoost * (fireStyle.contactAlphaBoost || 0.16))
-					if (fireOrbitCoreReady && fireOrbitCoreSprite && fireOrbitCoreSprite.naturalHeight) {
-						var fireW = drawSize * (fireOrbitCoreSprite.naturalWidth / fireOrbitCoreSprite.naturalHeight)
-						ctx.drawImage(fireOrbitCoreSprite, -fireW * 0.5, -drawSize * (fireStyle.flameSpriteBaseOffset || 0.90), fireW, drawSize)
-					} else {
-						ctx.fillStyle = fireStyle.cinderColor || '#ffd06b'; ctx.beginPath(); ctx.arc(0, -drawSize * 0.35, drawSize * 0.20, 0, M.PI2); ctx.fill()
-					}
-					ctx.restore()
-					if (flame.cinderCount > 0) {
-						var cinderLife = fireStyle.cinderLifetime || 0.38, cinderT = ((GS.timeSec * 0.72 + flame.seedPhase) % 1 + 1) % 1
-						if (cinderT < cinderLife) {
-							var ct = cinderT / cinderLife, cx = drawX + Math.sin(flame.seedCinder * 13.7) * ct * (fireStyle.cinderSpreadPx || 3), cy = drawY - drawSize * 0.62 - ct * (fireStyle.cinderRisePx || 8)
-							ctx.globalAlpha = ((fireStyle.cinderAlpha || 0.22) + contactBoost * (fireStyle.contactCinderAlphaBoost || 0.20)) * (1 - ct); ctx.fillStyle = fireStyle.cinderColor || '#ffd06b'; ctx.beginPath(); ctx.arc(cx, cy, fireStyle.cinderSizePx || 0.95, 0, M.PI2); ctx.fill()
-						}
-					}
-				}
-				ctx.restore()
+		if (owned.fire > 0) {
+			var fi = owned.fire - 1, fr = RTA('SKILL.fire.radius.' + fi, SKC.fire.radius[fi]), stepF = SKC.fire.segStep[fi] || 1
+			var fireAlpha = fieldFx.fireFillAlpha == null ? 0.22 : fieldFx.fireFillAlpha
+			ctx.save()
+			ctx.globalCompositeOperation = 'lighter'
+			ctx.beginPath()
+			for (var sf = 0; sf < segs.length; sf += stepF) {
+				var sg = segs[sf]
+				var sgx = (sg.px != null) ? M.lerp(sg.px, sg.x, _ra) : sg.x
+				var sgy = (sg.py != null) ? M.lerp(sg.py, sg.y, _ra) : sg.y
+				if (_snapA) { sgx = snapWX(sgx); sgy = snapWY(sgy) }
+				if (sf === 0) { ctx.moveTo(sgx, sgy) } else { ctx.lineTo(sgx, sgy) }
 			}
+			ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+			ctx.lineWidth = fr * 2
+			ctx.strokeStyle = 'rgba(255,95,30,' + fireAlpha + ')'
+			ctx.stroke()
+			ctx.restore()
 		}
 		if (owned.shield > 0) {
 			var si = owned.shield - 1, sc = SKC.shield.count[si], orbR = RTA('SKILL.shield.orbitRadius.' + si, SKC.shield.orbitRadius[si])
@@ -1460,7 +1271,6 @@ function drawSnake() {
 	ctx.translate(-rcxS, -rcyS)
 	prepareSnakeRenderPose()   // V3：本帧蛇、Fire 共用同一插值 Render Pose，消除火域慢半拍
 	drawBounds()
-	drawFireFieldUnderlay()   // Fire 范围是最低技能信息层：不染蛇/怪/拾取，也不压住其他技能世界粒子
 	var p = Registry.get('particle'); if (p && p.drawWorld) { p.drawWorld(ctx) }
 	drawPickups(); drawEnemies(); drawSnake(); drawSkillAura(); drawSnakeEyesLate()
 	if (p && p.drawOverlay) { p.drawOverlay(ctx) }   // B-4：combo 闪核叠加层（蒸汽白闪/电磁辉光），绘于实体之上、不长时间盖核心信息

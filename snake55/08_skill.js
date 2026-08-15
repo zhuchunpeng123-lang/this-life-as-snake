@@ -3,6 +3,8 @@
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, GS = global.GS, Core = global.Core, Log = global.Log
 	var M = Core.M, Formula = Core.Formula
 	var SK = CONFIG.SKILL, CO = CONFIG.COMBO, ECON = CONFIG.ECON, CB = CONFIG.COMBAT
+	var FIRE_HEAT = (((CONFIG.STYLE || {}).combatFx || {}).skillVfx || {}).fire || {}
+	FIRE_HEAT = FIRE_HEAT.heatScorch || {}   // Fire V1.7 Presentation-only：只读配置，不参与伤害/判定
 
 // 🟡 真理源未量化的表现/节奏，占位 + 候选，待回写
 var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
@@ -28,9 +30,12 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 
 	var timer = { bolt: 0, lightning: 0, ice: 0, burningBarrage: 0 }   // ice CD；steam 使用 per-enemy 冷却
 	var foundCombo = {}
+	var fireContactPrev = {}   // 纯表现进入态：只用于 Fire 首次接触反馈；伤害仍由 tickFire 真判定结算
+	var fireFieldVisualUntil = {}   // Fire V1.7：enemyId→热蚀视觉保留截止时刻；纯 Presentation，不写 burnT/burnDps
 	var electroTurretState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, shotsFired: 0, nextShotAt: 0, collapseSent: false, redeployCooldown: 0 }
 	var _enemySnap = []   // 每帧敌列快照（原地填充复用，零每帧分配；b6b380d 性能优化的回归修复：原每帧 new 数组 → GC 偶发卡顿）
 	var _aoeScratch = []   // enemiesIn 复用数组（AOE 索敌每帧多次调用，消除重复分配）
+	var _fireBounds = {}, _steamFireBounds = {}, _fireSegScratch = []   // Fire 精判 scratch：头 + 可见身体中心线；AABB 先剔除，再做线段距离，零每帧对象分配
 	var electroDiag = {
 		electroAttempts: 0, electroSuccess: 0, electroNoTarget: 0, electroTargetsHit: 0,
 		electroLastTriggerSec: -1, electroLastGapSec: 0
@@ -46,7 +51,17 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		return fb
 	}
 	function headPos() { var s = Registry.get('snake'); return s && s.head ? s.head : { x: 0, y: 0, angle: 0 } }
-	function segmentsList() { var s = Registry.get('snake'); return (s && s.segments) ? s.segments : [] }   // B-2：沿蛇身逐节判定用
+	function segmentsList() { var s = Registry.get('snake'); return (s && s.segments) ? s.segments : [] }   // 通用身体节列表（历史语义保留）
+	function fireSegmentsList() {
+		// Fire 真几何与屏幕上实际画出的蛇中心线同构：head + segments[1..]。
+		// segments[0] 是追随头部的身体节；若把它当 Fire 起点，会让头部火域慢半拍，也会让“看到的墙”和实际判定在转弯时错位。
+		_fireSegScratch.length = 0
+		var s = Registry.get('snake'); if (!s) { return _fireSegScratch }
+		if (s.head) { _fireSegScratch.push(s.head) }
+		var segs = s.segments || []
+		for (var i = 1; i < segs.length; i++) { _fireSegScratch.push(segs[i]) }
+		return _fireSegScratch
+	}
 	function tailPos() { var segs = segmentsList(); return segs.length ? segs[segs.length - 1] : headPos() }
 
 	// 局部 AOE：复用每帧 _enemySnap（Skill.update 已刷新），按 queryCircle 同语义(cell 级覆盖)过滤；
@@ -87,15 +102,67 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		Registry.get('enemy').applyDamage(e, Formula.comboDamage(base, crit), crit, isDot, src)
 	}
 
+	// Fire 真判定 = 敌人圆形碰撞体 与「蛇身中心折线 ⊕ Fire radius」的精确相交。
+	// Spatial/AABB 只能做 broadphase；最终必须走本函数，保证 render 的连续火域与实际 DOT 几何一致。
+	function pointSegDistSq(px, py, ax, ay, bx, by) {
+		var vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay
+		var vv = vx * vx + vy * vy
+		if (vv <= 0.000001) { return wx * wx + wy * wy }
+		var t = (wx * vx + wy * vy) / vv
+		if (t < 0) { t = 0 } else if (t > 1) { t = 1 }
+		var dx = px - (ax + vx * t), dy = py - (ay + vy * t)
+		return dx * dx + dy * dy
+	}
+	function buildFireBounds(segs, r, out) {
+		out = out || {}
+		if (!segs || !segs.length) { out.minX = out.maxX = out.minY = out.maxY = 0; return out }
+		var minX = segs[0].x, maxX = minX, minY = segs[0].y, maxY = minY
+		for (var i = 1; i < segs.length; i++) {
+			var p = segs[i]
+			if (p.x < minX) { minX = p.x } else if (p.x > maxX) { maxX = p.x }
+			if (p.y < minY) { minY = p.y } else if (p.y > maxY) { maxY = p.y }
+		}
+		out.minX = minX - r; out.maxX = maxX + r; out.minY = minY - r; out.maxY = maxY + r
+		return out
+	}
+	function enemyTouchesFireTube(e, segs, r, bounds) {
+		if (!e || !segs || !segs.length) { return false }
+		var er = e.radius || 0
+		if (bounds && (e.x + er < bounds.minX || e.x - er > bounds.maxX || e.y + er < bounds.minY || e.y - er > bounds.maxY)) { return false }
+		var rr = r + er, rr2 = rr * rr
+		if (segs.length === 1) {
+			var dx0 = e.x - segs[0].x, dy0 = e.y - segs[0].y
+			return dx0 * dx0 + dy0 * dy0 <= rr2
+		}
+		for (var s = 1; s < segs.length; s++) {
+			if (pointSegDistSq(e.x, e.y, segs[s - 1].x, segs[s - 1].y, segs[s].x, segs[s].y) <= rr2) { return true }
+		}
+		return false
+	}
+
 	// —— 五技能主动效果（按拥有等级取数组）——
 	function tickFire(dt) {
 		var i = idx('fire')
-		var segs = segmentsList(), step = SK.fire.segStep[i] || 1, r = RT('SKILL.fire.radius.' + i, SK.fire.radius[i])   // B-GM 实时标定桥：拖动即时生效
-		var hit = {}   // B-2：同帧同敌去重，避免多节重叠重复结算 DOT
-		for (var s = 0; s < segs.length; s += step) {
-			var es = enemiesIn(segs[s].x, segs[s].y, r)
-			for (var k = 0; k < es.length; k++) { if (hit[es[k].id]) { continue } hit[es[k].id] = true; hurt(es[k], SK.fire.dotPerSec[i] * dt, true, 'fire') }   // 火墙沿整蛇身（⑦ 标记 isDot）
+		var segs = fireSegmentsList(), r = RT('SKILL.fire.radius.' + i, SK.fire.radius[i])   // 头+身体连续 Fire tube；与 render 共用同一 radius 真源
+		var bounds = buildFireBounds(segs, r, _fireBounds), now = {}
+		var heatFade = FIRE_HEAT.exitFadeSec || 0.22, heatUntil = GS.timeSec + heatFade
+		for (var k = 0; k < _enemySnap.length; k++) {
+			var e = _enemySnap[k]
+			if (!enemyTouchesFireTube(e, segs, r, bounds)) { continue }
+			now[e.id] = true
+			fireFieldVisualUntil[e.id] = heatUntil   // 只刷新热蚀视觉窗口；伤害仍只走下方 hurt()
+			hurt(e, SK.fire.dotPerSec[i] * dt, true, 'fire')
+			if (!fireContactPrev[e.id]) { Bus.emit('fx:firecontact', { x: e.x, y: e.y, r: e.radius || 0, level: i + 1 }) }   // 仅进入瞬间发视觉事件，不重复伤害
 		}
+		for (var pid in fireContactPrev) { if (fireContactPrev[pid] && !now[pid]) { fireFieldVisualUntil[pid] = GS.timeSec + heatFade } }
+		for (var fid in fireFieldVisualUntil) { if (!now[fid] && fireFieldVisualUntil[fid] <= GS.timeSec) { delete fireFieldVisualUntil[fid] } }
+		fireContactPrev = now
+	}
+	function getFireFieldVisualAlpha(enemyId) {
+		if (!owns('fire')) { return 0 }
+		if (fireContactPrev[enemyId]) { return 1 }
+		var until = fireFieldVisualUntil[enemyId] || 0, fade = FIRE_HEAT.exitFadeSec || 0.22
+		return until > GS.timeSec ? M.clamp((until - GS.timeSec) / fade, 0, 1) : 0
 	}
 	function tickIce(dt) {
 		var i = idx('ice'), En = Registry.get('enemy')
@@ -432,20 +499,15 @@ function tickCombos(dt) {
 	var _pdbg = (function () { var _pp = Registry.get('particle'); return (_pp && _pp.DBG) ? _pp.DBG : null })()   // b9-measure：只读计数器句柄（蒸汽引爆/邻居比较），零 gameplay
 	if (foundCombo.steamExplosion) {                 // ④ 火+冰：火墙扫到带冰敌 → 该敌位置引爆蒸汽 AOE；冰只作触发条件（slowT>0），无直伤；per-enemy 2.0s 节流（复用 COMBO_STEAM_INTERVAL_SEC，零新数值）
 		var fi = idx('fire')
-		var fr = RT('SKILL.fire.radius.' + fi, SK.fire.radius[fi])   // 火墙半径，与 tickFire 一致；B-GM 实时桥
-		var segs = segmentsList(), step = SK.fire.segStep[fi] || 1
-		var inFire = {}                                               // 本帧处于火墙内的敌人 id 集合
-		for (var s = 0; s < segs.length; s += step) {
-			var fs = enemiesIn(segs[s].x, segs[s].y, fr)
-			for (var k = 0; k < fs.length; k++) { inFire[fs[k].id] = true }
-		}
+		var fr = RT('SKILL.fire.radius.' + fi, SK.fire.radius[fi])   // 与 tickFire 共用连续火域精确几何
+		var segs = fireSegmentsList(), fireBounds = buildFireBounds(segs, fr, _steamFireBounds)
 		var all = _enemySnap
 		var steamFxCap = RT('PERF.steamBurstCapPerFrame', CONFIG.PERF.steamBurstCapPerFrame)   // 🟡 性能护栏(非 §9 平衡值·b9)：齐爆同帧 VFX 上限，候选 8/10/12；仅门控视觉，不影响平衡
 		var steamFxCount = 0
 		for (var n = 0; n < all.length; n++) {
 			var e = all[n]
 			if (!e.inIce) { continue }                   // ⑥ 修复：仅当敌本帧真在冰池内（inIce，tickIce 实时置位）才引爆；排除「离开冰池但 slowT 残留」误触发，杜绝冰圈外的蒸汽爆炸（tickIce 先于本函数，数据新鲜）
-			if (!inFire[e.id]) { continue }              // 火焰光环扫到
+			if (!enemyTouchesFireTube(e, segs, fr, fireBounds)) { continue }   // Fire 与基础 DOT 共用同一精确连续范围
 			if (e.steamCd > 0) { continue }              // per-enemy 节流（复用 COMBO_STEAM_INTERVAL_SEC=2.0，不新增数值）
 		e.steamCd = COMBO_STEAM_INTERVAL_SEC          // 先置位冷却（消耗该敌 steam 窗口，防漏炸后永久逃逸）；视觉上限不影响伤害结算
 		var es2 = enemiesIn(e.x, e.y, CO.steamExplosion.radius)
@@ -563,14 +625,15 @@ function tickCombos(dt) {
 			if (owns('shield')) { tickShield(dt) }
 		tickCombos(dt)
 	},
-	getIcePools: function () { return icePools }   // ⑥：render 读此画真实冰池（看到的=打到的）
+	getIcePools: function () { return icePools },   // ⑥：render 读此画真实冰池（看到的=打到的）
+	getFireFieldVisualAlpha: getFireFieldVisualAlpha   // Fire V1.7：render 只读热蚀表现强度；不暴露/改变伤害状态
 }
 
 	Bus.on('pickup:eat', function (d) { if (d && d.kind === 'skill') { offer() } })
 	Bus.on('core:run_reset', function () {
 		electroDiag.electroAttempts = 0; electroDiag.electroSuccess = 0; electroDiag.electroNoTarget = 0; electroDiag.electroTargetsHit = 0
 		electroDiag.electroLastTriggerSec = -1; electroDiag.electroLastGapSec = 0
-		foundCombo = {}; timer.bolt = 0; timer.lightning = 0; timer.burningBarrage = 0; burnPending.length = 0
+		foundCombo = {}; fireContactPrev = {}; fireFieldVisualUntil = {}; timer.bolt = 0; timer.lightning = 0; timer.burningBarrage = 0; burnPending.length = 0
 		electroTurretState.active = false; electroTurretState.phase = 'inactive'; electroTurretState.x = 0; electroTurretState.y = 0; electroTurretState.age = 0; electroTurretState.comboLevel = 1; electroTurretState.shotsFired = 0; electroTurretState.nextShotAt = 0; electroTurretState.collapseSent = false; electroTurretState.redeployCooldown = 0
 		icePools.length = 0; icePending.length = 0; timer.ice = 0   // ⑥：清空冰池 + 延迟霜环队列 + 复位 CD，防重开残留/NaN
 	})

@@ -286,21 +286,58 @@
 	//   但原"每敌每帧 3 颗"随敌数膨胀是 p 350/350 overdraw 真凶。改：按固定间隔沿蛇身随机取点喷一颗余烬，
 	//   受 spawnBudget + low 优先双重门控(池满优先保死亡/蒸汽/伤害 VFX)，总量恒定不随敌数涨(50 敌仍为固定频率)，零 gameplay
 	function spawnFireEmbers() {
-		// 自动关火(suppressFire)/GM T3 关火视觉 → 真正停喷余烬（消除 fill 爆炸主因）；与 render 同款读法(perfFB('suppressFire') 为回退源)，零双份真相源
+		// Fire V1.6：保持历史粒子总预算不变，只重做出生分布。目标：火域内部在燃烧 + 后段形成短尾焰；墙外不生成固定热点。
 		if (RT('PERF.suppressFireVisual', perfFB('suppressFire', false) ? 1 : 0) > 0) { return }
 		var sk = Registry.get('skill'); if (!sk || !sk.owned) { return }
-		var owned = sk.owned(); if (!(owned.fire > 0)) { return }   // 仅火墙激活
-		if (particles.length >= maxParticles() * 0.5) { return }   // 余量门控：池忙(≥半满)时停喷余烬，留 GPU 呼吸低谷，治"焊死 240/240 常载拖帧"
+		var owned = sk.owned(); if (!(owned.fire > 0)) { return }
+		if (particles.length >= maxParticles() * 0.5) { return }
 		var s = Registry.get('snake'); if (!s || !s.segments || s.segments.length === 0) { return }
-		var segs = s.segments, fi = owned.fire - 1
-		var n = scN(Math.min(4, 2 + fi))   // 余烬数：1阶≈2 / 2阶≈3 / 3阶≈4 封顶 4；§5.5 med/low 再降
+		var segs = s.segments, fi = owned.fire - 1, fireStyle = SKILL_VFX.fire || {}, emberStyle = fireStyle.embers || {}
+		var fr = RT('SKILL.fire.radius.' + fi, CONFIG.SKILL.fire.radius[fi])
+		var n = scN(Math.min(4, 2 + fi))   // 不加总粒子数：仍沿用历史 2/3/4 封顶预算
+		var tailShare = emberStyle.tailShare == null ? 0.34 : emberStyle.tailShare
+		var edgeShare = emberStyle.innerEdgeShare == null ? 0.18 : emberStyle.innerEdgeShare
+		var tailStart = Math.min(segs.length - 1, Math.max(0, Math.floor(segs.length * (emberStyle.tailStartRatio || 0.72))))
+		var jitter = emberStyle.bodyJitterPx || 6, rise = emberStyle.riseSpeed || 24
 		for (var ei = 0; ei < n; ei++) {
-			var sg = segs[(Math.random() * segs.length) | 0]   // 蛇身随机点（整条火墙燃烧，非单点）
-			var a = Math.random() * M.PI2, sp = 30 + Math.random() * 50
-			emitParticle(sg.x + (Math.random() * 2 - 1) * 6, sg.y + (Math.random() * 2 - 1) * 6,
-				Math.cos(a) * sp, Math.sin(a) * sp - 30,        // 略带上飘：火苗上窜感
-				0.35 + Math.random() * 0.2, 1.5 + Math.random() * 1.5,
-				Math.random() < 0.5 ? '#ff9a3c' : '#ffd27a', 0.9, 'low')   // low 优先：池满让位死亡/蒸汽/伤害 VFX
+			var roll = Math.random(), tail = roll < tailShare, innerEdge = !tail && roll < tailShare + edgeShare
+			var idx = tail ? tailStart + ((Math.random() * Math.max(1, segs.length - tailStart)) | 0) : ((Math.random() * segs.length) | 0)
+			if (idx >= segs.length) { idx = segs.length - 1 }
+			var sg = segs[idx], px = sg.x, py = sg.y, vx = 0, vy = 0, life = 0.4, size = 2, hotChance = emberStyle.hotChance == null ? 0.28 : emberStyle.hotChance
+			var prev = segs[Math.max(0, idx - 1)], next = segs[Math.min(segs.length - 1, idx + 1)]
+			var tx = next.x - prev.x, ty = next.y - prev.y, tl = Math.sqrt(tx * tx + ty * ty)
+			if (tl < 0.001) { tx = 1; ty = 0; tl = 1 }
+			tx /= tl; ty /= tl
+			if (innerEdge) {
+				// 火墙内侧余烬：出生在伤害区内部约 52%~68%R，寿命极短，尚未越出边界就衰减掉。
+				var nx = -ty, ny = tx, side = Math.random() < 0.5 ? -1 : 1
+				var minRR = emberStyle.innerEdgeMinRadiusRatio == null ? 0.52 : emberStyle.innerEdgeMinRadiusRatio
+				var maxRR = emberStyle.innerEdgeMaxRadiusRatio == null ? 0.68 : emberStyle.innerEdgeMaxRadiusRatio
+				var offset = fr * (minRR + Math.random() * Math.max(0, maxRR - minRR)), outSp = (emberStyle.edgeOutSpeedMin || 8) + Math.random() * ((emberStyle.edgeOutSpeedMax || 16) - (emberStyle.edgeOutSpeedMin || 8))
+				px += nx * side * offset; py += ny * side * offset
+				vx = nx * side * outSp + (Math.random() * 2 - 1) * 5; vy = ny * side * outSp - rise * 0.72
+				life = (emberStyle.edgeLifeMin || 0.20) + Math.random() * ((emberStyle.edgeLifeMax || 0.28) - (emberStyle.edgeLifeMin || 0.20))
+				size = ((emberStyle.sizeMin || 1.35) + Math.random() * ((emberStyle.sizeMax || 2.75) - (emberStyle.sizeMin || 1.35))) * (emberStyle.edgeSizeMul || 0.82)
+			} else if (tail && idx > 0) {
+				// 后 28% 身体段：沿“朝尾部”的切线短促甩出，形成移动时可读但不长驻的尾焰拖尾。
+				var headward = segs[idx - 1], bx = sg.x - headward.x, by = sg.y - headward.y, bl = Math.sqrt(bx * bx + by * by)
+				if (bl < 0.001) { bx = tx; by = ty; bl = 1 }
+				bx /= bl; by /= bl
+				var tailSp = (emberStyle.tailSpeedMin || 30) + Math.random() * ((emberStyle.tailSpeedMax || 54) - (emberStyle.tailSpeedMin || 30))
+				px += (Math.random() * 2 - 1) * jitter * 0.55; py += (Math.random() * 2 - 1) * jitter * 0.55
+				vx = bx * tailSp + (Math.random() * 2 - 1) * 8; vy = by * tailSp - rise * 0.62
+				life = (emberStyle.tailLifeMin || 0.26) + Math.random() * ((emberStyle.tailLifeMax || 0.40) - (emberStyle.tailLifeMin || 0.26))
+				size = (emberStyle.sizeMin || 1.35) + Math.random() * ((emberStyle.sizeMax || 2.75) - (emberStyle.sizeMin || 1.35))
+				hotChance = emberStyle.tailHotChance == null ? 0.38 : emberStyle.tailHotChance
+			} else {
+				// 全身微燃：保持旧版“从蛇身冒火”的自然语义，不把粒子搬到墙外。
+				var a = Math.random() * M.PI2, sp = (emberStyle.bodySpeedMin || 26) + Math.random() * ((emberStyle.bodySpeedMax || 50) - (emberStyle.bodySpeedMin || 26))
+				px += (Math.random() * 2 - 1) * jitter; py += (Math.random() * 2 - 1) * jitter
+				vx = Math.cos(a) * sp; vy = Math.sin(a) * sp - rise
+				life = (emberStyle.bodyLifeMin || 0.34) + Math.random() * ((emberStyle.bodyLifeMax || 0.50) - (emberStyle.bodyLifeMin || 0.34))
+				size = (emberStyle.sizeMin || 1.35) + Math.random() * ((emberStyle.sizeMax || 2.75) - (emberStyle.sizeMin || 1.35))
+			}
+			emitParticle(px, py, vx, vy, life, size, Math.random() < hotChance ? (emberStyle.hotColor || '#ffd27a') : (emberStyle.color || '#ff9a3c'), 0.9, 'low')
 		}
 	}
 	function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v) }
