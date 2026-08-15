@@ -72,6 +72,15 @@
 		if (!Array.isArray(list) || !list.length) { return '' }
 		return String(list[stableHash(seed) % list.length] || '')
 	}
+	function pickCopyAvoiding(list, seed, avoidText) {
+		if (!Array.isArray(list) || !list.length) { return '' }
+		var avoid = String(avoidText || ''), start = stableHash(seed) % list.length
+		for (var i = 0; i < list.length; i++) {
+			var text = String(list[(start + i) % list.length] || '')
+			if (text && (!avoid || text !== avoid)) { return text }
+		}
+		return ''
+	}
 	function copyAt(path, fallback) {
 		var cur = V3.copy, parts = String(path || '').split('.')
 		for (var i = 0; cur && i < parts.length; i++) { cur = cur[parts[i]] }
@@ -329,13 +338,22 @@
 		if (terminal) { out.push(makeCandidate('summary_path', terminal, pickCopy(copyAt('summary'), 'summary:path:' + terminal.seq), 'fact', [terminal.seq], directorScore('summary', 20), 'summary:path', true, 'summary')) }
 		return out
 	}
-	function buildTerminalCandidate(snapshot) {
+	function buildTerminalCandidate(snapshot, seedPrefix, avoidText) {
 		var terminal = snapshot.terminal
 		if (!terminal) { return null }
-		var food = snapshot.lastRiskyFood && findEvent(snapshot.ledger, snapshot.lastRiskyFood.seq), data = { seconds: formatNumber(snapshot.secondsSinceRiskyFood) }
-		if (snapshot.cause === 'greedy' && food && snapshot.secondsSinceRiskyFood != null) { return makeCandidate(terminal.type || 'ending', terminal, renderCopy(pickCopy(copyAt('ending.greedy'), 'ending:greedy:' + terminal.seq), data), 'correlation', [food.seq, terminal.seq], 0, 'ending:' + terminal.seq, false, 'ending') }
+		var food = snapshot.lastRiskyFood && findEvent(snapshot.ledger, snapshot.lastRiskyFood.seq), data = { seconds: formatNumber(snapshot.secondsSinceRiskyFood) }, prefix = seedPrefix || 'ending'
+		if (snapshot.cause === 'greedy' && food && snapshot.secondsSinceRiskyFood != null) {
+			var greedyList = copyAt('ending.greedy'), greedyText = '', greedyStart = stableHash(prefix + ':greedy:' + terminal.seq) % Math.max(1, greedyList.length)
+			for (var gi = 0; gi < greedyList.length; gi++) {
+				var rendered = renderCopy(greedyList[(greedyStart + gi) % greedyList.length], data)
+				if (rendered && (!avoidText || rendered !== avoidText)) { greedyText = rendered; break }
+			}
+			if (!greedyText) { greedyText = renderCopy(pickCopy(greedyList, prefix + ':greedy:' + terminal.seq), data) }
+			return makeCandidate(terminal.type || 'ending', terminal, greedyText, 'correlation', [food.seq, terminal.seq], 0, 'ending:' + terminal.seq, false, 'ending')
+		}
 		var cause = snapshot.cause === 'clear' || snapshot.cause === 'boss' || snapshot.cause === 'attrition' ? snapshot.cause : 'attrition'
-		return makeCandidate(terminal.type || 'ending', terminal, pickCopy(copyAt('ending.' + cause), 'ending:' + cause + ':' + terminal.seq), 'fact', [terminal.seq], 0, 'ending:' + terminal.seq, false, 'ending')
+		var text = pickCopyAvoiding(copyAt('ending.' + cause), prefix + ':' + cause + ':' + terminal.seq, avoidText) || pickCopy(copyAt('ending.' + cause), prefix + ':' + cause + ':' + terminal.seq)
+		return makeCandidate(terminal.type || 'ending', terminal, text, 'fact', [terminal.seq], 0, 'ending:' + terminal.seq, false, 'ending')
 	}
 	function buildCandidates(snapshot) {
 		var events = snapshot.ledger, candidates = [], combos = uniqueComboEvents(events), profile = snapshot.buildProfile || {}, primary = profile.primarySkillId ? latestSkillGain(events, profile.primarySkillId) : null, comboSeqs = [], lastBuildEvent = null
@@ -370,11 +388,11 @@
 		return { candidates: candidates, summaries: summaries, terminal: terminal }
 	}
 	function evidenceExists(snapshot, candidate) { for (var i = 0; i < candidate.evidenceSeq.length; i++) { if (!findEvent(snapshot.ledger, candidate.evidenceSeq[i])) { return false } } return candidate.evidenceSeq.length > 0 }
-	function selectHighlights(snapshot) {
-		var built = buildCandidates(snapshot), max = Math.max(1, Number(MEMORY.maxHighlights) || 5), min = Math.max(1, Number(MEMORY.minHighlights) || 3), selected = [], usedKeys = {}
+	function selectHighlights(snapshot, eulogyPlan) {
+		var built = buildCandidates(snapshot), max = Math.max(1, Number(MEMORY.maxHighlights) || 5), min = Math.max(1, Number(MEMORY.minHighlights) || 3), selected = [], usedKeys = {}, avoidText = eulogyPlan && eulogyPlan.signatureText || ''
 		var ranked = built.candidates.slice().sort(function (a, b) { return b.score - a.score || a.time - b.time || a.evidenceSeq[0] - b.evidenceSeq[0] })
 		function add(candidate) {
-			if (!candidate || selected.length >= max - 1 || usedKeys[candidate.key] || !evidenceExists(snapshot, candidate)) { return false }
+			if (!candidate || selected.length >= max - 1 || usedKeys[candidate.key] || !evidenceExists(snapshot, candidate) || avoidText && candidate.text === avoidText) { return false }
 			selected.push(candidate); usedKeys[candidate.key] = true
 			return true
 		}
@@ -394,27 +412,63 @@
 		return out
 	}
 	function buildVerdict(snapshot) { return pickCopy(copyAt('verdict.' + snapshot.cause, ['这一局结束']), 'verdict:' + snapshot.cause + ':' + (snapshot.terminal && snapshot.terminal.seq || '')) }
-	function buildEulogyV3(snapshot) {
-		var profile = snapshot.buildProfile || {}, events = snapshot.ledger, combos = uniqueComboEvents(events), clauses = [], feat = null, kills = Number(snapshot.stats.enemyKills) || 0
-		if (combos.length) { clauses.push(buildArcPhenomenon(combos.length, combos[0].comboId, 'eulogy:build:' + combos.map(function (e) { return e.seq }).join(','))) }
-		else if (profile.primarySkillId) { clauses.push(primaryPhenomenon(profile.primarySkillId, profile.primarySkillLevel >= CONFIG.SKILL.maxLevel, 'eulogy:skill:' + profile.primarySkillId + ':' + profile.primarySkillLevel)) }
-		else { clauses.push(pickCopy(copyAt('genericBuild'), 'eulogy:generic')) }
-		if (kills >= (Number(V3.eulogy && V3.eulogy.killMilestoneHigh) || 1000)) { feat = pickCopy(copyAt('feat.killHigh'), 'eulogy:kills:high') }
-		else if (kills >= (Number(V3.eulogy && V3.eulogy.killMilestoneMid) || 500)) { feat = pickCopy(copyAt('feat.killMid'), 'eulogy:kills:mid') }
-		else {
-			for (var e = events.length - 1; e >= 0 && !feat; e--) { if (events[e].type === 'heal_pickup' && events[e].hpAfter > events[e].hpBefore) { for (var h = e - 1; h >= 0; h--) { if (events[h].type === 'hurt' && events[h].hp === (Number(RISK.lowHpThreshold) || 0) && events[e].time - events[h].time <= (Number(MEMORY.recoveryWindowSec) || 0)) { feat = pickCopy(copyAt('trial.nearDeathRecovery'), 'eulogy:recovery:' + events[e].seq); break } } } }
-			if (!feat) { for (var r = events.length - 1; r >= 0 && !feat; r--) { if (events[r].type === 'skill_gain' && events[r].pickupRisky) { feat = pickCopy(copyAt('trial.riskySkill'), 'eulogy:risky:' + events[r].seq) } } }
+	function latestRecoveryPair(events) {
+		for (var e = events.length - 1; e >= 0; e--) {
+			if (events[e].type !== 'heal_pickup' || events[e].hpAfter <= events[e].hpBefore) { continue }
+			for (var h = e - 1; h >= 0; h--) {
+				if (events[h].type === 'hurt' && events[h].hp === (Number(RISK.lowHpThreshold) || 0) && events[e].time - events[h].time <= (Number(MEMORY.recoveryWindowSec) || 0)) { return { hurt: events[h], heal: events[e] } }
+			}
 		}
-		var outcome = buildTerminalCandidate(snapshot), closePath = snapshot.cause === 'clear' ? 'closing.clear' : profile.primarySkillId && copyAt('closing.element.' + profile.primarySkillId).length ? 'closing.element.' + profile.primarySkillId : 'closing.death', close = pickCopy(copyAt(closePath), 'eulogy:close:' + (snapshot.cause || 'death'))
-		if (feat) { clauses.push(feat) }
-		if (outcome) { clauses.push(outcome.text) }
-		if (close) { clauses.push(close) }
-		var maxChars = Number(V3.eulogy && V3.eulogy.maxChars) || 72
-		if (clauses.join(' ').length > maxChars && feat) { clauses.splice(clauses.indexOf(feat), 1) }
-		if (clauses.join(' ').length > maxChars && close) { clauses.splice(clauses.indexOf(close), 1) }
-		var minChars = Number(V3.eulogy && V3.eulogy.minChars) || 42
-		if (clauses.join(' ').length < minChars) { clauses.splice(Math.max(0, clauses.length - 1), 0, pickCopy(copyAt('summary'), 'eulogy:summary:' + (snapshot.terminal && snapshot.terminal.seq || ''))) }
-		return clauses.filter(Boolean).join(' ')
+		return null
+	}
+	function latestRiskySkillGain(events) {
+		for (var i = events.length - 1; i >= 0; i--) { if (events[i].type === 'skill_gain' && events[i].pickupRisky) { return events[i] } }
+		return null
+	}
+	function buildLifeSignature(snapshot, memoryCandidates) {
+		var profile = snapshot.buildProfile || {}, events = snapshot.ledger, combos = uniqueComboEvents(events), avoid = '', signature = '', family = 'generic', evidenceSeq = []
+		function candidateText(type) {
+			for (var i = 0; i < memoryCandidates.length; i++) { if (memoryCandidates[i].type === type) { return memoryCandidates[i].text || '' } }
+			return ''
+		}
+		if (combos.length) {
+			avoid = candidateText('build_arc')
+			signature = pickCopyAvoiding(combos.length === 1 ? copyAt('buildArc.1.' + combos[0].comboId) : copyAt('buildArc.' + Math.min(3, combos.length)), 'eulogy:build:' + combos.map(function (e) { return e.seq }).join(','), avoid) || buildArcPhenomenon(combos.length, combos[0].comboId, 'eulogy:build:' + combos.map(function (e) { return e.seq }).join(','))
+			family = 'build'
+			for (var c = 0; c < combos.length; c++) { evidenceSeq.push(combos[c].seq) }
+		} else if (profile.primarySkillId) {
+			avoid = candidateText('primary_skill')
+			var primaryList = copyAt('primarySkill.' + (profile.primarySkillLevel >= CONFIG.SKILL.maxLevel ? 'max.' : 'normal.') + profile.primarySkillId)
+			signature = pickCopyAvoiding(primaryList, 'eulogy:skill:' + profile.primarySkillId + ':' + profile.primarySkillLevel, avoid) || primaryPhenomenon(profile.primarySkillId, profile.primarySkillLevel >= CONFIG.SKILL.maxLevel, 'eulogy:skill:' + profile.primarySkillId + ':' + profile.primarySkillLevel)
+			family = 'skill:' + profile.primarySkillId
+			var primary = latestSkillGain(events, profile.primarySkillId); if (primary) { evidenceSeq.push(primary.seq) }
+		} else {
+			var recovery = latestRecoveryPair(events), risky = latestRiskySkillGain(events), kills = Number(snapshot.stats.enemyKills) || 0
+			if (recovery) {
+				avoid = candidateText('near_death_recovery')
+				signature = pickCopyAvoiding(copyAt('trial.nearDeathRecovery'), 'eulogy:recovery:' + recovery.heal.seq, avoid) || pickCopy(copyAt('trial.nearDeathRecovery'), 'eulogy:recovery:' + recovery.heal.seq)
+				family = 'recovery'; evidenceSeq = [recovery.hurt.seq, recovery.heal.seq]
+			} else if (risky) {
+				avoid = candidateText('risky_skill')
+				signature = pickCopyAvoiding(copyAt('trial.riskySkill'), 'eulogy:risky:' + risky.seq, avoid) || pickCopy(copyAt('trial.riskySkill'), 'eulogy:risky:' + risky.seq)
+				family = 'risky_skill'; evidenceSeq = [risky.seq]
+			} else if (kills >= (Number(V3.eulogy && V3.eulogy.killMilestoneHigh) || 1000)) {
+				signature = pickCopy(copyAt('feat.killHigh'), 'eulogy:kills:high'); family = 'kills:high'
+			} else if (kills >= (Number(V3.eulogy && V3.eulogy.killMilestoneMid) || 500)) {
+				signature = pickCopy(copyAt('feat.killMid'), 'eulogy:kills:mid'); family = 'kills:mid'
+			} else {
+				signature = pickCopy(copyAt('genericBuild'), 'eulogy:generic'); family = 'generic'
+			}
+		}
+		return { text: signature, family: family, evidenceSeq: evidenceSeq }
+	}
+	function buildEulogyV4(snapshot) {
+		var memoryBuilt = buildCandidates(snapshot), life = buildLifeSignature(snapshot, memoryBuilt.candidates || []), memoryEnding = memoryBuilt.terminal
+		var outcome = buildTerminalCandidate(snapshot, 'eulogy-ending', memoryEnding && memoryEnding.text)
+		var signature = life.text || pickCopy(copyAt('genericBuild'), 'eulogy:generic'), ending = outcome && outcome.text || ''
+		if (!ending) { ending = pickCopy(copyAt('summary'), 'eulogy:summary:' + (snapshot.terminal && snapshot.terminal.seq || '')) }
+		var connector = life.family === 'recovery' && snapshot.cause !== 'clear' ? '可' : ''
+		return { text: [signature, connector + ending].filter(Boolean).join(''), signatureText: signature, signatureFamily: life.family, signatureEvidenceSeq: life.evidenceSeq || [], endingText: ending }
 	}
 	function buildBaseSnapshot(cause) {
 		var run = ensureRun(), events = clone(run.events), profile = buildProfile(), final = finalEvent(), finalCause = cause || GS.deathCause || (final && final.cause) || null
@@ -431,8 +485,8 @@
 		}
 	}
 	function snapshot(cause) {
-		var out = buildBaseSnapshot(cause)
-		out.highlights = selectHighlights(out); out.verdict = buildVerdict(out); out.eulogy = buildEulogyV3(out)
+		var out = buildBaseSnapshot(cause), eulogyPlan = buildEulogyV4(out)
+		out.highlights = selectHighlights(out, eulogyPlan); out.verdict = buildVerdict(out); out.eulogy = eulogyPlan.text
 		var best = null
 		for (var i = 0; i < out.highlights.length; i++) { var item = out.highlights[i]; if (item.role === 'build') { best = item; break } if (!best && (item.role === 'growth' || item.role === 'trial' || item.role === 'feat' || item.role === 'threshold')) { best = item } }
 		out.primaryHighlight = best ? best.text : (out.highlights.length ? out.highlights[0].text : '这一局结束了。')
