@@ -258,6 +258,137 @@
 
 		// —— §8 NARR（叙事结算 · 真理源 §8.4/§8.6–§8.9；文案=资产豁免）——
 		NARR: {
+			// Narrative V2：只定义事实识别与结算阈值，不改变玩法强度。
+			v2: {
+				enabled: true,
+				runCountLocalStorageKey: 'snake55_runCount',
+				ledgerMaxEvents: 160,
+				risk: {
+					nearbyRadiusPx: 150,
+					nearbyEnemyCount: 3,
+					lowHpThreshold: 1,
+					greedyDeathWindowSec: 3.0
+				},
+				memory: {
+					minHighlights: 3,
+					maxHighlights: 5,
+					dedupeWindowSec: 5,
+					recoveryWindowSec: 8,
+					weights: {
+						greedyCorrelation: 100,
+						clear: 100,
+						bossEncounter: 90,
+						comboFound: 86,
+						nearDeathRecovery: 84,
+						riskySkillChoice: 82,
+						riskyHeal: 80,
+						riskyFood: 76,
+						firstSkill: 72,
+						maxSkill: 70,
+						nearDeath: 68,
+						eliteKill: 62,
+						skillGain: 52,
+						stageEnter: 36,
+						summary: 20
+					}
+				}
+			},
+			v3: {
+				enabled: true,
+				echo: {
+					enabled: true,
+					earliestSec: 20,
+					maxEventEchoes: 3,
+					minGapSec: 18,
+					durationSec: 2.2,
+					comboDelaySec: 0.9
+				},
+				presentation: { memoryBeatSec: 1.2, terminalBeatSec: 1.35, memoryMaxChars: 28, autoStatsDelaySec: 12 },
+				eulogy: { killMilestoneHigh: 1000, killMilestoneMid: 500, minChars: 42, maxChars: 72 },
+				director: {
+					scores: { buildArc3: 94, buildArc2: 90, buildArc1: 86, primarySkill: 72, riskySkill: 82, recovery: 84, killMilestone: 78, threshold: 90, elite: 62, growth: 36, summary: 20 }
+				},
+				copy: {
+					chapter: {
+						2: { title: '成长期', lines: ['身后开始留下更长的影子。', '夜色还很宽，蛇身已经慢慢长起来。'] },
+						3: { title: '割草期', lines: ['怪潮开始变密，前路也开始发亮。', '世界挤了起来，蛇身还在往前长。'] },
+						4: { title: '高潮期', lines: ['世界越来越挤，退路也越来越窄。', '力量已经成形，夜色却没有因此安静。'] },
+						5: { title: '终点', lines: ['终点终于有了形状。', '夜色尽头，守卫已经在那里。'] }
+					},
+					echo: {
+						combo: {
+							steamExplosion: ['冰与火第一次没有互相抵消。', '两股相反的力量，在蛇身里撞成了蒸汽。'],
+							electroTurret: ['电光停了下来，开始守住一块地方。', '飞出去的光，第一次在原地扎了根。'],
+							burningBarrage: ['火不再只绕着蛇身，它开始追着怪潮烧。', '火与飞镖接上了，余烬开始跟着目标走。']
+						},
+						multiCombo: ['第三道羁绊成形时，这条蛇已经和最初不一样了。', '三种力量接上以后，蛇身里已经有了自己的秩序。'],
+						skillMax: {
+							fire: ['火光终于长到了极处。', '火焰沿着蛇身走到了尽头。'],
+							ice: ['寒意终于铺到了极处。', '霜色在蛇身上长到了最深的一层。'],
+							bolt: ['飞镖的轨迹终于磨到了极处。', '那些追出去的光，已经熟得不能再熟。'],
+							shield: ['守护它的光终于厚到了极处。', '那层光，已经长到能长的最深处。'],
+							lightning: ['电光终于连成了一整条路。', '闪电沿着怪潮走到了极处。']
+						},
+						nearDeathRecovery: ['只剩一颗心的时候，它又亮了回来。', '一颗心撑住了这一段，随后生命重新补了回来。'],
+						riskySkill: ['怪潮贴得很近，那束异光进了蛇身。', '敌人就在身边，它还是带走了那次异变。']
+					},
+					buildArc: {
+						1: {
+							steamExplosion: ['冰与火撞在一起，蒸汽从蛇身里炸开。', '冰与火终于在蛇身里撞成蒸汽。'],
+							electroTurret: ['飞出去的电光停下来，守住了一块地方。', '电光停下来，在原地守住了一块地方。'],
+							burningBarrage: ['火沿着飞镖追出去，余烬跟上了怪潮。', '火光追着飞镖出去，余烬跟上了怪潮。']
+						},
+						2: ['两道共鸣先后接上，蛇身已经和最初不同。', '两股力量接在一起，蛇身有了自己的方向。'],
+						3: ['三道共鸣先后成形，这一生有了自己的路数。', '三股力量接在一起，蛇身长出了自己的秩序。']
+					},
+					primarySkill: {
+						max: {
+							fire: ['火光沿着蛇身一路长到了极处。', '火光终于长到了蛇身的尽头。'],
+							ice: ['霜色沿着蛇身铺到了极处。', '寒意终于沉到了蛇身的最深处。'],
+							bolt: ['那些追出去的光，渐渐成了最熟悉的轨迹。', '飞出的光磨成了一条熟悉的路。'],
+							shield: ['守着蛇身的光，终于厚到了极处。', '那层守护的光长到了最深处。'],
+							lightning: ['电光终于在怪潮间连成了一条路。', '闪电沿着怪潮走成了一条长路。']
+						},
+						normal: {
+							fire: ['火光沿着蛇身慢慢长开。'],
+							ice: ['霜色开始沿着蛇身铺开。'],
+							bolt: ['那些追出去的光，开始留下熟悉的轨迹。'],
+							shield: ['守着蛇身的光，慢慢厚了起来。'],
+							lightning: ['电光开始在怪潮间接成一条路。']
+						}
+					},
+					trial: {
+						nearDeathRecovery: ['只剩一颗心以后，它又把生命补了回来。', '最薄的一线生命，没有在那里断掉。'],
+						riskySkill: ['怪潮就在身边，那次异变仍然进入了蛇身。', '敌人贴得很近，那束异光仍然进了蛇身。'],
+						elite: ['有一只精英敌人倒在了这条蛇身后。']
+					},
+					feat: {
+						killHigh: ['怪潮在身后倒下了一千多次。'],
+						killMid: ['身后已经倒下了五百多个敌人。']
+					},
+					threshold: ['终点终于有了形状。', '守在夜色尽头的东西，终于出现了。'],
+					ending: {
+						greedy: ['那一口已经吃下去了。{seconds}秒后，这一生也停了下来。', '它刚从敌人身边吞下那一口；{seconds}秒后，前路断在这里。'],
+						attrition: ['前路还在继续，这一生先停了下来。', '夜色还没有走完，蛇身先安静了。'],
+						boss: ['终点已经在眼前，这一生停在了门前。', '它已经走到终点，最后这一段却没有走完。'],
+						clear: ['终点没能把它留下——这一生真的走完了。', '它走过了最后一道门，这一生终于完整。']
+					},
+					closing: {
+						death: ['喧闹退下去以后，夜色重新安静。', '最后，蛇身不再往前了。'],
+						clear: ['夜色还在，而这条蛇已经把这一生走完。', '终点过去以后，留下的是一条完整走完的蛇生。'],
+						element: {
+							fire: ['最后，火光退回夜色里，蛇身也安静了。'],
+							ice: ['最后，霜色慢慢散开，蛇身也安静了。'],
+							lightning: ['最后，电光退回夜色里，蛇身也安静了。'],
+							shield: ['最后，守护它的光暗下去，蛇身也安静了。'],
+							bolt: ['最后，那些追出去的光不再出现，蛇身也安静了。']
+						}
+					},
+					genericBuild: ['夜色里，蛇身慢慢长出了自己的形状。'],
+					verdict: { greedy: ['那一口之后'], attrition: ['前路未尽'], boss: ['止于终点之前'], clear: ['此生走完'] },
+					summary: ['夜色还没走完，蛇身已经停在这一段。', '这一生走过的路，先在这里安静下来。']
+				}
+			},
 			deathStillSec: 1.0,
 			carouselSec: 4, carouselCountMin: 3, carouselCountMax: 5,
 			aiTextSec: 12, aiTextSecMin: 10, aiTextSecMax: 14,
@@ -265,7 +396,7 @@
 			chapterBeatSec: 2.4,
 			chapterBeats: {
 				2: { title: '成长期', line: '开始懂得，贪一口会长得更快。' },
-				3: { title: '割草期', line: '火力盖过恐惧。' },
+				3: { title: '割草期', line: '火力盖过压力。' },
 				4: { title: '高潮期', line: '越强，越没有退路。' },
 				5: { title: 'Boss期', line: '终点就在前面。' }
 			},
@@ -274,82 +405,14 @@
 			templateSkeletonMin: 12,
 			aiTextCharMin: 80, aiTextCharMax: 120,
 
-			// §8.6 走马灯节点文案池（蛇尾→蛇头逐节点亮；无事件节点按生命阶段 p=节序/总长 取）
-			flashback: {
-				stageThresholds: { youngMax: 0.33, primeMax: 0.70 },
-				perNodeMs: 600,
-				samplingCapMs: 5000,
-				headClosingLine: '……然后，故事停在了这里。',
-				stageLines: {
-					young: ['最初那一口，它还不懂贪婪的滋味', '世界很小，够吃就好', '第一次伸长，连影子也长了一寸', '那时转弯还笨拙，却什么都不怕'],
-					prime: ['它学会了挑食物吃，也学会了为一口涉险', '身后跟着越来越长的自己，它开始回不了头', '火力盖过恐惧的那一段，最像活着', '越长越强，它以为这趟没有尽头'],
-					old: ['靠近头的这几口，是最舍不得、也最后悔的', '它已经很长了，长到每一步都要算计', '「再贪一口」——这个念头，它听过很多次', '光开始变暗，它还在往前']
-				},
-				eventLines: {
-					firstUpgrade: '它第一次选择成为什么——从此身上多了名字以外的东西',
-					comboSteam: '有一年，它让冰与火同时炸开，半片天都亮了',
-					comboElectro: '它把闪电拴在弹道上，那是它火力的巅峰',
-					comboBurn: '它燃烧着前进，连退路都点着了',
-					killElite: '它扳倒过比自己大一圈的庞然，没人记得，但它记得',
-					bossEncounter: '终点的守卫挡在那里，它听见了自己的心跳',
-					hurt: '这一口差点要了它的命，疤就留在这一节',
-					heal: '悬崖边上，有什么把它轻轻拉了回来',
-					choice: '它在岔路上选了一条，另一条永远不会知道通向哪'
-				}
-			},
+			// Narrative V2 仅保留冻结的事实阈值、记忆权重与章节节拍。
 
-			// §8.7 蛇生短文模板库（死法4 × 构筑倾向3 = 12 骨架；槽位 {maxLen}/{maxStage}/{build}/{topCombo}/{kills}）
-			eulogy: {
-				varDefaults: { maxLen: '没长多少', maxStage: '前路', build: '它的本事', topCombo: '它的看家招式', kills: '数不清的', choice: '' },
-				templates: {
-					greedy: {
-						fire: '这条蛇死得太早。才 {maxLen} 节长，火还没烧旺，就为一口够不着的食物把头探进了怪潮。{build} 的火光，只照亮了它最后扑空的方向。它没活到燎原那天——急着长大，急着变强，急着证明自己配得上更远的地方。然后，急着死了。',
-						ice: '它算计了一切，唯独算错了自己的贪心。才 {maxLen} 节，它就想用 {build} 冻住整片场地，再从容收割——可那一口食物太诱人，它探出去的半秒，没有谁来得及替它减速。聪明的蛇，也会死在自己最得意的那一步上。',
-						mixed: '一条本可以走得很远的蛇。它稳，它忍，它把 {build} 铺得周全——可再周全的人，也有沉不住气的一瞬。{maxLen} 节，它为多吃一口赌了一把，输了。墓碑上该写：它什么都防住了，除了自己伸出去的那一下。'
-					},
-					attrition: {
-						fire: '它燃尽了。{maxLen} 节的身躯一路烧到 {maxStage}，{kills} 具残骸铺在身后。火系的蛇从不退，它只是一直烧、一直烧，直到最后一颗火星也照不亮下一个敌人。不是它不够强——是它太想烧光所有黑暗，忘了火也会灭。',
-						ice: '它一寸寸被磨穿。{build} 把进攻拖成了消耗，怪潮却比它的耐心更长。{maxLen} 节，走到 {maxStage}，它冻住了无数次冲锋，唯独没能冻住时间。最冷静的蛇，最后输给了不肯停下的潮水。',
-						mixed: '它坚守到了最后一刻。{kills} 次干净的格挡与反击，{maxLen} 节身躯当过盾、也当过墙，一直撑到 {maxStage} 才力竭。没有惊天动地的死法，只有一句配得上它的话——它尽力了，比谁都尽力。'
-					},
-					boss: {
-						fire: '只差一步。{maxLen} 节、闯到 {maxStage}，它带着烧穿一路的气势撞到终点守卫面前——火力够猛，却在最后那道防线前耗尽了最后一口气。{topCombo} 的余烬还在闪，它却没能看见守卫倒下的样子。烈火常常这样：照亮了终点，偏偏烧不到那里。',
-						ice: '终局的寒霜。它一路控、一路算，把 {build} 打磨到几乎能冻住时间——可守卫的血条，比它的从容厚了那么一点点。{maxLen} 节的算计，停在了离胜利最近的地方。它输得很安静，像一局快要解开、却终究没解开的棋。',
-						mixed: '守门人的遗憾。它几乎什么都做对了：稳健的 {build}、{kills} 次不慌不忙的击杀、{maxLen} 节恰到好处的身躯——只差一点运气，只差最后一口血。它倒在终点的门槛上，姿势依然周全。'
-					},
-					clear: {
-						fire: '燎原功成。这条蛇用 {maxLen} 节的身躯、一路烧穿的 {kills} 次击杀，把终点守卫也烧成了灰。{topCombo} 是它的高光，也是它的注脚——它从最小的一口食物，一直贪到了世界的尽头。而这一次，贪婪带它赢了。',
-						ice: '冰封王座。它没有最猛的火，却有最冷的头脑。{build} 一层层冻住了所有冲锋，{maxLen} 节身躯像一张缓缓收拢的网，把终点守卫困死在最后一寸。它赢得不喧哗，却赢得彻底。',
-						mixed: '周全的胜利。{maxLen} 节，{kills} 次击杀，没有一次该退时硬撑，也没有一次该进时犹豫。它把每一份贪婪，都恰好换成了够用的强大，稳稳走到了终点。这条蛇，活成了它想成为的样子。'
-					}
-				},
-				fallback: '一条蛇走完了它的一生。{maxLen} 节，{kills} 次撕咬，最终倒在了 {maxStage}。它贪过、强过、也怕过——这就够了，这就是它的蛇生。'
-			},
-
-			// §8.7.3 分类阈值（死法主判据=关卡段深度 split：段≤greedyStageMax→贪死 / 段≥bossStageId→Boss前中 / 其间(段③④)→血耗尽 / 击杀Boss→通关；构筑倾向按技能等级占比 MVP）
+			// §8.7.3 兼容分类阈值；greedyStageMax 已 deprecated，Narrative V2 禁止用它判 greedy。
 			classify: {
 				deathCause: { greedyStageMax: 2, bossStageId: 5 },
 				buildLean: { fireThreshold: 0.5 }
 			},
 
-			// §8.8 不可逆抉择事件库（每局 ≤choicePerRunMax 次，非阻塞 overlay，超时走默认；记忆标签喂 §8.6/§8.7）
-			// 触发口径：含 segId→按关卡段触发；含 skillCount→按「不同技能计数」精确触发（CH-02 首次满 3 技能、不再用段③；CH-05 段④近似=MVP 待实测校准）
-			choices: {
-				timeoutSec: 8,
-				events: [
-					{ id: 'CH-01', firstSkillRequired: true, minSegments: 5, desc: '一团食物挤在怪堆里，身后却是空旷的安全地带。', a: { text: '探进去抢', seg: 2, memory: '贪婪的少年' }, b: { text: '绕开求稳', seg: 0, memory: '谨慎的少年' }, def: 'b' },  // P1-3：双条件触发（移除 segId:1）
-					{ id: 'CH-02', skillCount: 3, desc: '一个没见过的新技能道具，和一个熟悉技能的升级，同时出现在眼前。', a: { text: '赌新技能', memory: '不安分的一生' }, b: { text: '深耕已有', memory: '专注的一生' }, def: 'b' },
-					{ id: 'CH-03', segId: 3, desc: '一只精英守着回血道具，旁边小怪正在涌来。', a: { text: '先抢回血', hp: 1, memory: '惜命的人' }, b: { text: '先清场再说', memory: '逞强的人' }, def: 'a' },
-					{ id: 'CH-04', segId: 5, desc: '终点的门已经能看见。要不要回头，把落下的食物吃干净？', a: { text: '回头吃满', seg: 1, memory: '不留遗憾' }, b: { text: '直奔终点', memory: '一往无前' }, def: 'b' },
-					{ id: 'CH-05', segId: 4, desc: '一段金光闪动的记忆碎片，偏偏落在弹幕最密处。', a: { text: '冒死去取', memory: '放不下的执念' }, b: { text: '放手', memory: '学会了释然' }, def: 'b' }
-				]
-			},
-
-			// §8.9 结算屏战绩九项（评语映射 + 局数本地键）
-			scoreboard: {
-				localStorageKey: 'snake55_runCount',
-				verdictByDeathCause: { greedy: '贪婪的少年', attrition: '燃尽的烈火', boss: '功亏一篑的守门人', clear: '周全的胜者' }
-			}
 		},
 
 		// —— §5 色彩语义（GDD §5 · 资产豁免） ——
@@ -522,6 +585,7 @@
 			playerStats: { overallScale: 0.8, widthVw: 34, offsetX: 6, offsetY: -56, contentScale: 0.74, contentOffsetX: -25, contentOffsetY: 0, labelSize: 17, valueSize: 15, labelValueGap: 1, lengthOffsetX: 0.01, killsOffsetX: 0.08, scoreOffsetX: 0.14, streakOffsetX: 0.19 },
 			stage: { overallScale: 1.05, widthVw: 34, offsetX: 0, offsetY: 0, contentScale: 0.90, contentOffsetX: 0, contentOffsetY: 0, titleSize: 20, titleOffsetY: 0, timerSize: 13, timerOffsetY: 0, progressWidth: 0.77, progressHeight: 0.13, progressOffsetX: -0.01, progressOffsetY: -0.02 },
 			type: { titlePx: 13, valuePx: 16, bodyPx: 13, metaPx: 11 },
+			result: { maxWidthPx: 720, maxHeightPx: 450, mobileCompactHeightPx: 330, memoryHeightPx: 120, memoryMobileHeightPx: 90, eulogyHeightPx: 145, eulogyMobileHeightPx: 100 },
 			opening: {
 				standard: { logoOffsetX: 0, logoOffsetY: 0, logoScale: 1, buttonOffsetX: 0, buttonOffsetY: 0, buttonScale: 0.8, bgFocusX: 50 },
 				wide: { logoOffsetX: 0, logoOffsetY: 0, logoScale: 1, buttonOffsetX: 0, buttonOffsetY: 0, buttonScale: 0.8, bgFocusX: 50 }

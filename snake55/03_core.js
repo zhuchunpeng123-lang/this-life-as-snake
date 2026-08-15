@@ -130,6 +130,10 @@
 		}
 	}
 
+	function createNarrativeRun() {
+		return { events: [], nextSeq: 0, stats: {}, behavior: {}, lastRiskyFood: null, lastLethalHit: null, pendingSkillOffer: null, pendingSkillPickup: null, lastStageName: '' }
+	}
+
 	// ---------- GS 全局运行态 ----------
 	var GS = {
 		status: 'menu', timeSec: 0, frame: 0, score: 0, kills: 0, killStreak: 0, upgradesThisRun: 0,   // C：本局累计升级次数
@@ -141,8 +145,9 @@
 		firstSkillPickSec: 0,   // S4：首球(本局首个技能)拾取耗时(s)，验证"保护期内尝到升级"是否真达成（拾取时刻 = 体验时机，非掉出时刻）
 		// —— 叙事结算态（真理源 §8.2 / GDD §13.3 必清）——
 		maxSegments: 0, maxStageId: 1, killStreakMax: 0,
-		memoryTokens: [], buildSequence: [], comboHighlights: [], irreversibleChoices: [],
-		deathCause: null, bossDefeated: false
+		comboHighlights: [],
+		deathCause: null, bossDefeated: false,
+		narrativeRun: createNarrativeRun()
 	}
 
 	// GDD §13.3：开新局重置一切运行态
@@ -158,10 +163,10 @@
 		GS.invincibleUntil = 0; GS.buildPauseUntil = 0; GS.comboScore = 0
 		GS.ownedSkills = {}; GS.shakeFrames = 0; GS.shakeMag = 0
 		GS.tuningSandbox = false   // #9 修复：标定沙盒(dev)不跨局残留；13_editor.js 初值 false，本行确保每局开局关闭（显式点名触碰 03_core：仅运行态重置，非引擎逻辑）
-		// 叙事结算态清空（防上局残留：memoryTokens 等）
+		// 叙事结算态清空，保证每局运行统计从初始状态开始
 		GS.maxSegments = CONFIG.PLAYER.initSegments; GS.maxStageId = 1; GS.killStreakMax = 0
-		GS.memoryTokens = []; GS.buildSequence = []; GS.comboHighlights = []; GS.irreversibleChoices = []
-		GS.deathCause = null; GS.bossDefeated = false
+		GS.comboHighlights = []
+		GS.deathCause = null; GS.bossDefeated = false; GS.narrativeRun = createNarrativeRun()
 		Bus.emit('core:run_reset', null)
 		Log.info('resetRun：coreHp=' + GS.coreHp + ' segments=' + GS.segments)
 	}

@@ -11,12 +11,11 @@
 	var SKILL_LABEL = { fire: '火焰光环', ice: '冰霜领域', bolt: '追踪飞镖', shield: '守护力场', lightning: '连锁闪电' } // TODO: 待确认
 	var SKILL_GLYPH = { fire: '火', ice: '冰', bolt: '镖', shield: '盾', lightning: '雷' }   // 技能栏单字徽标（文本，非 hex）
 	var COMBO_LABEL = { steamExplosion: '蒸汽爆炸', electroTurret: '电磁炮台', burningBarrage: '灼烧弹幕' }
-	var COMBO_EVENT = { steamExplosion: 'comboSteam', electroTurret: 'comboElectro', burningBarrage: 'comboBurn' }
 	var COMBO_COLOR = { steamExplosion: STYLE.playerGlow, electroTurret: STYLE.elite, burningBarrage: STYLE.enemyCalm }   // GATE B：接 STYLE 真源（禁新 hex）；电磁 Combo 复用 elite 紫
+	var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 复用旧版结算图标，不改视觉语言
 var SKILL_DESC = { fire: '灼烧周身敌人，持续掉血', ice: '减速并冻结范围内敌人', bolt: '自动发射追踪飞镖', shield: '环绕护盾球抵挡伤害', lightning: '闪电连锁跳跃劈敌' }   // 三选一卡片「一句效果描述」（纯展示文案，非 §9 数值）
-var SCORE_ICON = { seg: '🐍', path: '🗺️', kills: '💀', streak: '🔥', score: '⭐', combo: '💥', verdict: '📜', highlight: '✨', lives: '🐉' }   // 结算九项图标（emoji，纯展示）
 
-var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, choiceBox = null, buildInfoLayer = null, buildInfoBox = null, stageName = '—'
+	var root = null, froot = null, hud = null, hudStatus = null, hudLife = null, hudData = null, hudCenter = null, hudBoss = null, hudWave = null, hudBuild = null, hudSkills = null, hudCombo = null, choose = null, result = null, buildInfoLayer = null, buildInfoBox = null
 var comboBanner = null, pauseBtn = null, pauseOverlay = null, fullscreenBtn = null, rotateChoiceEl = null, gmBtn = null, hudSys = null, gateEl = null
 var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重排布局、桌面保持原右上三联（供 applyUiScale/按钮文案判断）
 	var _rotateHandler = null   // 竖屏选卡门控的 orientationchange/resize 监听句柄（模块级声明，避免严格模式下未定义 ReferenceError）
@@ -26,11 +25,9 @@ var isTouch = false   // 触屏设备标记：init 内赋值；移动端走重�
 	var seqId = 0
 	function editorAllowed() { var D = CONFIG.DEBUG || {}; return !!(D.enabled && D.editorEnabled) }
 	var timers = []
-	var usedChoiceIds = {}
 	var chooseKeyHandler = null   // 三选一键盘 1/2/3 监听句柄（显示时挂载、hideChoose 时移除）
-	var bossTagged = false, firstUpgradeTagged = false, choicesUsed = 0, choiceActive = false, choiceChoices = null
-	var narrativeQueue = [], queuedChoiceIds = {}, resultSnapshot = null, chapterBeat = null
-	var ownedSkillIds = {}
+	var choiceChoices = null, resultSnapshot = null, resultView = null, chapterBeat = null, stageBeat = null, memoryWrap = null, memoryLine = null
+	var beatQueue = [], beatActive = null, beatOrder = 0
 
 	function mk(tag, css, parent) { var e = document.createElement(tag); if (css) { e.style.cssText = css } if (parent) { parent.appendChild(e) } return e }
 	function iconText(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
@@ -172,6 +169,62 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 }
 	function after(ms, fn) { var my = seqId; var t = global.setTimeout(function () { if (my === seqId) { fn() } }, ms); timers.push(t); return t }
 	function clearTimers() { for (var i = 0; i < timers.length; i++) { global.clearTimeout(timers[i]); global.clearInterval(timers[i]) } timers.length = 0 }
+	function stableUiHash(text) { var hash = 2166136261, value = String(text || ''); for (var i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619) } return hash >>> 0 }
+	function pickUiCopy(list, seed) { return Array.isArray(list) && list.length ? String(list[stableUiHash(seed) % list.length] || '') : '' }
+	function enqueueNarrativeBeat(beat) {
+		if (!beat || !beat.text || !chapterBeat) { return }
+		if (beat.kind === 'echo' && GS.status !== 'playing') { return }
+		if (beat.kind === 'echo' && choose && choose.style.display !== 'none') { return }
+		beatQueue.push({ kind: beat.kind || 'stage', title: beat.title || '', text: beat.text, priority: Number(beat.priority) || 1, due: Date.now() + Math.max(0, Number(beat.delaySec) || 0) * 1000, durationSec: Number(beat.durationSec) || ((NARR.v3 && NARR.v3.echo && NARR.v3.echo.durationSec) || NARR.chapterBeatSec || 2.2), order: beatOrder++ })
+		beatQueue.sort(function (a, b) { return a.due - b.due || b.priority - a.priority || a.order - b.order })
+		drainNarrativeBeatQueue()
+	}
+	function drainNarrativeBeatQueue() {
+		if (beatActive || !chapterBeat || !beatQueue.length) { return }
+		var next = beatQueue.shift(), wait = Math.max(0, next.due - Date.now())
+		beatActive = { pending: true }
+		after(wait, function () {
+			if (next.kind === 'echo' && (GS.status !== 'playing' || choose && choose.style.display !== 'none')) { beatActive = null; drainNarrativeBeatQueue(); return }
+			chapterBeat.innerHTML = next.title ? '<strong style="display:block;color:' + STYLE.ui + ';font-size:1.12em">' + iconText(next.title) + '</strong><span>' + iconText(next.text) + '</span>' : iconText(next.text)
+			chapterBeat.style.display = 'block'; chapterBeat.style.opacity = '1'
+			var durationMs = Math.max(500, next.durationSec * 1000), fadeMs = Math.min(350, durationMs / 3)
+			after(Math.max(100, durationMs - fadeMs), function () { if (chapterBeat) { chapterBeat.style.opacity = '0' } })
+			after(durationMs, function () { if (chapterBeat) { chapterBeat.style.display = 'none' } beatActive = null; drainNarrativeBeatQueue() })
+		})
+	}
+	function getResultTuning(key, fallback) {
+		var value = getUiTuning('result.' + key)
+		return value == null ? fallback : value
+	}
+	function ensureResultV31Style() {
+		if (document.getElementById('snake-result-v32-classic-style')) { return }
+		var style = document.createElement('style')
+		style.id = 'snake-result-v32-classic-style'
+		style.textContent = ''
+			+ '.result-classic-overlay{position:absolute;inset:0;box-sizing:border-box;display:none;align-items:center;justify-content:center;overflow:hidden;padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));background:var(--result-overlay-bg);z-index:30;pointer-events:auto}'
+			+ '.result-classic-stage{box-sizing:border-box;width:min(620px,calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px));height:302px;max-height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px);overflow-y:auto;overflow-x:hidden;padding:22px 30px;color:var(--result-text);font-family:system-ui,sans-serif;text-align:center;background:var(--result-bg);border:1px solid var(--result-border);border-radius:18px;box-shadow:0 18px 60px var(--result-shadow),0 0 26px var(--result-glow);scrollbar-width:thin;scrollbar-color:var(--result-scroll) transparent;overscroll-behavior:contain;touch-action:pan-y}'
+			+ '.result-classic-stage.is-expanded{height:auto;max-height:calc(92vh - env(safe-area-inset-top) - env(safe-area-inset-bottom))}'
+			+ '.result-classic-title{height:42px;display:flex;align-items:flex-start;justify-content:center;color:var(--result-title);font:800 30px/1.15 system-ui;letter-spacing:4px}'
+			+ '.result-classic-prelude{box-sizing:border-box;height:146px;margin-top:6px;position:relative;overflow:hidden}'
+			+ '.result-classic-memory{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--result-text);font:500 16px/1.48 system-ui}'
+			+ '.result-classic-memory-row{max-width:100%;opacity:0;transition:opacity .34s;white-space:normal;text-align:center;will-change:opacity}'
+			+ '.result-classic-eulogy{position:absolute;left:0;right:0;top:8px;bottom:8px;display:none;flex-direction:column;align-items:stretch;justify-content:center;padding:12px 18px;border-left:3px solid var(--result-title);background:var(--result-panel);color:var(--result-text);font:500 16px/1.66 system-ui;text-align:left;overflow:hidden;opacity:0;transition:opacity .42s}'
+			+ '.result-classic-actions{box-sizing:border-box;width:min(406px,100%);height:48px;margin:8px auto 0;display:grid;grid-template-columns:94px 176px 108px;align-items:center;justify-content:center;gap:14px;visibility:hidden;opacity:0;transform:translateY(4px);transition:opacity .24s,transform .24s}'
+			+ '.result-classic-actions.is-visible{visibility:visible;opacity:1;transform:translateY(0)}'
+			+ '.result-classic-rating{box-sizing:border-box;width:94px;height:40px;justify-self:center;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--result-rating);border-radius:999px;background:var(--result-rating-bg);color:var(--result-rating);font:800 13px/1 system-ui;box-shadow:0 0 10px var(--result-rating-glow);white-space:nowrap}'
+			+ '.result-classic-rating strong{font-size:20px;line-height:1}'
+			+ '.result-classic-replay{box-sizing:border-box;width:176px;height:48px;justify-self:center;padding:0 18px;border:2px solid var(--result-player);border-radius:12px;background:var(--result-player);color:var(--result-bg-solid);font:800 17px/1 system-ui;letter-spacing:.5px;cursor:pointer;box-shadow:0 0 14px var(--result-player-glow)}'
+			+ '.result-classic-view{box-sizing:border-box;width:108px;height:40px;justify-self:center;padding:0 10px;border:1px solid var(--result-ui);border-radius:999px;background:transparent;color:var(--result-text);font:700 14px/1 system-ui;cursor:pointer;white-space:nowrap}'
+			+ '.result-classic-view[disabled]{cursor:default;opacity:.72}'
+			+ '.result-classic-scorebox{box-sizing:border-box;width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px}'
+			+ '.result-classic-scorecard{position:relative;box-sizing:border-box;width:100%;min-height:36px;padding:8px 14px;border-radius:10px;background:var(--result-card-bg);border:1px solid var(--result-card-border);border-left:3px solid var(--result-ui)}'
+			+ '.result-classic-scoreicon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px;line-height:1}'
+			+ '.result-classic-scorelabel{display:block;padding:0 48px;color:var(--result-text);font:600 14px/1.35 system-ui;text-align:center;white-space:nowrap}'
+			+ '.result-classic-scorevalue{position:absolute;right:14px;top:50%;transform:translateY(-50%);max-width:170px;color:var(--result-text);font:700 14px/1.35 system-ui;text-align:right;white-space:nowrap}'
+			+ '@media (max-width:700px){.result-classic-stage{padding:20px 24px}.result-classic-actions{width:min(374px,100%);grid-template-columns:88px 164px 104px;gap:9px}.result-classic-rating{width:88px;height:40px;font-size:13px}.result-classic-rating strong{font-size:19px}.result-classic-replay{width:164px;height:48px;font-size:16px}.result-classic-view{width:104px;height:44px;font-size:13px}.result-classic-prelude{height:140px}.result-classic-memory{font-size:15px}.result-classic-eulogy{font-size:15px;line-height:1.62}}'
+			+ '@media (max-height:390px) and (orientation:landscape){.result-classic-stage{height:270px;padding-top:16px;padding-bottom:16px}.result-classic-title{height:36px;font-size:27px}.result-classic-prelude{height:132px;margin-top:2px}.result-classic-actions{width:min(374px,100%);height:48px;margin-top:6px;grid-template-columns:88px 164px 104px;gap:9px}.result-classic-rating{width:88px;height:40px;font-size:13px}.result-classic-rating strong{font-size:19px}.result-classic-replay{width:164px;height:46px;font-size:16px}.result-classic-view{width:104px;height:44px;font-size:13px}.result-classic-eulogy{top:5px;bottom:5px;padding-top:10px;padding-bottom:10px;font-size:15px;line-height:1.62}.result-classic-scorecard{min-height:34px;padding-top:7px;padding-bottom:7px}}'
+		if (document.head) { document.head.appendChild(style) }
+	}
 
 	function init(stageRoot, fullRoot) {
 		root = stageRoot || document.body   // 角落 HUD 层（贴 canvas 显示区）
@@ -216,7 +269,6 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		_nf.textContent = '.ui-near-death{animation:uiNearDeath .9s ease-in-out infinite}@keyframes uiNearDeath{0%,100%{box-shadow:0 0 0 ' + hexA(STYLE.enemy, 0) + '}50%{box-shadow:0 0 14px ' + STYLE.enemy + '}}'
 		if (document.head) { document.head.appendChild(_nf) }
 		choose = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;overflow:auto;padding:16px;box-sizing:border-box;background:' + hexA(STYLE.bg, 0.72) + ';z-index:20;pointer-events:auto', froot)
-		choiceBox = mk('div', 'position:absolute;left:50%;bottom:22%;max-width:min(92%,520px);transform:translateX(-50%);display:none;flex-direction:column;gap:8px;align-items:center;z-index:18;pointer-events:auto', root)   // bottom:22% 上移避让右下摇杆区；max-width 防极窄屏溢出；pointer-events:auto 使抉择按钮可点
 		buildInfoLayer = mk('div', '', froot); buildInfoLayer.className = 'ui-v1-build-info-layer'
 		buildInfoBox = mk('div', '', buildInfoLayer); buildInfoBox.className = 'ui-v1-build-info'
 		buildInfoLayer.setAttribute('aria-hidden', 'true')
@@ -225,9 +277,12 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		global.addEventListener('keydown', function (e) { if (e.key === 'Escape' && buildInfoLayer && buildInfoLayer.style.display !== 'none') { hideBuildInfo() } })
 		hudSkills.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudSkills, 'data-skill', 'skill', 'skill_status') })
 		hudCombo.addEventListener('click', function (e) { openBuildInfoFromEvent(e, hudCombo, 'data-combo', 'combo', 'combo_status') })
-		result = mk('div', 'position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:' + hexA(STYLE.bg, 0.6) + ';z-index:30;pointer-events:auto', froot)   // 外层半透明：框外仍可看到游戏画面（更有氛围）
+		ensureResultV31Style()
+		result = mk('div', '', froot); result.className = 'result-classic-overlay'
 		comboBanner = mk('div', 'position:absolute;left:50%;top:calc(14% + env(safe-area-inset-top));transform:translateX(-50%);display:none;padding:10px 22px;border-radius:14px;font:800 clamp(18px,5vw,22px) system-ui;color:' + STYLE.textMain + ';text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.6) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;white-space:nowrap', root)
-		chapterBeat = mk('div', 'position:absolute;left:50%;top:calc(24% + env(safe-area-inset-top));transform:translateX(-50%);display:none;min-width:min(68vw,420px);padding:10px 18px;box-sizing:border-box;text-align:center;color:' + STYLE.textMain + ';font:700 clamp(14px,3.4vw,18px)/1.45 system-ui;text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.8) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .35s', root)
+		chapterBeat = mk('div', 'position:absolute;left:50%;top:calc(24% + env(safe-area-inset-top));transform:translateX(-50%);display:none;min-width:min(68vw,420px);min-height:2.6em;padding:10px 18px;box-sizing:border-box;text-align:center;color:' + STYLE.textMain + ';font:700 clamp(14px,3.4vw,18px)/1.45 system-ui;text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.8) + ';pointer-events:none;z-index:15;opacity:0;transition:opacity .35s', root)
+		stageBeat = mk('div', 'position:absolute;left:50%;top:calc(24% + env(safe-area-inset-top));transform:translateX(-50%);display:none;min-width:min(68vw,420px);min-height:2.6em;padding:10px 18px;box-sizing:border-box;text-align:center;color:' + STYLE.textMain + ';font:700 clamp(14px,3.4vw,18px)/1.45 system-ui;text-shadow:0 2px 6px ' + hexA(STYLE.bg, 0.8) + ';pointer-events:none;z-index:16;opacity:0;transition:opacity .35s', root)
+		drainNarrativeBeatQueue()
 		// 系统按钮：移动端带完整文字(⏸ 暂停 / ⛶ 全屏 / ⚙ GM)并等宽居中对齐；桌面保留原横排文字（hudSys 已在上方按 isTouch 定位）
 		pauseBtn = mk('div', 'min-width:' + (isTouch ? '92px' : 'auto') + ';text-align:center;padding:' + (isTouch ? '9px 14px' : '10px 16px') + ';border-radius:10px;background:' + hexA(STYLE.panel, 0.85) + ';color:' + STYLE.textMain + ';font:600 clamp(13px,3.6vw,15px) system-ui;cursor:pointer', hudSys)
 		pauseBtn.textContent = '暂停'
@@ -274,191 +329,148 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (PLAYER.maxSegments > 25) { Log.warn('[ui] maxSegments>25：走马灯需改用 §8.6 抽样契约（当前"全显示"实现已超设计边界）') }
 	}
 
-	function tagLatest(tag) {
-		var t = GS.memoryTokens
-		var meta = { time: GS.timeSec || 0, stage: GS.stageId || 0, segments: GS.segments || 0, event: tag || null }
-		if (!t.length) { meta.tag = tag; t.push(meta); return }
-		var last = t[t.length - 1]
-		if (last.tag) { meta.tag = tag; t.push(meta) } else { last.tag = tag; last.time = meta.time; last.stage = meta.stage; last.segments = meta.segments; last.event = meta.event }
-	}
-
-	function classifyDeathCause() {
-		if (GS.bossDefeated) { return 'clear' }                               // boss:defeated → 通关
-		var sid = GS.maxStageId || GS.stageId || 1
-		if (sid >= NARR.classify.deathCause.bossStageId) { return 'boss' }    // 段⑤未通关死 → Boss前中
-		if (sid <= NARR.classify.deathCause.greedyStageMax) { return 'greedy' }                // 段①②死 → 贪死
-		return 'attrition'                                                    // 段③④死 → 血耗尽
-	}
-	function classifyBuildLean() {
-		var lv = GS.ownedSkills || {}
-		var fire = lv.fire || 0, ice = lv.ice || 0, bolt = lv.bolt || 0, light = lv.lightning || 0, shield = lv.shield || 0
-		var total = fire + ice + bolt + light + shield
-		if (total <= 0) { return 'mixed' }
-		if (fire / total >= NARR.classify.buildLean.fireThreshold) { return 'fire' }
-		if (ice > 0 && ice >= fire && ice >= bolt && ice >= light && ice >= shield) { return 'ice' }
-		return 'mixed'
-	}
-	function topBuildLabel() {
-		var lv = GS.ownedSkills || {}, best = null, bestv = 0
-		for (var k in lv) { if (lv.hasOwnProperty(k) && lv[k] > bestv) { bestv = lv[k]; best = k } }
-		return best ? (SKILL_LABEL[best] || best) : null
-	}
-	function topComboLabel() {
-		var hl = GS.comboHighlights
-		if (hl && hl.length) { var id = hl[hl.length - 1]; return COMBO_LABEL[id] || id }
-		return null
-	}
-
-	function buildFlashbackLines(snapshot) {
-		var fb = NARR.flashback, toks = snapshot.memoryTokens || [], total = toks.length, lines = []
-		if (total === 0) { return [fb.headClosingLine] }
-		var lastLine = '', seenEvent = {}, seenStage = {}
-		var ranked = [], priority = { choice: 7, bossEncounter: 6, comboSteam: 5, comboElectro: 5, comboBurn: 5, firstUpgrade: 4, hurt: 3, heal: 3, killElite: 2 }
-		for (var r = 0; r < total; r++) { var rt = toks[r] || {}; ranked.push({ token: rt, index: r, weight: priority[rt.tag] || 1 }) }
-		ranked.sort(function (a, b) { return b.weight - a.weight || a.index - b.index })
-		var limit = Math.max(NARR.carouselCountMin, Math.min(NARR.carouselCountMax, ranked.length))
-		ranked = ranked.slice(0, limit).sort(function (a, b) { return a.index - b.index })
-		for (var i = 0; i < ranked.length; i++) {
-			var p = (ranked[i].index + 1) / total, tok = ranked[i].token, line = ''
-			if (tok && tok.tag && fb.eventLines[tok.tag] && !seenEvent[tok.tag]) {
-				line = fb.eventLines[tok.tag]; seenEvent[tok.tag] = true
-			} else {
-				var pool = p <= fb.stageThresholds.youngMax ? fb.stageLines.young : (p <= fb.stageThresholds.primeMax ? fb.stageLines.prime : fb.stageLines.old)
-				// 候选1：未用过 且 ≠上一句(优先，保证不连续重复)；候选2：任何 ≠上一句(即便用过)；兜底：全池
-				var a1 = [], a2 = []
-				for (var k = 0; k < pool.length; k++) {
-					if (pool[k] === lastLine) { continue }
-					a2.push(pool[k])
-					if (!seenStage[pool[k]]) { a1.push(pool[k]) }
-				}
-				if (a1.length) { line = a1[(Math.random() * a1.length) | 0] }
-				else if (a2.length) { line = a2[(Math.random() * a2.length) | 0] }
-				else { line = pool[(Math.random() * pool.length) | 0] }
-				seenStage[line] = true
-			}
-			lines.push(line); lastLine = line
-		}
-		if (fb.headClosingLine !== lastLine) { lines.push(fb.headClosingLine) }   // 收尾句不与末句重复
-		return lines
-	}
-
-	function fillTemplate(t, vars) {
-		return t.replace(/\{(\w+)\}/g, function (m, k) {
-			var v = vars[k]
-			if (v === undefined || v === '' || v === null) { v = NARR.eulogy.varDefaults[k] }
-			return (v === undefined || v === null) ? '' : String(v)
-		})
-	}
-	function buildEulogy(cause, lean, snapshot) {
-		var tpls = NARR.eulogy.templates
-		var tpl = (tpls[cause] && tpls[cause][lean]) ? tpls[cause][lean] : NARR.eulogy.fallback
-		var text = fillTemplate(tpl, {
-			maxLen: snapshot.maxSegments || '', maxStage: snapshot.stageName || '',
-			build: snapshot.topBuild || '', topCombo: snapshot.topCombo || '', kills: snapshot.kills || '',
-			choice: (snapshot.irreversibleChoices.length ? snapshot.irreversibleChoices[snapshot.irreversibleChoices.length - 1] : '')
-		})
-		return snapshot.irreversibleChoices.length ? (text + ' 最后，它记得自己曾选择：' + snapshot.irreversibleChoices[snapshot.irreversibleChoices.length - 1] + '。') : text
-	}
 	function snapshotResult(cause) {
-		return { cause: cause, time: GS.timeSec || 0, stageId: GS.stageId || 0, stageName: stageName !== '—' ? stageName : '', segments: GS.segments || 0, maxSegments: GS.maxSegments || 0, kills: GS.kills || 0, killStreakMax: GS.killStreakMax || 0, score: GS.score || 0, comboScore: GS.comboScore || 0, bossDefeated: !!GS.bossDefeated, memoryTokens: (GS.memoryTokens || []).slice(), irreversibleChoices: (GS.irreversibleChoices || []).slice(), comboHighlights: (GS.comboHighlights || []).slice(), topBuild: topBuildLabel(), topCombo: topComboLabel(), ownedSkills: Object.assign({}, GS.ownedSkills || {}) }
-	}
-
-	function startSequence(cause) {
-		if (GS.status === 'dead') { return }
-		GS.status = 'dead'; GS.deathCause = cause
-		var mySeqId = seqId
-		hideChoose(); if (choiceBox) { choiceBox.style.display = 'none' }
-		var win = cause === 'clear', lean = classifyBuildLean()
-		resultSnapshot = snapshotResult(cause)
-		var lines = buildFlashbackLines(resultSnapshot), eulogy = buildEulogy(cause, lean, resultSnapshot)
-		var stillMs = NARR.deathStillSec * 1000
-		var flashMs = Math.min(NARR.carouselSec * 1000, NARR.flashback.samplingCapMs)
-		var eulogyMs = Math.max(NARR.aiTextSec * 1000, NARR.eulogyMinReadSec * 1000), budget = NARR.staticHardcapSec * 1000
-		if (flashMs + eulogyMs > budget) { flashMs = Math.max(1000, budget - eulogyMs) }   // 超限只压走马灯，不压短文
-		result.innerHTML = ''; result.style.display = 'flex'
-		// 复用 HUD 同款 uiScale(画布显示高/540,钳0.55~1.0)：手机横屏(高~375)缩到~0.69 不显过大,PC 恒1.0 零回归
-		var _s = computeUiScale()
-		var stage = mk('div', 'width:min(560px,86vw);max-height:92vh;overflow:auto;transform:scale(' + _s + ');transform-origin:center center;color:' + STYLE.textMain + ';font:600 17px/1.7 system-ui;text-align:center;background:' + hexA(STYLE.bg, 0.97) + ';padding:26px 30px;border-radius:18px;border:1px solid ' + hexA(STYLE.ui, 0.25) + ';box-shadow:0 18px 60px ' + hexA(STYLE.bg, 0.7) + ',0 0 26px ' + hexA(STYLE.ui, 0.2) + '', result)   // 内层实底圆角卡片：框内不透光、内容清晰可读 + 霓虹外发光(P1-8)；transform:scale(_s) 让手机端结算整体等比缩小不显过大
-		var still = mk('div', 'font:800 30px system-ui;color:' + (win ? STYLE.win : STYLE.lose) + ';letter-spacing:4px;opacity:0;transition:opacity .6s', stage)
-		still.textContent = win ? '通　关' : '死　亡'
-		after(30, function () { still.style.opacity = '1' })
-		after(stillMs, function () {   // Phase1 走马灯逐节点亮
-			var fbWrap = mk('div', 'margin-top:18px;min-height:120px;display:flex;flex-direction:column;gap:6px;align-items:center;color:' + STYLE.textMain + ';font:500 16px/1.6 system-ui', stage)
-			var step = Math.max(60, Math.min(NARR.flashback.perNodeMs, flashMs / lines.length)), i = 0
-			var iv = global.setInterval(function () {
-				if (mySeqId !== seqId) { global.clearInterval(iv); return }
-				if (i >= lines.length) { global.clearInterval(iv); return }
-				var row = mk('div', 'opacity:0;transition:opacity .4s', fbWrap); row.textContent = lines[i]
-				;(function (r) { after(20, function () { r.style.opacity = '1' }) })(row)
-				if (fbWrap.childNodes.length > 5) { fbWrap.removeChild(fbWrap.firstChild) }
-				i++
-			}, step)
-			timers.push(iv)
-		})
-		after(stillMs + flashMs, function () {   // Phase2 蛇生短文浮现
-			var euWrap = mk('div', 'margin-top:16px;padding:16px 18px;border-left:3px solid ' + (win ? STYLE.win : STYLE.lose) + ';background:' + hexA(STYLE.panel, 0.4) + ';color:' + STYLE.textMain + ';font:500 16px/1.9 system-ui;text-align:left;opacity:0;transition:opacity 1s', stage)
-			euWrap.textContent = eulogy; after(30, function () { euWrap.style.opacity = '1' })
-		})
-		after(stillMs + flashMs, function () {
-			var viewScore = mk('button', 'margin-top:12px;padding:9px 16px;border:1px solid ' + STYLE.ui + ';border-radius:999px;background:transparent;color:' + STYLE.textMain + ';font:700 14px system-ui;cursor:pointer', stage)
-			viewScore.textContent = '查看战绩'
-			viewScore.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'view_score' }); resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) }
-		})
-		after(stillMs + flashMs + eulogyMs, function () { resultSnapshot.scoreboardReady = true; renderScoreboard(stage, cause, win, resultSnapshot) })
-		after(stillMs + flashMs + Math.min(3000, eulogyMs), function () { renderScoreboard(stage, cause, win) })
+		var narrative = Registry.get('narrative')
+		return narrative && narrative.snapshot ? narrative.snapshot(cause) : { cause: cause, highlights: [], eulogy: '这一局结束了。', verdict: '这一局结束', primaryHighlight: '这一局结束了。' }
 	}
 
 	function computeRating(view) {
 		view = view || GS
 		var pts = 0
-		pts += Math.min(view.maxSegments || 0, 40) * 2          // 长度（封顶 80）
-		pts += Math.min(view.kills || 0, 120)                   // 击杀（封顶 120）
-		pts += Math.min((view.score + view.comboScore) || 0, 4000) / 14   // 得分（封顶 ~286）
-		if (view.bossDefeated) { pts += 220 }                  // 通关加成（封顶合计 ~706）
+		pts += Math.min(view.maxSegments || 0, 40) * 2
+		pts += Math.min(view.kills || 0, 120)
+		pts += Math.min((view.score + view.comboScore) || 0, 4000) / 14
+		if (view.bossDefeated) { pts += 220 }
 		if (pts >= 560) { return 'S' }
 		if (pts >= 380) { return 'A' }
 		if (pts >= 200) { return 'B' }
 		return 'C'
 	}
-	function renderScoreboard(stage, cause, win, snapshot) {
-		if (!snapshot && resultSnapshot && !resultSnapshot.scoreboardReady) { return }
-		if (stage.getAttribute('data-scoreboard-shown')) { return }
-		stage.setAttribute('data-scoreboard-shown', '1')
-		var view = snapshot || resultSnapshot || GS, comboCount = view.comboHighlights ? view.comboHighlights.length : 0
-		var verdict = NARR.scoreboard.verdictByDeathCause[cause] || '一条蛇的一生', runCount = 1
-		try {
-			var key = NARR.scoreboard.localStorageKey
-			runCount = (parseInt(global.localStorage.getItem(key), 10) || 0) + 1
-			global.localStorage.setItem(key, String(runCount))
-		} catch (e) { runCount = 1 }
-		// 评级金标（gold=STYLE.food，仅展示、不入数值）
-		var rbadge = mk('div', 'margin:2px auto 14px;display:inline-flex;align-items:center;gap:8px;padding:6px 18px;border-radius:999px;background:' + hexA(STYLE.food, 0.16) + ';border:1px solid ' + STYLE.food + ';color:' + STYLE.food + ';font:800 15px system-ui;box-shadow:0 0 12px ' + hexA(STYLE.food, 0.4), stage)   // 恢复原始紧凑居中尺寸(不拉满宽)
-		rbadge.innerHTML = '评级<span style="font-size:22px;margin-left:6px">' + computeRating(view) + '</span>'
-		// 再来一局按钮：紧跟评级下方(与评级同时出现,不延迟、不沉底)；九项置于其下最底
-		var btn = mk('button', 'display:block;margin:0 auto 16px;padding:13px 30px;border:2px solid ' + STYLE.player + ';border-radius:12px;background:' + STYLE.player + ';color:' + STYLE.bg + ';font:800 17px system-ui;cursor:pointer;box-shadow:0 0 14px ' + hexA(STYLE.player, 0.5), stage)   // 恢复原始紧凑居中尺寸(不拉满宽)
-		btn.textContent = win ? '再来一局' : '再来一条蛇生'
-		btn.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'replay' }); var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() } }
-		// 九项：图标 + 标签 + 数值 卡片行；整块=stage 宽度(与随身结语 euWrap 同宽,视觉一致)；三列固定→中列等列居中
-		var rows = [
-			[SCORE_ICON.seg, '此生长度', '长到 ' + GS.maxSegments + ' 节'],
-			[SCORE_ICON.path, '走过的路', '抵达「' + (stageName !== '—' ? stageName : '前路') + '」'],
-			[SCORE_ICON.kills, '斩获', '撞咬 ' + GS.kills + ' 次'],
-			[SCORE_ICON.streak, '最高连杀', GS.killStreakMax + ' 连杀'],
-			[SCORE_ICON.score, '割草得分', String(GS.score + GS.comboScore)],
-			[SCORE_ICON.combo, '发现的羁绊', '羁绊 ' + comboCount + ' / 5'],
-			[SCORE_ICON.verdict, '蛇生评语', verdict],
-			[SCORE_ICON.highlight, '高光时刻', topComboLabel() ? ('Combo「' + topComboLabel() + '」') : '最朴素的一路'],
-			[SCORE_ICON.lives, '第几条蛇生', '你的第 ' + runCount + ' 条蛇生']
-		]
-		var box = mk('div', 'margin-top:14px;width:100%;display:flex;flex-direction:column;gap:6px', stage)   // 整块=stage 宽(与随身结语同宽,不再压缩)
-		for (var i = 0; i < rows.length; i++) {
-			var card = mk('div', 'position:relative;box-sizing:border-box;width:100%;min-height:34px;padding:7px 14px;border-radius:10px;background:' + hexA(STYLE.panel, 0.35) + ';border:1px solid ' + hexA(STYLE.ui, 0.18) + ';border-left:3px solid ' + STYLE.ui, box)   // box-sizing:border-box→width:100% 含 padding/边框,消除右侧溢出(内嵌网页需往右拖的 bug)
-			var ic = mk('span', 'position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px;line-height:1', card); ic.textContent = rows[i][0]   // 图标：绝对定位贴左、垂直居中(逐行平行对齐)
-			var lab = mk('span', 'display:block;text-align:center;padding:0 44px;color:' + STYLE.textMain + ';font:600 14px system-ui', card); lab.textContent = rows[i][1]   // 标签：整卡满宽居中=与「再来一局」按钮同矢量居中(不再被右侧数值列挤偏)
-			var val = mk('span', 'position:absolute;right:14px;top:50%;transform:translateY(-50%);max-width:168px;text-align:right;color:' + STYLE.textMain + ';font-weight:800;font:600 14px system-ui;white-space:normal', card); val.textContent = rows[i][2]   // 数值：绝对定位贴右、靠右、正常亮度、超宽换行禁截断
+	function clearResultAutoStats() {
+		if (!resultView) { return }
+		if (resultView.memoryInterval) { global.clearInterval(resultView.memoryInterval); resultView.memoryInterval = null }
+		if (resultView.memoryFinishTimer) { global.clearTimeout(resultView.memoryFinishTimer); resultView.memoryFinishTimer = null }
+		if (resultView.memoryFadeTimer) { global.clearTimeout(resultView.memoryFadeTimer); resultView.memoryFadeTimer = null }
+	}
+	function replayResult() {
+		clearResultAutoStats(); resultView = null
+		Bus.emit('ui:feedback', { kind: 'confirm', id: 'replay' })
+		var core = Registry.get('core'); if (core && core.resetRun) { core.resetRun() }
+	}
+	function applyClassicResultVars(stage, win) {
+		stage.style.setProperty('--result-overlay-bg', hexA(STYLE.bg, 0.72))
+		stage.style.setProperty('--result-bg', hexA(STYLE.bg, 0.97))
+		stage.style.setProperty('--result-bg-solid', STYLE.bg)
+		stage.style.setProperty('--result-border', hexA(STYLE.ui, 0.25))
+		stage.style.setProperty('--result-shadow', hexA(STYLE.bg, 0.7))
+		stage.style.setProperty('--result-glow', hexA(STYLE.ui, 0.2))
+		stage.style.setProperty('--result-scroll', STYLE.textDim)
+		stage.style.setProperty('--result-text', STYLE.textMain)
+		stage.style.setProperty('--result-title', win ? STYLE.win : STYLE.lose)
+		stage.style.setProperty('--result-panel', hexA(STYLE.panel, 0.4))
+		stage.style.setProperty('--result-ui', STYLE.ui)
+		stage.style.setProperty('--result-player', STYLE.player)
+		stage.style.setProperty('--result-player-glow', hexA(STYLE.player, 0.5))
+		stage.style.setProperty('--result-rating', STYLE.food)
+		stage.style.setProperty('--result-rating-bg', hexA(STYLE.food, 0.16))
+		stage.style.setProperty('--result-rating-glow', hexA(STYLE.food, 0.4))
+		stage.style.setProperty('--result-card-bg', hexA(STYLE.panel, 0.35))
+		stage.style.setProperty('--result-card-border', hexA(STYLE.ui, 0.18))
+	}
+	function createClassicResult(cause, snapshot, win) {
+		ensureResultV31Style()
+		result.innerHTML = ''; result.className = 'result-classic-overlay'; result.style.display = 'flex'; result.style.setProperty('--result-overlay-bg', hexA(STYLE.bg, 0.72))
+		var stage = mk('section', '', result); stage.className = 'result-classic-stage'; applyClassicResultVars(stage, win)
+		var title = mk('div', '', stage); title.className = 'result-classic-title'; title.textContent = win ? '通　关' : '死　亡'
+		var prelude = mk('div', '', stage); prelude.className = 'result-classic-prelude'
+		var memory = mk('div', '', prelude); memory.className = 'result-classic-memory'; memoryWrap = memory
+		var eulogy = mk('div', '', prelude); eulogy.className = 'result-classic-eulogy'; eulogy.textContent = snapshot.eulogy || '这一局结束了。'
+		var actions = mk('div', '', stage); actions.className = 'result-classic-actions'
+		var rating = mk('span', '', actions); rating.className = 'result-classic-rating'; rating.innerHTML = '评级 <strong>' + computeRating(snapshot) + '</strong>'
+		var replay = mk('button', '', actions); replay.className = 'result-classic-replay'; replay.textContent = '再来一局'; replay.onclick = replayResult
+		var viewScore = mk('button', '', actions); viewScore.className = 'result-classic-view'; viewScore.textContent = '查看战绩'
+		var view = { stage: stage, prelude: prelude, memory: memory, eulogy: eulogy, actions: actions, rating: rating, replay: replay, viewScore: viewScore, snapshot: snapshot, cause: cause, win: win, scoreboardShown: false, memoryInterval: null, memoryFinishTimer: null, memoryFadeTimer: null, memoryOutroStarted: false }
+		viewScore.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'view_score' }); expandClassicScoreboard(view) }
+		resultView = view
+		return view
+	}
+	function updateClassicMemoryFade(view) {
+		if (!view || !view.memory) { return }
+		var rows = view.memory.childNodes, n = rows.length
+		for (var i = 0; i < n; i++) {
+			var age = n - 1 - i
+			rows[i].style.opacity = age === 0 ? '1' : (age === 1 ? '0.42' : '0.18')
 		}
-		// 自动滚到评级/按钮(绕过较长结语与九项,免得 16" 全屏要下滚才看到按钮)
-		try { if (stage.scrollTo) { stage.scrollTo({ top: Math.max(0, rbadge.offsetTop - 10), behavior: 'smooth' }) } else { stage.scrollTop = Math.max(0, rbadge.offsetTop - 10) } } catch (e) {}
+	}
+	function showClassicEulogy(view) {
+		if (!view || resultView !== view) { return }
+		if (view.memoryInterval) { global.clearInterval(view.memoryInterval); view.memoryInterval = null }
+		if (view.memoryFinishTimer) { global.clearTimeout(view.memoryFinishTimer); view.memoryFinishTimer = null }
+		if (view.memoryFadeTimer) { global.clearTimeout(view.memoryFadeTimer); view.memoryFadeTimer = null }
+		view.memory.style.display = 'none'
+		view.eulogy.style.display = 'flex'; view.eulogy.style.opacity = '0'
+		after(30, function () { if (resultView === view) { view.eulogy.style.opacity = '1' } })
+		after(240, function () { if (resultView === view) { view.actions.classList.add('is-visible') } })
+	}
+	function beginClassicMemoryOutro(view, accelerated) {
+		if (!view || resultView !== view || view.memoryOutroStarted) { return }
+		view.memoryOutroStarted = true
+		if (view.memoryInterval) { global.clearInterval(view.memoryInterval); view.memoryInterval = null }
+		if (view.memoryFinishTimer) { global.clearTimeout(view.memoryFinishTimer); view.memoryFinishTimer = null }
+		var holdMs = accelerated ? 120 : 480, fadeMs = accelerated ? 260 : 420
+		view.memoryFinishTimer = global.setTimeout(function () {
+			if (resultView !== view) { return }
+			var rows = view.memory.childNodes
+			for (var i = 0; i < rows.length; i++) { rows[i].style.opacity = '0' }
+			view.memoryFadeTimer = global.setTimeout(function () { if (resultView === view) { showClassicEulogy(view) } }, fadeMs)
+			timers.push(view.memoryFadeTimer)
+		}, holdMs)
+		timers.push(view.memoryFinishTimer)
+	}
+	function playClassicMemory(view, lines) {
+		if (!view || resultView !== view) { return }
+		lines = (lines || []).slice(0, 5); if (!lines.length) { lines = [view.snapshot.primaryHighlight || '这一局结束了。'] }
+		var flashMs = Math.max(1800, (Number(NARR.carouselSec) || 4) * 1000), holdMs = 480, fadeMs = 420, activeMs = Math.max(600, flashMs - holdMs - fadeMs), i = 0
+		var step = lines.length > 1 ? Math.max(350, activeMs / (lines.length - 1)) : activeMs
+		function addLine() {
+			if (!resultView || resultView !== view || view.memoryOutroStarted || i >= lines.length) { return }
+			var row = mk('div', '', view.memory); row.className = 'result-classic-memory-row'; row.textContent = lines[i++]
+			if (view.memory.childNodes.length > 3) { view.memory.removeChild(view.memory.firstChild) }
+			after(20, function () { if (resultView === view) { updateClassicMemoryFade(view) } })
+			if (i >= lines.length && view.memoryInterval) { global.clearInterval(view.memoryInterval); view.memoryInterval = null }
+		}
+		addLine()
+		if (lines.length > 1) { view.memoryInterval = global.setInterval(addLine, step); timers.push(view.memoryInterval) }
+		view.memoryFinishTimer = global.setTimeout(function () { if (resultView === view) { beginClassicMemoryOutro(view, false) } }, activeMs)
+		timers.push(view.memoryFinishTimer)
+		view.memory.onclick = function () {
+			if (!resultView || resultView !== view || view.memoryOutroStarted) { return }
+			if (i < lines.length) { addLine() }
+			if (i >= lines.length) { beginClassicMemoryOutro(view, true) }
+		}
+	}
+	function expandClassicScoreboard(view) {
+		if (!view || resultView !== view || view.scoreboardShown) { return }
+		view.scoreboardShown = true; view.stage.classList.add('is-expanded'); view.viewScore.disabled = true; view.viewScore.textContent = '战绩如下 ↓'
+		var snap = view.snapshot || {}, effectiveLength = Math.min(Number(snap.maxSegments) || 0, Number(PLAYER.maxSegments) || Infinity), score = (Number(snap.score) || 0) + (Number(snap.comboScore) || 0), comboCount = Array.isArray(snap.comboHighlights) ? snap.comboHighlights.length : ((snap.buildProfile && snap.buildProfile.activeCombos) || []).length
+		var kills = snap.stats && snap.stats.enemyKills != null ? snap.stats.enemyKills : (snap.kills || 0)
+		var rows = [[SCORE_ICON.seg, '此生长度', effectiveLength + '节'], [SCORE_ICON.path, '抵达阶段', snap.stageName || '前路'], [SCORE_ICON.kills, '击杀数量', String(kills)], [SCORE_ICON.streak, '最高连杀', String(snap.killStreakMax || 0)], [SCORE_ICON.score, '本局得分', String(score)], [SCORE_ICON.combo, '形成羁绊', comboCount + '道']]
+		var box = mk('div', '', view.stage); box.className = 'result-classic-scorebox'
+		for (var i = 0; i < rows.length; i++) {
+			var card = mk('div', '', box); card.className = 'result-classic-scorecard'
+			var icon = mk('span', '', card); icon.className = 'result-classic-scoreicon'; icon.textContent = rows[i][0]
+			var label = mk('span', '', card); label.className = 'result-classic-scorelabel'; label.textContent = rows[i][1]
+			var value = mk('span', '', card); value.className = 'result-classic-scorevalue'; value.textContent = rows[i][2]
+		}
+	}
+	function startSequence(cause, frozenSnapshot) {
+		if (GS.status === 'dead') { return }
+		GS.status = 'dead'; hideChoose()
+		resultSnapshot = frozenSnapshot || snapshotResult(cause); cause = resultSnapshot.cause || cause
+		var win = cause === 'clear', lines = (resultSnapshot.highlights || []).map(function (item) { return item.text }).filter(Boolean)
+		if (!lines.length) { lines = [resultSnapshot.primaryHighlight || '这一局结束了。'] }
+		var view = createClassicResult(cause, resultSnapshot, win), stillMs = Math.max(700, (Number(NARR.deathStillSec) || 1) * 1000)
+		after(stillMs, function () { playClassicMemory(view, lines) })
 	}
 
 	function isPortrait() {
@@ -612,7 +624,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (isPortrait()) { showRotateChoice(function () { renderChooseCards(choices) }); return }
 		renderChooseCards(choices)
 	}
-	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } choiceChoices = null; hideRotateChoice(); after(0, drainNarrativeQueue) }
+	function hideChoose() { if (choose) { choose.style.display = 'none' } if (chooseKeyHandler) { global.removeEventListener('keydown', chooseKeyHandler); chooseKeyHandler = null } choiceChoices = null; hideRotateChoice() }
 	function hideBuildInfo() {
 		if (!buildInfoLayer) { return }
 		buildInfoLayer.style.display = 'none'
@@ -659,70 +671,6 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (e.cancelable) { e.preventDefault() }
 		Bus.emit('ui:feedback', { kind: 'press', id: feedbackId })
 		showBuildInfo(kind, target.getAttribute(attr))
-	}
-
-	function enqueueNarrativeChoice(ev) {
-		if (!ev || usedChoiceIds[ev.id] || queuedChoiceIds[ev.id] || choicesUsed >= NARR.choicePerRunMax) { return }
-		queuedChoiceIds[ev.id] = true; narrativeQueue.push(ev); drainNarrativeQueue()
-	}
-	function drainNarrativeQueue() {
-		if (!narrativeQueue.length || choiceActive || GS.status !== 'playing' || (choose && choose.style.display !== 'none')) { return }
-		var ev = narrativeQueue.shift(); delete queuedChoiceIds[ev.id]
-		if (usedChoiceIds[ev.id] || choicesUsed >= NARR.choicePerRunMax) { drainNarrativeQueue(); return }
-		if (isPortrait()) { showRotateChoice(function () { renderOfferChoice(ev) }); return }
-		renderOfferChoice(ev)
-	}
-	function renderOfferChoice(ev) {
-		choiceActive = true; choicesUsed++; usedChoiceIds[ev.id] = true; GS.status = 'choosing'; choiceBox.innerHTML = ''
-		mk('div', 'color:' + STYLE.textMain + ';font:600 15px system-ui;background:' + hexA(STYLE.panel, 0.8) + ';padding:8px 14px;border-radius:10px;max-width:520px;text-align:center', choiceBox).textContent = ev.desc
-		var btns = mk('div', 'display:flex;gap:12px', choiceBox), resolved = false
-		function resolve(opt) {
-			if (resolved) { return }
-			resolved = true; choiceActive = false; choiceBox.style.display = 'none'; hideRotateChoice()
-			if (GS.status === 'dead' || GS.status === 'clear') { return }   // #1 修复：死亡/通关后超时默认抉择不再生效（不再涨节/加血/记记忆）
-			GS.status = 'playing'
-			Bus.emit('narrative:choice', { memory: opt.memory, choiceId: ev.id })
-			GS.irreversibleChoices.push(opt.memory); tagLatest('choice')
-			if (opt.seg && GS.segments < PLAYER.maxSegments) { for (var n = 0; n < opt.seg; n++) { Bus.emit('pickup:eat', { kind: 'narrative', id: -1, x: 0, y: 0 }) } }   // S2：叙事加节走独立 kind，豁免段 cap 仅受 maxSegments 硬顶（记忆 tag 上文已记，不受 cap 影响）
-			if (opt.hp) { var hp = GS.coreHp + opt.hp; GS.coreHp = hp > PLAYER.coreHp ? PLAYER.coreHp : hp }
-			after(0, drainNarrativeQueue)
-		}
-		function makeBtn(opt) {
-			var b = mk('button', 'padding:10px 18px;border:2px solid ' + STYLE.ui + ';border-radius:10px;background:' + STYLE.panel + ';color:' + STYLE.textMain + ';font:600 14px system-ui;cursor:pointer', btns)
-			b.textContent = opt.text; b.onclick = function () { resolve(opt) }
-		}
-		makeBtn(ev.a); makeBtn(ev.b); choiceBox.style.display = 'flex'
-		after(NARR.choices.timeoutSec * 1000, function () { resolve(ev[ev.def]) })   // 超时走默认（不可逆）
-	}
-	function tryTriggerChoice(stageId) {
-		if (choicesUsed >= NARR.choicePerRunMax) { return }
-		var evs = NARR.choices.events
-		for (var i = 0; i < evs.length; i++) {
-			if (evs[i].segId === stageId && !usedChoiceIds[evs[i].id]) { enqueueNarrativeChoice(evs[i]); return }
-		}
-	}
-	function countOwnedSkills() { var n = 0; for (var k in ownedSkillIds) { if (ownedSkillIds.hasOwnProperty(k)) { n++ } } return n }
-	function tryTriggerChoiceBySkill(skillCount) {
-		if (choicesUsed >= NARR.choicePerRunMax) { return }
-		var evs = NARR.choices.events
-		for (var i = 0; i < evs.length; i++) {
-			var ev = evs[i]
-			if (ev.skillCount && skillCount >= ev.skillCount && !usedChoiceIds[ev.id]) {
-				enqueueNarrativeChoice(ev)
-				return
-			}
-		}
-	}
-	function tryTriggerChoiceFlex() {   // P1-3 CH-01 双条件：首技能已获得 AND 节数≥minSegments
-		if (choicesUsed >= NARR.choicePerRunMax) { return }
-		var evs = NARR.choices.events
-		for (var i = 0; i < evs.length; i++) {
-			var ev = evs[i]
-			if (!ev.firstSkillRequired || usedChoiceIds[ev.id]) { continue }
-			if (countOwnedSkills() > 0 && GS.segments >= ev.minSegments) {
-				enqueueNarrativeChoice(ev); return
-			}
-		}
 	}
 
 	function showComboBanner(id) {                                  // §3 Combo 触发横幅（~0.8s）
@@ -803,12 +751,14 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		return '<span class="ui-v1-icon-cell" style="' + cellTransform + '"><img src="' + src + '" alt="" style="position:relative;left:' + ((offset.x || 0) * 100) + '%;top:' + ((offset.y || 0) * 100) + '%;transform:scale(' + scale + ')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'"><span style="display:none;align-items:center;justify-content:center;font:800 15px system-ui">' + text + '</span></span>'
 	}
 	function showChapterBeat(stageId) {
-		var beat = NARR.chapterBeats && NARR.chapterBeats[stageId]
-		if (!chapterBeat || !beat || GS.status !== 'playing') { return }
-		chapterBeat.innerHTML = '<strong style="display:block;color:' + STYLE.ui + ';font-size:1.12em">' + iconText(beat.title) + '</strong><span>' + iconText(beat.line) + '</span>'
-		chapterBeat.style.display = 'block'; chapterBeat.style.opacity = '1'
-		after(NARR.chapterBeatSec * 1000, function () { if (chapterBeat) { chapterBeat.style.opacity = '0' } })
-		after(NARR.chapterBeatSec * 1000 + 400, function () { if (chapterBeat) { chapterBeat.style.display = 'none' } })
+		var chapters = NARR.v3 && NARR.v3.copy && NARR.v3.copy.chapter, beat = chapters && chapters[stageId]
+		if (!stageBeat || !beat || GS.status !== 'playing') { return }
+		var text = pickUiCopy(beat.lines, 'chapter:' + stageId + ':' + GS.timeSec), durationMs = Math.max(1900, (Number(NARR.chapterBeatSec) || 2.2) * 1000), fadeOutMs = 450
+		stageBeat.innerHTML = '<strong style="display:block;color:' + STYLE.ui + ';font-size:1.12em">' + iconText(beat.title) + '</strong><span>' + iconText(text) + '</span>'
+		stageBeat.style.display = 'block'; stageBeat.style.opacity = '0'; stageBeat.style.transition = 'opacity .22s'
+		after(20, function () { if (stageBeat) { stageBeat.style.opacity = '1' } })
+		after(Math.max(900, durationMs - fadeOutMs), function () { if (stageBeat) { stageBeat.style.transition = 'opacity .45s'; stageBeat.style.opacity = '0' } })
+		after(durationMs + 20, function () { if (stageBeat) { stageBeat.style.display = 'none'; stageBeat.style.transition = 'opacity .22s' } })
 	}
 	function buildSkillDomSignature() {
 		var list = CONFIG.SKILL.list || [], owned = GS.ownedSkills || '', out = []
@@ -915,33 +865,22 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 
 	Bus.on('ui:tuning_changed', function () { _skillDomSignature = null; _comboDomSignature = null; applyUiTuning(); applyUiScale(); refreshHUD(); if (choose && choiceChoices && choose.style.display !== 'none') { renderChooseCards(choiceChoices) } })
 	Bus.on('skill:offer', function (d) { if (d && d.choices) { showChoose(d.choices) } })
-	Bus.on('skill:gained', function (d) {
-		if (!d) { return }
-		GS.buildSequence.push(d.id)
-		if (!firstUpgradeTagged) { firstUpgradeTagged = true; tagLatest('firstUpgrade') }
-		if (d.id) { ownedSkillIds[d.id] = true }
-		tryTriggerChoiceBySkill(countOwnedSkills())   // ② CH-02 按技能计数精确触发
-		tryTriggerChoiceFlex()                         // P1-3 CH-01 双条件检测
-	})
-	Bus.on('combo:found', function (d) { if (!d || !d.id) { return } GS.comboHighlights.push(d.id); var tg = COMBO_EVENT[d.id]; if (tg) { tagLatest(tg) }; showComboBanner(d.id) })
-	Bus.on('snake:grow', function () { GS.memoryTokens.push({ tag: null }); tryTriggerChoiceFlex() })   // P1-3 每长一节检测 CH-01
-	Bus.on('enemy:die', function (d) { if (d && d.kind === 'elite') { tagLatest('killElite') } })
-	Bus.on('snake:hurt', function () { tagLatest('hurt'); lostHeartIndex = GS.coreHp; heartBreakUntil = (global.performance && global.performance.now ? global.performance.now() : Date.now()) + 500 })   // 扣心碎裂闪烁
-	Bus.on('pickup:eat', function (d) { if (d && d.kind === 'heal') { tagLatest('heal') } })
+	Bus.on('combo:found', function (d) { if (!d || !d.id) { return } showComboBanner(d.id) })
+	Bus.on('narrative:echo', function (d) { if (d && d.text) { enqueueNarrativeBeat({ kind: 'echo', text: d.text, priority: d.priority || 1, delaySec: d.delaySec || 0, durationSec: (NARR.v3 && NARR.v3.echo && NARR.v3.echo.durationSec) || 2.2 }) } })
+	Bus.on('snake:hurt', function () { lostHeartIndex = GS.coreHp; heartBreakUntil = (global.performance && global.performance.now ? global.performance.now() : Date.now()) + 500 })   // 扣心碎裂闪烁
 	Bus.on('wave:stage', function (d) {
-		if (d && d.name) { stageName = d.name }
-		if (d && d.stageId >= NARR.classify.deathCause.bossStageId && !bossTagged) { bossTagged = true; tagLatest('bossEncounter') }
-		if (d && d.stageId) { showChapterBeat(d.stageId); tryTriggerChoice(d.stageId) }
+		if (d && d.stageId) { showChapterBeat(d.stageId) }
 	})
-	Bus.on('snake:dead', function () { startSequence(classifyDeathCause()) })
-	Bus.on('boss:defeated', function () { GS.bossDefeated = true; startSequence('clear') })
+	Bus.on('snake:dead', function () { var narrative = Registry.get('narrative'); startSequence(null, narrative ? narrative.snapshot() : null) })
+	Bus.on('boss:defeated', function () { var narrative = Registry.get('narrative'); startSequence(null, narrative ? narrative.snapshot() : null) })
 	Bus.on('core:run_reset', function () {
 		seqId++; clearTimers()
+		clearResultAutoStats(); resultView = null
+		beatQueue.length = 0; beatActive = null; beatOrder = 0
 		_skillDomSignature = null; _comboDomSignature = null
-		stageName = '—'; bossTagged = false; firstUpgradeTagged = false; choicesUsed = 0; choiceActive = false; usedChoiceIds = {}; queuedChoiceIds = {}; narrativeQueue = []; resultSnapshot = null
-		ownedSkillIds = {}
-		hideChoose(); hideBuildInfo(); if (choiceBox) { choiceBox.style.display = 'none' } if (result) { result.style.display = 'none'; result.innerHTML = '' }
-		heartBreakUntil = 0; lostHeartIndex = -1; if (comboBanner) { comboBanner.style.display = 'none' } if (chapterBeat) { chapterBeat.style.display = 'none'; chapterBeat.style.opacity = '0' }
+		resultSnapshot = null
+		hideChoose(); hideBuildInfo(); if (result) { result.style.display = 'none'; result.innerHTML = '' }
+		heartBreakUntil = 0; lostHeartIndex = -1; memoryWrap = null; memoryLine = null; if (comboBanner) { comboBanner.style.display = 'none' } if (chapterBeat) { chapterBeat.style.display = 'none'; chapterBeat.style.opacity = '0'; chapterBeat.innerHTML = '' } if (stageBeat) { stageBeat.style.display = 'none'; stageBeat.style.opacity = '0'; stageBeat.innerHTML = '' }
 	})
 
 	// —— 移动端 HUD 等比缩放（必改1：每簇从各自屏角缩放，杜绝整体 top-left 内漂）——
@@ -972,7 +911,6 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		if (hudCenter) { hudCenter.style.transformOrigin = 'top center'; hudCenter.style.transform = 'translateX(-50%) scale(' + s + ')' }
 		if (comboBanner) { comboBanner.style.transformOrigin = 'top center'; comboBanner.style.transform = 'translateX(-50%) scale(' + s + ')' }
 		// 底部居中抉择盒：bottom-center 缩放，保留居中并上移避让右下摇杆区
-		if (choiceBox) { choiceBox.style.transformOrigin = 'bottom center'; choiceBox.style.transform = 'translateX(-50%) scale(' + s + ')' }
 	}
 
 	var UI = {
@@ -991,11 +929,6 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			if (hudSkills) { hudSkills.style.display = (GS.status === 'playing') ? 'block' : 'none' }
 			if (hudCombo) { hudCombo.style.display = (GS.status === 'playing') ? 'block' : 'none' }
 			if (hudSys) { hudSys.style.display = (GS.status === 'playing' || GS.status === 'paused') ? 'flex' : 'none' }   // 系统按钮：游戏中/暂停可见（暂停时覆盖层在上方，暂停键仍可用）
-			if (GS.status === 'playing') {
-				if (GS.segments > GS.maxSegments) { GS.maxSegments = GS.segments }
-				if (GS.stageId > GS.maxStageId) { GS.maxStageId = GS.stageId }
-				if (GS.killStreak > GS.killStreakMax) { GS.killStreakMax = GS.killStreak }
-			}
 		}
 	}
 	Registry.register('ui', UI)
