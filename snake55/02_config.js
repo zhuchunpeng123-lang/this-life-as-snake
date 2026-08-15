@@ -303,7 +303,7 @@
 					durationSec: 2.2,
 					comboDelaySec: 0.9
 				},
-				presentation: { memoryBeatSec: 1.2, terminalBeatSec: 1.35, memoryMaxChars: 28, autoStatsDelaySec: 12 },
+				presentation: { memoryBeatSec: 1.2, terminalBeatSec: 1.35, memoryMaxChars: 28, autoStatsDelaySec: 6 },
 				eulogy: { killMilestoneHigh: 1000, killMilestoneMid: 500, minChars: 42, maxChars: 72 },
 				director: {
 					scores: { buildArc3: 94, buildArc2: 90, buildArc1: 86, primarySkill: 72, riskySkill: 82, recovery: 84, killMilestone: 78, threshold: 90, elite: 62, growth: 36, summary: 20 }

@@ -215,8 +215,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			+ '.result-classic-rating strong{font-size:20px;line-height:1}'
 			+ '.result-classic-replay{box-sizing:border-box;width:176px;height:48px;justify-self:center;padding:0 18px;border:2px solid var(--result-player);border-radius:12px;background:var(--result-player);color:var(--result-bg-solid);font:800 17px/1 system-ui;letter-spacing:.5px;cursor:pointer;box-shadow:0 0 14px var(--result-player-glow)}'
 			+ '.result-classic-view{box-sizing:border-box;width:108px;height:40px;justify-self:center;padding:0 10px;border:1px solid var(--result-ui);border-radius:999px;background:transparent;color:var(--result-text);font:700 14px/1 system-ui;cursor:pointer;white-space:nowrap}'
-			+ '.result-classic-view[disabled]{cursor:default;opacity:.72}'
-			+ '.result-classic-scorebox{box-sizing:border-box;width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px}'
+			+ '.result-classic-scorebox{box-sizing:border-box;width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:0;overflow:hidden;opacity:0;transform:translateY(-4px);transition:max-height .24s ease,opacity .2s ease,transform .24s ease}'
+			+ '.result-classic-scorebox.is-visible{max-height:420px;opacity:1;transform:translateY(0)}'
 			+ '.result-classic-scorecard{position:relative;box-sizing:border-box;width:100%;min-height:36px;padding:8px 14px;border-radius:10px;background:var(--result-card-bg);border:1px solid var(--result-card-border);border-left:3px solid var(--result-ui)}'
 			+ '.result-classic-scoreicon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px;line-height:1}'
 			+ '.result-classic-scorelabel{display:block;padding:0 48px;color:var(--result-text);font:600 14px/1.35 system-ui;text-align:center;white-space:nowrap}'
@@ -348,6 +348,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 	}
 	function clearResultAutoStats() {
 		if (!resultView) { return }
+		if (resultView.autoStatsTimer) { global.clearTimeout(resultView.autoStatsTimer); resultView.autoStatsTimer = null }
 		if (resultView.memoryInterval) { global.clearInterval(resultView.memoryInterval); resultView.memoryInterval = null }
 		if (resultView.memoryFinishTimer) { global.clearTimeout(resultView.memoryFinishTimer); resultView.memoryFinishTimer = null }
 		if (resultView.memoryFadeTimer) { global.clearTimeout(resultView.memoryFadeTimer); resultView.memoryFadeTimer = null }
@@ -388,9 +389,10 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		var actions = mk('div', '', stage); actions.className = 'result-classic-actions'
 		var rating = mk('span', '', actions); rating.className = 'result-classic-rating'; rating.innerHTML = '评级 <strong>' + computeRating(snapshot) + '</strong>'
 		var replay = mk('button', '', actions); replay.className = 'result-classic-replay'; replay.textContent = '再来一局'; replay.onclick = replayResult
-		var viewScore = mk('button', '', actions); viewScore.className = 'result-classic-view'; viewScore.textContent = '查看战绩'
-		var view = { stage: stage, prelude: prelude, memory: memory, eulogy: eulogy, actions: actions, rating: rating, replay: replay, viewScore: viewScore, snapshot: snapshot, cause: cause, win: win, scoreboardShown: false, memoryInterval: null, memoryFinishTimer: null, memoryFadeTimer: null, memoryOutroStarted: false }
-		viewScore.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'view_score' }); expandClassicScoreboard(view) }
+		var viewScore = mk('button', '', actions); viewScore.className = 'result-classic-view'; viewScore.textContent = '查看战绩 ↓'
+		var view = { stage: stage, prelude: prelude, memory: memory, eulogy: eulogy, actions: actions, rating: rating, replay: replay, viewScore: viewScore, snapshot: snapshot, cause: cause, win: win, scoreboardShown: false, scoreboardUserToggled: false, scorebox: null, autoStatsTimer: null, memoryInterval: null, memoryFinishTimer: null, memoryFadeTimer: null, memoryOutroStarted: false }
+		viewScore.setAttribute('aria-expanded', 'false')
+		viewScore.onclick = function () { Bus.emit('ui:feedback', { kind: 'confirm', id: 'view_score' }); toggleClassicScoreboard(view) }
 		resultView = view
 		return view
 	}
@@ -410,7 +412,7 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 		view.memory.style.display = 'none'
 		view.eulogy.style.display = 'flex'; view.eulogy.style.opacity = '0'
 		after(30, function () { if (resultView === view) { view.eulogy.style.opacity = '1' } })
-		after(240, function () { if (resultView === view) { view.actions.classList.add('is-visible') } })
+		after(240, function () { if (resultView === view) { view.actions.classList.add('is-visible'); scheduleClassicAutoStats(view) } })
 	}
 	function beginClassicMemoryOutro(view, accelerated) {
 		if (!view || resultView !== view || view.memoryOutroStarted) { return }
@@ -449,9 +451,8 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			if (i >= lines.length) { beginClassicMemoryOutro(view, true) }
 		}
 	}
-	function expandClassicScoreboard(view) {
-		if (!view || resultView !== view || view.scoreboardShown) { return }
-		view.scoreboardShown = true; view.stage.classList.add('is-expanded'); view.viewScore.disabled = true; view.viewScore.textContent = '战绩如下 ↓'
+	function renderClassicScoreboard(view) {
+		if (!view || view.scorebox) { return }
 		var snap = view.snapshot || {}, effectiveLength = Math.min(Number(snap.maxSegments) || 0, Number(PLAYER.maxSegments) || Infinity), score = (Number(snap.score) || 0) + (Number(snap.comboScore) || 0), comboCount = Array.isArray(snap.comboHighlights) ? snap.comboHighlights.length : ((snap.buildProfile && snap.buildProfile.activeCombos) || []).length
 		var kills = snap.stats && snap.stats.enemyKills != null ? snap.stats.enemyKills : (snap.kills || 0)
 		var rows = [[SCORE_ICON.seg, '此生长度', effectiveLength + '节'], [SCORE_ICON.path, '抵达阶段', snap.stageName || '前路'], [SCORE_ICON.kills, '击杀数量', String(kills)], [SCORE_ICON.streak, '最高连杀', String(snap.killStreakMax || 0)], [SCORE_ICON.score, '本局得分', String(score)], [SCORE_ICON.combo, '形成羁绊', comboCount + '道']]
@@ -462,6 +463,30 @@ function capsuleEl(extra) {   // 胶囊芯片(§8.4)：chipBg=panel+panelAlpha �
 			var label = mk('span', '', card); label.className = 'result-classic-scorelabel'; label.textContent = rows[i][1]
 			var value = mk('span', '', card); value.className = 'result-classic-scorevalue'; value.textContent = rows[i][2]
 		}
+		view.scorebox = box
+	}
+	function setClassicScoreboard(view, expanded) {
+		if (!view || resultView !== view) { return }
+		renderClassicScoreboard(view)
+		view.scoreboardShown = !!expanded
+		view.stage.classList.toggle('is-expanded', view.scoreboardShown)
+		view.scorebox.classList.toggle('is-visible', view.scoreboardShown)
+		view.viewScore.textContent = view.scoreboardShown ? '收起战绩 ↑' : '查看战绩 ↓'
+		view.viewScore.setAttribute('aria-expanded', view.scoreboardShown ? 'true' : 'false')
+	}
+	function toggleClassicScoreboard(view) {
+		if (!view || resultView !== view) { return }
+		view.scoreboardUserToggled = true
+		clearResultAutoStats()
+		setClassicScoreboard(view, !view.scoreboardShown)
+	}
+	function scheduleClassicAutoStats(view) {
+		var resultTiming = NARR.v3 && (NARR.v3.result || NARR.v3.presentation), delaySec = Number(resultTiming && resultTiming.autoStatsDelaySec)
+		if (!view || resultView !== view || view.scoreboardUserToggled || view.scoreboardShown || view.autoStatsTimer || !(delaySec > 0)) { return }
+		view.autoStatsTimer = after(delaySec * 1000, function () {
+			view.autoStatsTimer = null
+			if (resultView === view && !view.scoreboardUserToggled && !view.scoreboardShown) { setClassicScoreboard(view, true) }
+		})
 	}
 	function startSequence(cause, frozenSnapshot) {
 		if (GS.status === 'dead') { return }
