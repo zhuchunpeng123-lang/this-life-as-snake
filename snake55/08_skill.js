@@ -24,15 +24,21 @@ var ICE_POOL_GROW_SEC = 0.15        // TODO: 冰池生长时长(s)，scale 0→1
 var ICE_RETRY_SEC = 0.5             // TODO: 无目标时重试间隔(s)（候选 0.3 / 0.7）；避免蛇头远离敌群时空耗整轮 CD 导致节奏不稳
 var BURN_BARRAGE_INTERVAL_SEC = 1.8 // V5 Final 最小机制：独立 Combo 周期；数值专项可再调
 var BURN_BARRAGE_DARTS = 3, BURN_BARRAGE_STAGGER_SEC = 0.045, BURN_BARRAGE_TRAVEL_SEC = 0.24
+// 远程技能时序真源：Gameplay 锁定飞行时长，Particle 只消费 fx:bolt.travel 渲染。
+var BOLT_FLY_MIN_BY_LEVEL = [0.30, 0.285, 0.27, 0.25, 0.23]
+var BOLT_FLY_MAX_BY_LEVEL = [0.42, 0.40, 0.37, 0.34, 0.31]
+var BOLT_KILL_FLY_MIN_SEC = 0.12, BOLT_KILL_FLY_MAX_SEC = 0.17
+var ELECTRO_AUDIO_CHARGE_LEAD_SEC = 0.18 // audio enters during the final part of the visual 0.26s charge and ends at fire; no damage/rate/target changes
 var burnPending = [] // 火焰飞镖抵达后再施加 burn，避免状态图标先于投射物出现
-var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool（等冰锥飞到落点再出霜环）；GS.timeSec 驱动，pause-safe
+var icePending = []  // 冰锥落地队列：到达前只有预告，不创建 gameplay 冰池/不施加 Slow；pause-safe
+var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，视觉命中时才 applyDamage
 	// 电磁炮台只由有效飞镖命中部署，后续齐射由自身状态机驱动。
 
 	var timer = { bolt: 0, lightning: 0, ice: 0, burningBarrage: 0 }   // ice CD；steam 使用 per-enemy 冷却
 	var foundCombo = {}
 	var fireContactPrev = {}   // 纯表现进入态：只用于 Fire 首次接触反馈；伤害仍由 tickFire 真判定结算
 	var fireFieldVisualUntil = {}   // Fire V1.7：enemyId→热蚀视觉保留截止时刻；纯 Presentation，不写 burnT/burnDps
-	var electroTurretState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, shotsFired: 0, nextShotAt: 0, collapseSent: false, redeployCooldown: 0 }
+	var electroTurretState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, shotsFired: 0, nextShotAt: 0, chargeShot: -1, collapseSent: false, redeployCooldown: 0 }
 	var _enemySnap = []   // 每帧敌列快照（原地填充复用，零每帧分配；b6b380d 性能优化的回归修复：原每帧 new 数组 → GC 偶发卡顿）
 	var _aoeScratch = []   // enemiesIn 复用数组（AOE 索敌每帧多次调用，消除重复分配）
 	var _fireBounds = {}, _steamFireBounds = {}, _fireSegScratch = []   // Fire 精判 scratch：头 + 可见身体中心线；AABB 先剔除，再做线段距离，零每帧对象分配
@@ -100,6 +106,60 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 	function hurtCombo(e, base, isDot, src) {   // Combo 独立口径：不叠 effectMul，仅保留暴击（§4.6 / §9 2026-07-11）
 		var crit = Math.random() < CB.critRate
 		Registry.get('enemy').applyDamage(e, Formula.comboDamage(base, crit), crit, isDot, src)
+	}
+
+
+	// —— 远程命中时序统一：发射时锁定伤害快照；VFX 抵达时再真正结算 ——
+	// 只移动生效时刻，不改变等级、CD、目标数、伤害公式或暴击概率。目标途中被其他来源击杀时不重定向、不补伤害。
+	function damageSnapshot(base, combo) {
+		var crit = Math.random() < CB.critRate
+		return { amount: combo ? Formula.comboDamage(base, crit) : Formula.damage(base, GS.segments, crit), crit: crit }
+	}
+	function findActiveEnemyById(id) {
+		var En = Registry.get('enemy'), list = En && En.list
+		if (!list) { return null }
+		for (var i = 0; i < list.length; i++) { if (list[i].active && list[i].id === id) { return list[i] } }
+		return null
+	}
+	function queueImpact(kind, target, at, snap, src, meta) {
+		if (!target || target.id == null) { return }
+		var q = { kind: kind, targetId: target.id, at: at, amount: snap.amount, crit: snap.crit, src: src, meta: meta || null }
+		var i = impactPending.length
+		while (i > 0 && impactPending[i - 1].at > at) { i-- }
+		impactPending.splice(i, 0, q)   // 按命中时刻有序，固定步追帧时仍保持真实先后关系
+	}
+	function pendingDamageFor(targetId) {
+		var sum = 0
+		for (var i = 0; i < impactPending.length; i++) { if (impactPending[i].targetId === targetId) { sum += impactPending[i].amount || 0 } }
+		return sum
+	}
+	function resolveImpactPending() {
+		if (!impactPending.length) { return }
+		var En = Registry.get('enemy')
+		while (impactPending.length && impactPending[0].at <= GS.timeSec) {
+			var q = impactPending.shift(), target = findActiveEnemyById(q.targetId)
+			if (target) {
+				En.applyDamage(target, q.amount, q.crit, false, q.src)
+				if (q.kind === 'bolt' && q.meta && q.meta.deployElectro) { deployElectroTurretAtHit(target) }
+			} else if (q.kind === 'bolt' && q.meta && q.meta.deployElectro && q.meta.fallbackImpact) {
+				deployElectroTurretAtPoint(q.meta.fallbackImpact.x, q.meta.fallbackImpact.y, q.meta.fallbackImpact.radius || 0)
+			}
+		}
+	}
+	function compactEnemySnap() {
+		var w = 0
+		for (var i = 0; i < _enemySnap.length; i++) { if (_enemySnap[i] && _enemySnap[i].active) { _enemySnap[w++] = _enemySnap[i] } }
+		_enemySnap.length = w
+	}
+	function boltFlightSec(from, to, predictedKilled, level) {
+		var dx = to.x - from.x, dy = to.y - from.y, dist = Math.sqrt(dx * dx + dy * dy)
+		var p = M.clamp((dist - 70) / 190, 0, 1), li = Math.max(0, Math.min(4, (level || 1) - 1))
+		if (predictedKilled) { return BOLT_KILL_FLY_MIN_SEC + (BOLT_KILL_FLY_MAX_SEC - BOLT_KILL_FLY_MIN_SEC) * p }
+		return BOLT_FLY_MIN_BY_LEVEL[li] + (BOLT_FLY_MAX_BY_LEVEL[li] - BOLT_FLY_MIN_BY_LEVEL[li]) * p
+	}
+	function lightningHopSec(level) {
+		var cfg = (((CONFIG.VFX || {}).electric || {}).lightning || {}), arr = cfg.hopDelayByLevel || [0.055, 0.052, 0.049, 0.046, 0.043]
+		return arr[Math.max(0, Math.min(arr.length - 1, (level || 1) - 1))]
 	}
 
 	// Fire 真判定 = 敌人圆形碰撞体 与「蛇身中心折线 ⊕ Fire radius」的精确相交。
@@ -180,7 +240,7 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 	for (var qi = icePending.length - 1; qi >= 0; qi--) {
 		if (icePending[qi].at <= GS.timeSec) {
 			var qp = icePending[qi]
-			Bus.emit('fx:ice_pool', { x: qp.x, y: qp.y, r: qp.r, life: qp.life })   // 冰锥到达落点→霜环（纯表现）
+			landIcePool(qp.x, qp.y, qp.r, qp.life)   // 冰锥真正落地：此刻才创建/重定位 gameplay 冰池并开始 Slow
 			icePending.splice(qi, 1)
 		}
 	}
@@ -216,7 +276,6 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var h = headPos()
 		var seekR = RT('SKILL.ice.seekRange.' + i, SK.ice.seekRange[i])
 		var poolR = RT('SKILL.ice.poolRadius.' + i, SK.ice.poolRadius[i])
-		var maxP = RT('SKILL.ice.maxActivePools', SK.ice.maxActivePools)
 		var seekR2 = seekR * seekR
 		var cands = _enemySnap
 		if (cands.length === 0) { return false }           // 无敌人：本次不落池
@@ -233,21 +292,8 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			if (nn > bestN) { bestN = nn; best = ca }
 		}
 		if (!best) { return false }                       // 射程内无未被覆盖敌群
-		var linger = RT('SKILL.ice.poolLingerSec.' + i, SK.ice.poolLingerSec[i])   // ⑥：按等级取值[4,5,6,7,8]
-		if (icePools.length < maxP) {
-			spawnIcePool(best.x, best.y, poolR, linger)    // 未达并发上限：新增冰池
-		} else {
-			// 已达并发上限：刷新「距新目标最近」那片 + 重定位（2 片稳定大控制场跟敌群走，不新增第三片）
-			var oi = 0, od = Infinity
-			for (var q = 0; q < icePools.length; q++) {
-				var d = M.distSq(icePools[q].x, icePools[q].y, best.x, best.y)
-				if (d < od) { od = d; oi = q }
-			}
-			var old = icePools[oi]
-			old.x = best.x; old.y = best.y; old.r = poolR; old.life = linger; old.expire = GS.timeSec + linger
-			old.growT = ICE_POOL_GROW_SEC; old.growDur = ICE_POOL_GROW_SEC   // 重定位后重生长，读「新场形成」
-			emitIceFx(best.x, best.y, poolR, linger)
-		}
+		var linger = RT('SKILL.ice.poolLingerSec.' + i, SK.ice.poolLingerSec[i])   // 持续时长从真实落地时刻起算
+		emitIceFx(best.x, best.y, poolR, linger)   // 只发射冰锥并预约落地；到达前不生成 gameplay 冰池
 		return true
 	}
 	// ⑥ 并发：敌是否落在任一活跃冰池（含生长中 effR）半径内（与 tickIce 判定一致）
@@ -260,21 +306,34 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		}
 		return false
 	}
-	// ⑥：从对象池取冰池并初始化 + 发视觉（新增/重定位共用）
-	function spawnIcePool(x, y, r, linger) {
-		var p = icePoolPool.acquire()
-		p.x = x; p.y = y; p.r = r; p.life = linger; p.expire = GS.timeSec + linger
-		p.growT = ICE_POOL_GROW_SEC; p.growDur = ICE_POOL_GROW_SEC   // 落地后生长动画（scale 0→1）
-		icePools.push(p)
-		emitIceFx(x, y, r, linger)
+	// 冰锥到达后才真正建立 Gameplay 冰池；持续时长从落地时刻起算，配置数值长度不变。
+	function landIcePool(x, y, r, linger) {
+		var maxP = RT('SKILL.ice.maxActivePools', SK.ice.maxActivePools)
+		if (icePools.length < maxP) {
+			var p = icePoolPool.acquire()
+			p.x = x; p.y = y; p.r = r; p.life = linger; p.expire = GS.timeSec + linger
+			p.growT = ICE_POOL_GROW_SEC; p.growDur = ICE_POOL_GROW_SEC
+			icePools.push(p)
+		} else {
+			var oi = 0, od = Infinity
+			for (var q = 0; q < icePools.length; q++) {
+				var d = M.distSq(icePools[q].x, icePools[q].y, x, y)
+				if (d < od) { od = d; oi = q }
+			}
+			var old = icePools[oi]
+			old.x = x; old.y = y; old.r = r; old.life = linger; old.expire = GS.timeSec + linger
+			old.growT = ICE_POOL_GROW_SEC; old.growDur = ICE_POOL_GROW_SEC
+		}
+		Bus.emit('fx:ice_pool', { x: x, y: y, r: r, life: linger })
 	}
-	// ⑥：尾部甩冰锥（fx:ice_throw）→ 落点延迟霜环（fx:ice_pool）；纯表现零 gameplay
+	// 尾部甩冰锥 → 落地队列；到达前只有预告圈，没有 Slow/Steam 触发资格。
 	function emitIceFx(x, y, r, linger) {
 		var s = Registry.get('snake'); var segs = (s && s.segments) ? s.segments : []
 		var tail = segs.length ? segs[segs.length - 1] : { x: x, y: y }
-		Bus.emit('fx:ice_throw', { from: { x: tail.x, y: tail.y }, to: { x: x, y: y }, r: r, travel: ICE_THROW_SEC })   // 事件名全小写过 Bus 断言
-		icePending.push({ at: GS.timeSec + ICE_THROW_SEC, x: x, y: y, r: r, life: linger })   // 冰锥到达落点→出霜环（pause-safe 延迟）
+		Bus.emit('fx:ice_throw', { from: { x: tail.x, y: tail.y }, to: { x: x, y: y }, r: r, travel: ICE_THROW_SEC })
+		icePending.push({ at: GS.timeSec + ICE_THROW_SEC, x: x, y: y, r: r, life: linger })
 	}
+
 	function comboLevelFor(id, levels) {
 		var c = CO[id]; if (!c || !c.parts || !c.parts.length) { return 0 }
 		var min = SK.maxLevel, missing = false
@@ -318,11 +377,26 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var distance = enemy.radius + radius * 0.75 + clearance
 		s.x = clampTurretCoord(enemy.x - Math.cos(angle) * distance, radius, CONFIG.GAME.worldWidth)
 		s.y = clampTurretCoord(enemy.y - Math.sin(angle) * distance, radius, CONFIG.GAME.worldHeight)
-		s.active = true; s.phase = 'deploy'; s.age = 0; s.comboLevel = level; s.shotsFired = 0; s.collapseSent = false
+		s.active = true; s.phase = 'deploy'; s.age = 0; s.comboLevel = level; s.shotsFired = 0; s.chargeShot = -1; s.collapseSent = false
 		s.nextShotAt = CO.electroTurret.firstShotSec
 		Bus.emit('fx:electroturretdeploy', { x: s.x, y: s.y, comboLevel: level, radius: radius })
 		return true
 	}
+	function deployElectroTurretAtPoint(x, y, enemyRadius) {
+		var s = electroTurretState
+		if (!foundCombo.electroTurret || s.active || s.redeployCooldown > 0 || x == null || y == null) { return false }
+		var level = comboLevelFor('electroTurret'); if (level <= 0) { return false }
+		var h = headPos(), dx = x - h.x, dy = y - h.y, len = Math.sqrt(dx * dx + dy * dy), angle = len > 0.001 ? Math.atan2(dy, dx) : (h.angle || 0)
+		var radius = turretRadius(level), clearance = CO.electroTurret.deployClearancePx, er = enemyRadius || 0
+		var distance = er + radius * 0.75 + clearance
+		s.x = clampTurretCoord(x - Math.cos(angle) * distance, radius, CONFIG.GAME.worldWidth)
+		s.y = clampTurretCoord(y - Math.sin(angle) * distance, radius, CONFIG.GAME.worldHeight)
+		s.active = true; s.phase = 'deploy'; s.age = 0; s.comboLevel = level; s.shotsFired = 0; s.chargeShot = -1; s.collapseSent = false
+		s.nextShotAt = CO.electroTurret.firstShotSec
+		Bus.emit('fx:electroturretdeploy', { x: s.x, y: s.y, comboLevel: level, radius: radius })
+		return true
+	}
+
 	function turretTargets(s) {
 		var radius = turretArray('attackRadiusByLevel', s.comboLevel, [170, 190, 220, 245, 270]), radius2 = radius * radius
 		var minRange = CO.electroTurret.preferredMinRange, preferred = [], near = []
@@ -356,6 +430,10 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var collapseAt = lastShotAt + CO.electroTurret.postFireHoldSec
 		var endAt = collapseAt + CO.electroTurret.collapseSec
 		if (s.phase === 'deploy' && s.age >= CO.electroTurret.firstShotSec) { s.phase = 'firing' }
+		if (s.shotsFired < salvoCount && s.chargeShot !== s.shotsFired && s.age >= Math.max(0, s.nextShotAt - ELECTRO_AUDIO_CHARGE_LEAD_SEC)) {
+			s.chargeShot = s.shotsFired
+			Bus.emit('audio:electroturretcharge', { x: s.x, y: s.y, comboLevel: s.comboLevel, shotIndex: s.shotsFired })
+		}
 		if (s.phase === 'firing' && s.shotsFired < salvoCount && s.age >= s.nextShotAt) {
 			fireElectroTurretSalvo(s); s.shotsFired++; s.nextShotAt += interval
 			if (s.shotsFired >= salvoCount) { s.phase = 'postFire' }
@@ -373,14 +451,20 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		// V4.2 视觉节奏：Gameplay 射速/伤害不变；Lv2~5 仅将同轮多目标 VFX 依次错峰 16/18/20/22ms，减少机关枪式重叠。
 		var visualStep = i >= 4 ? 0.050 : (i === 3 ? 0.045 : (i === 2 ? 0.040 : (i === 1 ? 0.030 : 0)))
 		for (var k = 0; k < es.length && fired < n; k++) {
+			if (!es[k].active) { continue }
 			if (M.distSq(h.x, h.y, es[k].x, es[k].y) > maxR2) { break }
-			var target = es[k]
-			hurt(target, SK.bolt.damage[i], false, 'bolt')
+			var target = es[k], reserved = pendingDamageFor(target.id)
+			if (target.hp - reserved <= 0) { continue }   // 已有在途投射物足以击杀：避免下一轮继续向“预测已死”目标倾泻
+			var snap = damageSnapshot(SK.bolt.damage[i], false)
+			var visualDelay = fired * visualStep, predictedKilled = snap.amount >= (target.hp - reserved)
+			var travel = boltFlightSec(h, target, predictedKilled, i + 1)
 			Bus.emit('fx:bolt', {
 				from: { x: h.x, y: h.y }, to: { x: target.x, y: target.y }, targetId: target.id, targetRadius: target.radius,
-				level: i + 1, shotIndex: fired, shotCount: n, visualDelay: fired * visualStep, killed: !target.active
+				level: i + 1, shotIndex: fired, shotCount: n, visualDelay: visualDelay, travel: travel, killed: predictedKilled
 			})
-			if (foundCombo.electroTurret) { deployElectroTurretAtHit(target) }
+			queueImpact('bolt', target, GS.timeSec + visualDelay + travel, snap, 'bolt', {
+				deployElectro: !!foundCombo.electroTurret, fallbackImpact: { x: target.x, y: target.y, radius: target.radius || 0 }
+			})
 			fired++
 		}
 	}
@@ -439,7 +523,8 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 		var poolE = _enemySnap, hit = {}, chain = [{ x: px, y: py }], hitCount = 0
 		impactRadius = impactRadius != null ? impactRadius : 0
 		chain.vfxMeta = { level: idx('lightning') + 1, originKind: 'head' }
-		var li = idx('lightning'), jumpR2 = SK.lightning.chainJumpRange[li] * SK.lightning.chainJumpRange[li]   // #5 链跳跃半径门控（config 驱动，防跨全场连锁）
+		var li = idx('lightning'), hopSec = lightningHopSec(li + 1), jumpR2 = SK.lightning.chainJumpRange[li] * SK.lightning.chainJumpRange[li]   // #5 链跳跃半径门控（config 驱动，防跨全场连锁）
+		chain.vfxMeta.audioDelay = hopSec   // 音频首击在第一段电弧抵达首目标时进入；后续 WAV hop 与 VFX hop 同步
 		for (var c = 0; c < hops; c++) {
 			var best = null, bd = Infinity
 			for (var k = 0; k < poolE.length; k++) {
@@ -455,8 +540,9 @@ var icePending = []                 // ⑥ 首测：延迟发出的 fx:ice_pool�
 			}
 		if (!best) { break }
 		hit[best.id] = true
+		var snap = damageSnapshot(damageBase, !!useCombo), impactAt = GS.timeSec + (hitCount + 1) * hopSec
+		queueImpact('lightning', best, impactAt, snap, srcTag || 'lightning')
 		hitCount++
-		if (useCombo) { hurtCombo(best, damageBase, false, srcTag || 'lightning') } else { hurt(best, damageBase, false, srcTag || 'lightning') }   // B-4 验收①a：电磁连锁经 srcTag='electro' 走独立紫飘字 + 独立伤害数字
 			chain.push({ id: best.id, x: best.x, y: best.y }); px = best.x; py = best.y   // 链式跳跃 + 收集链条节点
 		}
 		if (chain.length > 1) { Bus.emit(vfxEvent || 'fx:lightning', { chain: chain }) }   // 基础闪电链视效保持原事件与链条
@@ -616,7 +702,9 @@ function tickCombos(dt) {
 		debugActivateCombo: debugActivateCombo, debugMaxAll: debugMaxAll, debugSetSkill: debugSetSkill,
 		update: function (dt) {
 			if (GS.status !== 'playing') { return }    // 依赖：本帧应在 collision.update 之后调用（queryCircle 哈希新鲜）
-			_enemySnap = allEnemies()   // 每帧一次敌列快照：tickBolt/dropIcePool/tickCombos/doLightningChain 复用，消除重复 allEnemies 分配（零行为变化）
+			_enemySnap = allEnemies()   // 每帧一次敌列快照
+			resolveImpactPending()          // 先结算本帧视觉命中；若击杀则从本帧后续索敌快照剔除
+			compactEnemySnap()
 			if (owns('fire')) { tickFire(dt) }
 			if (owns('ice')) { tickIce(dt) }
 			if (owns('bolt')) { tickBolt(dt) }
@@ -633,8 +721,8 @@ function tickCombos(dt) {
 	Bus.on('core:run_reset', function () {
 		electroDiag.electroAttempts = 0; electroDiag.electroSuccess = 0; electroDiag.electroNoTarget = 0; electroDiag.electroTargetsHit = 0
 		electroDiag.electroLastTriggerSec = -1; electroDiag.electroLastGapSec = 0
-		foundCombo = {}; fireContactPrev = {}; fireFieldVisualUntil = {}; timer.bolt = 0; timer.lightning = 0; timer.burningBarrage = 0; burnPending.length = 0
-		electroTurretState.active = false; electroTurretState.phase = 'inactive'; electroTurretState.x = 0; electroTurretState.y = 0; electroTurretState.age = 0; electroTurretState.comboLevel = 1; electroTurretState.shotsFired = 0; electroTurretState.nextShotAt = 0; electroTurretState.collapseSent = false; electroTurretState.redeployCooldown = 0
+		foundCombo = {}; fireContactPrev = {}; fireFieldVisualUntil = {}; timer.bolt = 0; timer.lightning = 0; timer.burningBarrage = 0; burnPending.length = 0; impactPending.length = 0
+		electroTurretState.active = false; electroTurretState.phase = 'inactive'; electroTurretState.x = 0; electroTurretState.y = 0; electroTurretState.age = 0; electroTurretState.comboLevel = 1; electroTurretState.shotsFired = 0; electroTurretState.nextShotAt = 0; electroTurretState.chargeShot = -1; electroTurretState.collapseSent = false; electroTurretState.redeployCooldown = 0
 		icePools.length = 0; icePending.length = 0; timer.ice = 0   // ⑥：清空冰池 + 延迟霜环队列 + 复位 CD，防重开残留/NaN
 	})
 

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 
 const TOOLS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(TOOLS_DIR, '..');
@@ -79,6 +80,88 @@ function report(category, message, file, line, column) {
 
 function readText(file) {
   return fs.readFileSync(file, 'utf8');
+}
+
+function sha256File(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function parsePcmWav(file) {
+  const buffer = fs.readFileSync(file);
+  if (buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('not a RIFF/WAVE file');
+  }
+  let offset = 12;
+  let fmt = null;
+  let dataBytes = 0;
+  while (offset + 8 <= buffer.length) {
+    const id = buffer.toString('ascii', offset, offset + 4);
+    const size = buffer.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (body + size > buffer.length) throw new Error(`truncated WAV chunk ${id}`);
+    if (id === 'fmt ' && size >= 16) {
+      fmt = {
+        audioFormat: buffer.readUInt16LE(body),
+        channels: buffer.readUInt16LE(body + 2),
+        sampleRate: buffer.readUInt32LE(body + 4),
+        bitsPerSample: buffer.readUInt16LE(body + 14)
+      };
+    } else if (id === 'data') {
+      dataBytes += size;
+    }
+    offset = body + size + (size % 2);
+  }
+  if (!fmt) throw new Error('missing fmt chunk');
+  if (!dataBytes) throw new Error('missing data chunk');
+  return { ...fmt, dataBytes };
+}
+
+function checkAudioAssets() {
+  const bankDir = path.join(SNAKE_DIR, 'assets', 'audio', 'combat', 'audio-next-v1');
+  const manifestFile = path.join(bankDir, 'manifest.json');
+  if (!fs.existsSync(manifestFile)) {
+    report('audio assets', 'missing Combat Bank manifest.json', manifestFile);
+    return;
+  }
+  const manifest = JSON.parse(readText(manifestFile));
+  const expected = manifest.combatFiles || {};
+  let totalBytes = 0;
+  let decodedBytes = 0;
+  for (const [name, entry] of Object.entries(expected)) {
+    const file = path.join(bankDir, name);
+    if (!fs.existsSync(file)) {
+      report('audio assets', `missing Combat WAV ${name}`, file);
+      continue;
+    }
+    if (sha256File(file) !== entry.sha256) report('audio assets', `SHA mismatch for ${name}`, file);
+    try {
+      const wav = parsePcmWav(file);
+      if (wav.audioFormat !== 1) report('audio assets', `${name} must be PCM (format=1), got ${wav.audioFormat}`, file);
+      if (wav.channels !== 1) report('audio assets', `${name} must be mono, got ${wav.channels} channels`, file);
+      if (wav.sampleRate !== 44100) report('audio assets', `${name} must be 44100Hz, got ${wav.sampleRate}`, file);
+      if (wav.bitsPerSample !== 16) report('audio assets', `${name} must be PCM16, got ${wav.bitsPerSample}-bit`, file);
+      decodedBytes += (wav.dataBytes / Math.max(1, wav.bitsPerSample / 8)) * 4;
+    } catch (error) {
+      report('audio assets', `${name}: ${error.message}`, file);
+    }
+    totalBytes += fs.statSync(file).size;
+  }
+  const runtimeBudget = Number(manifest.budgets && manifest.budgets.runtimeBytesMax) || 2.5 * 1024 * 1024;
+  const decodedBudget = Number(manifest.budgets && manifest.budgets.decodedBytesMax) || 8 * 1024 * 1024;
+  if (totalBytes > runtimeBudget) report('audio assets', `Combat Bank exceeds runtime budget: ${totalBytes} bytes`, manifestFile);
+  if (decodedBytes > decodedBudget) report('audio assets', `decoded Combat Bank exceeds budget: ${Math.round(decodedBytes)} bytes`, manifestFile);
+  if (Number(manifest.runtimeBytes) !== totalBytes) report('audio assets', `manifest runtimeBytes=${manifest.runtimeBytes} but actual=${totalBytes}`, manifestFile);
+  if (Number(manifest.runtimeFiles) !== Object.keys(expected).length) report('audio assets', 'manifest runtimeFiles does not match combatFiles count', manifestFile);
+
+  const bgmDir = path.join(SNAKE_DIR, 'assets', 'audio', 'bgm', 'golden_modular');
+  for (const [name, entry] of Object.entries(manifest.frozenBgm || {})) {
+    const file = path.join(bgmDir, name);
+    if (!fs.existsSync(file)) {
+      report('audio assets', `missing frozen BGM ${name}`, file);
+      continue;
+    }
+    if (sha256File(file) !== entry.sha256) report('audio assets', `frozen BGM SHA changed: ${name}`, file);
+  }
 }
 
 function enumerateBusinessScripts() {
@@ -560,9 +643,10 @@ runCheck('index.html scripts', checkHtmlScripts);
 runCheck('markdown links', checkMarkdownLinks);
 runCheck('instruction paths', checkInstructionReferences);
 runCheck('active tree', checkLegacyActiveTree);
+runCheck('audio assets', checkAudioAssets);
 
 if (errors.length === 0) {
-  console.log('Project static check passed: JavaScript, module syntax, script loading contract, cache stamps, and Markdown links.');
+  console.log('Project static check passed: JavaScript, module syntax, script loading contract, cache stamps, Markdown governance, and audio asset integrity.');
 } else {
   console.error(`Project static check failed with ${errors.length} error(s):`);
   for (const error of errors) {

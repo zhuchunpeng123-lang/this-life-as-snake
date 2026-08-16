@@ -1,14 +1,15 @@
 /*
  * AUDIO CHANGE CONTRACT
  * Before changing BGM, SFX, UI feedback, skill/combo sound, threat cues, voice budgets or ducking,
- * read: docs/AUDIO_SYSTEM_SPEC.md and docs/AUDIO_EVENT_MATRIX.md
- * Locked baseline: AUDIO-FINAL-1.1 (2026-08-08).
+ * read: docs/audio/AUDIO.md.
+ * Runtime candidate: AUDIO-NEXT-1.0 RC3.2 (2026-08-16); pending real-device acceptance.
+ * BGM is frozen; Combat SFX uses local WAV assets with deterministic synthesized fallbacks.
  */
 ;(function (global) {
 	'use strict'
 	var CONFIG = global.CONFIG, Bus = global.Bus, Registry = global.Registry, Log = global.Log
 	var AUDIO = (CONFIG && CONFIG.AUDIO) || {}
-	// AUDIO-FINAL-1.0 ownership rule:
+	// AUDIO-NEXT ownership rule:
 	// gameplay CONFIG owns only user-facing master/BGM/SFX/UI volume + enabled state.
 	// SFX mix/voice/density tuning is local to this module so gameplay/balance edits never collide with audio patches.
 	var MIX = {
@@ -17,15 +18,17 @@
 		skillBusGain: 0.98, comboBusGain: 1.02, playerBusGain: 1.00, impactBusGain: 0.36,
 		deathBusGain: 0.52, bossBusGain: 0.96, threatBusGain: 1.00,
 		lightDuckMul: 0.88, lightDuckSec: 0.14, majorDuckMul: 0.68, majorDuckSec: 0.24,
+		focusLightMul: 0.84, focusLightSec: 0.10, focusMajorMul: 0.72, focusMajorSec: 0.14,
 		chooseDuckMul: 0.56, pauseRampSec: 0.05, deathSilenceSec: 0.10,
 		startHandoffSec: 0.18,
 		limiterThresholdDb: -7, limiterKneeDb: 8, limiterRatio: 3.5, limiterAttackSec: 0.002, limiterReleaseSec: 0.14,
-		bgmPressureStart: 1.35, bgmPressureEnd: 2.90, bgmPressureFloor: 0.94
+		bgmPressureStart: 1.35, bgmPressureEnd: 2.90, bgmPressureFloor: 0.94,
+		combatPanMax: 0.22
 	}
 	var SFXCFG = {
 		densityWindowMs: 220, densitySoft: 7, densityHard: 11,
-		wallCooldownMs: 320, fireCooldownMs: 360, shieldCooldownMs: 280, genericHitCooldownMs: 120,
-		deathClusterMs: 70, steamCooldownMs: 180,
+		wallCooldownMs: 320, fireContactCooldownMs: 180, shieldCooldownMs: 220, genericHitCooldownMs: 120,
+		deathClusterMs: 70, steamCooldownMs: 110,
 		chargerWarnCooldownMs: 180, chargerChargeCooldownMs: 150,
 		bossAttackWarnCooldownMs: 220, bossAttackFireCooldownMs: 180
 	}
@@ -61,6 +64,7 @@
 	// SFX density does NOT pump BGM. It only decides which low-value events may consume voices.
 	var densityScore = 0, densityWinStart = 0
 	var densityOn = false, densityTimer = null, sfxCount = 0, sfxWinStart = 0 // compatibility with old debug/reset names; always neutral for BGM.
+	var audioDiag = { densityDrops: 0, voiceRejects: 0, evictions: 0, plays: 0, byFamily: {} }
 	function nowMs() { return (global.performance && global.performance.now) ? global.performance.now() : Date.now() }
 	function resetDensity() { densityScore = 0; densityWinStart = 0; densityOn = false; densityDuckMul = 1; sfxCount = 0; sfxWinStart = 0 }
 	function admitByDensity(priority, weight) {
@@ -68,8 +72,9 @@
 		if (!densityWinStart || now - densityWinStart > win) { densityWinStart = now; densityScore = 0 }
 		var before = densityScore; densityScore += weight == null ? 1 : weight
 		if (priority >= 3) { return true }
-		if (priority === 2) { return before < (SFXCFG.densityHard == null ? 11 : SFXCFG.densityHard) }
-		return before < (SFXCFG.densitySoft == null ? 7 : SFXCFG.densitySoft)
+		var ok = priority === 2 ? before < (SFXCFG.densityHard == null ? 11 : SFXCFG.densityHard) : before < (SFXCFG.densitySoft == null ? 7 : SFXCFG.densitySoft)
+		if (!ok) { audioDiag.densityDrops++ }
+		return ok
 	}
 
 	function ensure() {
@@ -96,6 +101,7 @@
 		sfxBus.boss = ctx.createGain(); sfxBus.boss.gain.value = MIX.bossBusGain == null ? 0.96 : MIX.bossBusGain; sfxBus.boss.connect(sfxGain)
 		sfxBus.threat = ctx.createGain(); sfxBus.threat.gain.value = MIX.threatBusGain == null ? 1.00 : MIX.threatBusGain; sfxBus.threat.connect(sfxGain)
 		buildSampleBank()
+		decodeCombatBank()
 		return true
 	}
 
@@ -108,31 +114,55 @@
 	}
 	function familyCap(family) { var cap = VOICE_BUDGET[family]; return cap == null ? Infinity : Math.max(1, cap) }
 	function pickVictim(list, priority, family) {
-		var pick = -1, lowest = Infinity, oldest = Infinity
+		var futurePick = -1, futureP = Infinity, latestFuture = -Infinity
+		var activePick = -1, activeP = Infinity, oldestActive = Infinity
+		var now = ctx ? ctx.currentTime : 0
 		for (var i = 0; i < list.length; i++) {
 			var rec = list[i]; if (family && rec.family !== family) { continue }
-			var p = rec.priority == null ? 2 : rec.priority, started = rec.startedAt || 0
-			if (p < lowest || (p === lowest && started < oldest)) { lowest = p; oldest = started; pick = i }
+			var p = rec.priority == null ? 2 : rec.priority
+			// Identity rule: only a STRICTLY higher-priority event may cut/cancel a voice.
+			if (p >= priority) { continue }
+			var startAt = rec.startAt == null ? 0 : rec.startAt
+			// Prefer cancelling a not-yet-audible future voice over chopping one the player already hears.
+			if (startAt > now + 0.004) {
+				if (p < futureP || (p === futureP && startAt > latestFuture)) { futureP = p; latestFuture = startAt; futurePick = i }
+			} else if (p < activeP || (p === activeP && startAt < oldestActive)) {
+				activeP = p; oldestActive = startAt; activePick = i
+			}
 		}
-		// Identity rule: only a STRICTLY higher-priority event may cut an active voice.
-		// Same-priority skills must finish their transient instead of chopping each other.
-		if (pick < 0 || lowest >= priority) { return -1 }
-		return pick
+		return futurePick >= 0 ? futurePick : activePick
 	}
-	function evictVoice(list, pick) { if (pick < 0) { return false }; var old = list.splice(pick, 1)[0]; try { old.node.stop(ctx.currentTime) } catch (_) {}; return true }
+	function fadeStopVoice(rec, fadeSec) {
+		if (!rec || !ctx) { return }
+		var t = ctx.currentTime, f = Math.max(0, fadeSec == null ? 0.012 : fadeSec)
+		try {
+			if (rec.startAt != null && rec.startAt > t + 0.004) { rec.node.stop(t); return }
+			if (rec.gain && rec.gain.gain) {
+				var a = rec.gain.gain; a.cancelScheduledValues(t); a.setValueAtTime(a.value, t); a.linearRampToValueAtTime(0, t + f)
+			}
+			rec.node.stop(t + f + 0.002)
+		} catch (_) { try { rec.node.stop(t) } catch (_) {} }
+	}
+	function evictVoice(list, pick) {
+		if (pick < 0) { return false }
+		var old = list.splice(pick, 1)[0]; audioDiag.evictions++; fadeStopVoice(old, 0.010); return true
+	}
 	function reserveVoice(list, priority, family) {
 		var famCap = familyCap(family), famCount = 0
 		for (var i = 0; i < list.length; i++) { if (list[i].family === family) { famCount++ } }
-		if (famCount >= famCap && !evictVoice(list, pickVictim(list, priority, family))) { return false }
+		if (famCount >= famCap && !evictVoice(list, pickVictim(list, priority, family))) { audioDiag.voiceRejects++; return false }
 		var cap = voiceCap(list)
-		if (list.length >= cap && !evictVoice(list, pickVictim(list, priority, null))) { return false }
+		if (list.length >= cap && !evictVoice(list, pickVictim(list, priority, null))) { audioDiag.voiceRejects++; return false }
 		return true
 	}
-	function trackVoice(list, node, priority, family) {
-		var rec = { node: node, priority: priority == null ? 2 : priority, family: family || 'music', startedAt: ctx ? ctx.currentTime : 0 }
+	function trackVoice(list, node, priority, family, gainNode, startAt) {
+		var rec = { node: node, gain: gainNode || null, priority: priority == null ? 2 : priority, family: family || 'music', startAt: startAt == null ? (ctx ? ctx.currentTime : 0) : startAt }
 		list.push(rec); node.onended = function () { var i = list.indexOf(rec); if (i >= 0) { list.splice(i, 1) } }; return node
 	}
-	function stopVoices(list) { if (!ctx) { list.length = 0; return }; var t = ctx.currentTime; while (list.length) { var rec = list.pop(); try { rec.node.stop(t) } catch (_) {} } }
+	function stopVoices(list) {
+		if (!ctx) { list.length = 0; return }
+		while (list.length) { fadeStopVoice(list.pop(), 0.012) }
+	}
 
 	function resume(cb) {
 		if (!ctx) { if (cb) { cb() }; return }
@@ -299,21 +329,145 @@
 	}
 
 	function registerSample(id, buffer) { if (!id || !buffer || typeof buffer.duration !== 'number') { return false }; sampleBank[id] = buffer; return true }
+
+	// ---------------- AUDIO-NEXT Combat Asset Layer ----------------
+	// Runtime assets are intentionally separate from the synthesized sampleBank.
+	// This keeps UI/threat/death fallbacks deterministic while Combat SFX can evolve as files.
+	var COMBAT_VERSION = 'audio-next-v1-20260816-rc32'
+	var COMBAT_BASE = 'assets/audio/combat/audio-next-v1/'
+	var COMBAT_ASSETS = {
+		fire_body: { file: 'fire_body.wav', fallback: 'gain_fire' },
+		fire_contact_1: { file: 'fire_contact_1.wav', fallback: 'fire_contact' },
+		fire_contact_2: { file: 'fire_contact_2.wav', fallback: 'fire_contact' },
+		ice_throw: { file: 'ice_throw.wav', fallback: 'ice_throw' },
+		ice_bloom: { file: 'ice_bloom.wav', fallback: 'ice_bloom' },
+		bolt_shot: { file: 'bolt_shot.wav', fallback: 'bolt_1' },
+		shield_activate: { file: 'shield_activate.wav', fallback: 'gain_shield' },
+		shield_orbit_lv1: { file: 'shield_orbit_lv1.wav', fallback: 'shield_contact' },
+		shield_orbit_lv5: { file: 'shield_orbit_lv5.wav', fallback: 'shield_contact' },
+		shield_contact_1: { file: 'shield_contact_1.wav', fallback: 'shield_contact' },
+		shield_contact_2: { file: 'shield_contact_2.wav', fallback: 'shield_contact' },
+		lightning_1: { file: 'lightning_1.wav', fallback: 'lightning_1' },
+		lightning_2: { file: 'lightning_2.wav', fallback: 'lightning_2' },
+		lightning_3: { file: 'lightning_3.wav', fallback: 'lightning_3' },
+		lightning_4: { file: 'lightning_4.wav', fallback: 'lightning_4' },
+		lightning_5: { file: 'lightning_5.wav', fallback: 'lightning_5' },
+		steam_small: { file: 'steam_small.wav', fallback: 'steam_blast' },
+		steam_large: { file: 'steam_large.wav', fallback: 'steam_blast' },
+		electro_deploy: { file: 'electro_deploy.wav', fallback: 'electro_deploy' },
+		electro_charge: { file: 'electro_charge.wav', fallback: 'electro_deploy' },
+		electro_fire: { file: 'electro_fire.wav', fallback: 'electro_fire' },
+		electro_end: { file: 'electro_end.wav', fallback: 'electro_end' },
+		burning_1: { file: 'burning_1.wav', fallback: 'burn_barrage_1' },
+		burning_2: { file: 'burning_2.wav', fallback: 'burn_barrage_3' },
+		burning_3: { file: 'burning_3.wav', fallback: 'burn_barrage_5' }
+	}
+	var combatRaw = {}, combatBank = {}, combatStatus = {}, combatPrefetchPromise = null, combatDecodePromise = null
+	var combatFallbackCount = 0, combatPlayCount = 0, combatVariantSerial = 0, combatLastError = ''
+	;(function initCombatStatus() { for (var id in COMBAT_ASSETS) { if (Object.prototype.hasOwnProperty.call(COMBAT_ASSETS, id)) { combatStatus[id] = 'idle' } } })()
+
+	function combatAssetUrl(id) { var rec = COMBAT_ASSETS[id]; return rec ? COMBAT_BASE + rec.file + '?v=' + COMBAT_VERSION : '' }
+	function prefetchCombatBank() {
+		if (combatPrefetchPromise) { return combatPrefetchPromise }
+		if (typeof global.fetch !== 'function') {
+			for (var id0 in COMBAT_ASSETS) { if (Object.prototype.hasOwnProperty.call(COMBAT_ASSETS, id0)) { combatStatus[id0] = 'missing' } }
+			combatLastError = 'fetch unavailable'; combatPrefetchPromise = Promise.resolve(false); return combatPrefetchPromise
+		}
+		var jobs = []
+		for (var id in COMBAT_ASSETS) { if (Object.prototype.hasOwnProperty.call(COMBAT_ASSETS, id)) { (function(assetId){
+			combatStatus[assetId] = 'fetching'
+			jobs.push(global.fetch(combatAssetUrl(assetId), { cache: 'force-cache' }).then(function (res) {
+				if (!res || !res.ok) { throw new Error('HTTP ' + (res ? res.status : '0')) }
+				return res.arrayBuffer()
+			}).then(function (raw) {
+				combatRaw[assetId] = raw; combatStatus[assetId] = 'fetched'; return true
+			}).catch(function (err) {
+				combatStatus[assetId] = 'missing'; combatLastError = assetId + ': ' + (err && err.message ? err.message : err); return false
+			}))
+		})(id) } }
+		combatPrefetchPromise = Promise.all(jobs).then(function () { if (ctx) { decodeCombatBank() }; return true })
+		return combatPrefetchPromise
+	}
+	function decodeAudioDataCompat(raw) {
+		return new Promise(function (resolve, reject) {
+			if (!ctx || !raw) { reject(new Error('audio context/raw unavailable')); return }
+			var settled = false
+			function ok(buffer) { if (settled) { return }; settled = true; resolve(buffer) }
+			function bad(err) { if (settled) { return }; settled = true; reject(err || new Error('decode failed')) }
+			try {
+				var copy = raw.slice ? raw.slice(0) : raw
+				var p = ctx.decodeAudioData(copy, ok, bad)
+				if (p && typeof p.then === 'function') { p.then(ok).catch(bad) }
+			} catch (err) { bad(err) }
+		})
+	}
+	function decodeCombatBank() {
+		if (!ctx) { return Promise.resolve(false) }
+		if (combatDecodePromise) { return combatDecodePromise }
+		combatDecodePromise = prefetchCombatBank().then(function () {
+			var jobs = []
+			for (var id in COMBAT_ASSETS) { if (Object.prototype.hasOwnProperty.call(COMBAT_ASSETS, id) && combatRaw[id] && !combatBank[id]) { (function(assetId){
+				combatStatus[assetId] = 'decoding'
+				jobs.push(decodeAudioDataCompat(combatRaw[assetId]).then(function (buffer) {
+					combatBank[assetId] = buffer; combatStatus[assetId] = 'loaded'; delete combatRaw[assetId]; return true
+				}).catch(function (err) {
+					combatStatus[assetId] = 'missing'; combatLastError = assetId + ': ' + (err && err.message ? err.message : err); return false
+				}))
+			})(id) } }
+			return Promise.all(jobs).then(function () { combatDecodePromise = null; return true })
+		}).catch(function () { combatDecodePromise = null; return false })
+		return combatDecodePromise
+	}
+	function combatBankState() {
+		var counts = { idle: 0, fetching: 0, fetched: 0, decoding: 0, loaded: 0, missing: 0 }
+		var status = {}
+		for (var id in COMBAT_ASSETS) { if (Object.prototype.hasOwnProperty.call(COMBAT_ASSETS, id)) {
+			var st = combatStatus[id] || 'idle'; counts[st] = (counts[st] || 0) + 1; status[id] = st
+		} }
+		return { version: COMBAT_VERSION, total: Object.keys(COMBAT_ASSETS).length, counts: counts, fallbackPlays: combatFallbackCount, combatPlays: combatPlayCount, lastError: combatLastError, assets: status }
+	}
+	function panFromWorldX(x) {
+		var w = CONFIG && CONFIG.GAME ? Number(CONFIG.GAME.worldWidth) : 0, maxPan = MIX.combatPanMax == null ? 0.22 : MIX.combatPanMax
+		if (!(w > 0) || !isFinite(Number(x))) { return 0 }
+		return clamp(((Number(x) / w) * 2 - 1) * maxPan, -maxPan, maxPan)
+	}
+
 	var playbackSerial = 0
-	function playBank(id, opt) {
+	function playBuffer(buffer, opt) {
 		opt = opt || {}
-		if (muted || hardPaused || !ensure() || !sampleBank[id]) { return false }
+		if (muted || hardPaused || !buffer || !ensure()) { return false }
 		var family = opt.family || 'skill', out = family === 'ui' ? uiGain : (sfxBus[family] || sfxBus.skill)
 		var list = out === uiGain ? uiNodes : sfxNodes, priority = opt.priority == null ? 2 : opt.priority
 		if (out !== uiGain && !admitByDensity(priority, opt.weight == null ? 1 : opt.weight)) { return false }
 		if (!reserveVoice(list, priority, busFamily(out))) { return false }
 		resume()
-		var src = ctx.createBufferSource(), g = ctx.createGain(), when = opt.when == null ? ctx.currentTime : Math.max(ctx.currentTime, opt.when)
-		src.buffer = sampleBank[id]
+		var src = ctx.createBufferSource(), g = ctx.createGain(), panner = null
+		var when = opt.when == null ? ctx.currentTime + Math.max(0, Number(opt.delay) || 0) : Math.max(ctx.currentTime, opt.when)
+		src.buffer = buffer
 		var rate = opt.rate == null ? 1 : opt.rate
 		if (opt.vary) { playbackSerial++; rate *= 1 + (((playbackSerial * 17) % 7) - 3) * 0.006 }
 		src.playbackRate.value = Math.max(0.82, Math.min(1.22, rate)); g.gain.value = opt.gain == null ? 0.55 : opt.gain
-		src.connect(g); g.connect(out); trackVoice(list, src, priority, busFamily(out)); src.start(when); return true
+		src.connect(g)
+		if (typeof ctx.createStereoPanner === 'function' && opt.pan != null && Math.abs(Number(opt.pan) || 0) > 0.001) {
+			panner = ctx.createStereoPanner(); panner.pan.value = clamp(Number(opt.pan) || 0, -1, 1); g.connect(panner); panner.connect(out)
+		} else { g.connect(out) }
+		var trackedFamily = busFamily(out)
+		trackVoice(list, src, priority, trackedFamily, g, when); src.start(when)
+		audioDiag.plays++; audioDiag.byFamily[trackedFamily] = (audioDiag.byFamily[trackedFamily] || 0) + 1
+		return true
+	}
+	function playBank(id, opt) { return ensure() && sampleBank[id] ? playBuffer(sampleBank[id], opt) : false }
+	function playCombat(id, opt) {
+		opt = opt || {}; if (!ensure()) { return false }
+		if (combatBank[id]) { combatPlayCount++; return playBuffer(combatBank[id], opt) }
+		if (combatStatus[id] === 'fetched' || combatStatus[id] === 'decoding') { decodeCombatBank() }
+		var rec = COMBAT_ASSETS[id], fallback = rec && rec.fallback
+		combatFallbackCount++
+		return fallback ? playBank(fallback, opt) : false
+	}
+	function playCombatVariant(ids, opt) {
+		if (!ids || !ids.length) { return false }
+		combatVariantSerial++; return playCombat(ids[(combatVariantSerial - 1) % ids.length], opt)
 	}
 	function playSample(id, opt) { return playBank(id, opt) }
 
@@ -346,29 +500,78 @@
 		if (!sampleBank[id]) { id = kind === 'confirm' ? 'ui_confirm' : (kind === 'back' ? 'ui_back' : (kind === 'toggle' ? 'ui_toggle' : 'ui_press')) }
 		playBank(id, { family: 'ui', priority: 4, gain: kind === 'press' ? 0.38 : 0.48 })
 	}
-	function playSkillGain(d) { d = d || {}; var id = 'gain_' + (d.id || 'fire'); playBank(sampleBank[id] ? id : 'ui_confirm', { family: 'ui', priority: 4, gain: 0.58 }); duck('major') }
+	function playSkillGain(d) {
+		d = d || {}; var skillId = d.id || 'fire', level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel(skillId)))
+		if (skillId === 'fire') { playCombat('fire_body', { family: 'skill', priority: 3, gain: 0.54, weight: 1.0 }); duck('major'); return }
+		if (skillId === 'shield') {
+			var orbitId = level >= 4 ? 'shield_orbit_lv5' : 'shield_orbit_lv1', at = ctx ? ctx.currentTime + 0.10 : null
+			playCombat('shield_activate', { family: 'skill', priority: 3, gain: 0.52, weight: 1.0 })
+			playCombat(orbitId, { family: 'skill', priority: 2, gain: level >= 4 ? 0.34 : 0.30, weight: 0.65, when: at })
+			duck('major'); return
+		}
+		var id = 'gain_' + skillId
+		playBank(sampleBank[id] ? id : 'ui_confirm', { family: 'ui', priority: 4, gain: 0.58 }); duck('major')
+	}
 	function playComboFound(d) { d = d || {}; var id = 'found_' + d.id; if (!sampleBank[id]) { return }; playBank(id, { family: 'ui', priority: 5, gain: 0.68 }); duck('major') }
 	function playStartCue(replay) { playBank(replay ? 'ui_replay' : 'ui_start', { family: 'ui', priority: 4, gain: 0.50 }) }
 	function playPauseCue() { playUiSemantic({ kind: 'pause_out' }) }
 	function playDeathCue() { var at = ctx ? ctx.currentTime + (MIX.deathSilenceSec == null ? 0.10 : MIX.deathSilenceSec) : null; playBank('player_death', { family: 'ui', priority: 5, gain: 0.72, when: at }) }
 	function playBossDefeatCue() { playBank('boss_defeat', { family: 'ui', priority: 5, gain: 0.78 }) }
 
+	// Steam: aggregate only synchronous same-tick blasts so impact sound stays visually locked.
+	// A short global cooldown limits a stream of newly-entering enemies without adding 70ms impact latency.
+	var steamAggregate = { blasts: 0, totalHits: 0, maxHits: 0, xSum: 0, xCount: 0 }, steamAggregateQueued = false, steamLastPlayAt = -Infinity
+	function clearSteamAggregate(resetCooldown) {
+		steamAggregateQueued = false
+		steamAggregate.blasts = 0; steamAggregate.totalHits = 0; steamAggregate.maxHits = 0; steamAggregate.xSum = 0; steamAggregate.xCount = 0
+		if (resetCooldown) { steamLastPlayAt = -Infinity }
+	}
+	function flushSteamAggregate() {
+		steamAggregateQueued = false
+		if (!steamAggregate.blasts) { return }
+		var large = steamAggregate.maxHits >= 3 || steamAggregate.totalHits >= 4 || steamAggregate.blasts >= 2
+		var avgX = steamAggregate.xCount ? steamAggregate.xSum / steamAggregate.xCount : null
+		var now = nowMs(), canPlay = now - steamLastPlayAt >= (SFXCFG.steamCooldownMs || 110)
+		if (canPlay) {
+			steamLastPlayAt = now
+			playCombat(large ? 'steam_large' : 'steam_small', {
+				family: 'combo', priority: 4, gain: large ? 0.76 : 0.66, weight: large ? 1.65 : 1.25, pan: panFromWorldX(avgX)
+			})
+		}
+		clearSteamAggregate(false)
+	}
+	function queueSteamBlast(d) {
+		d = d || {}; var hits = Math.max(1, Math.min(12, Number(d.hitCount) || 1))
+		steamAggregate.blasts++; steamAggregate.totalHits += hits; steamAggregate.maxHits = Math.max(steamAggregate.maxHits, hits)
+		if (isFinite(Number(d.x))) { steamAggregate.xSum += Number(d.x); steamAggregate.xCount++ }
+		if (!steamAggregateQueued) {
+			steamAggregateQueued = true
+			if (typeof global.queueMicrotask === 'function') { global.queueMicrotask(flushSteamAggregate) }
+			else if (typeof Promise !== 'undefined') { Promise.resolve().then(flushSteamAggregate) }
+			else { setTimeout(flushSteamAggregate, 0) }
+		}
+	}
+
 	// ---------------- Event ownership ----------------
 	// P5: survival / must-react threat. P4: key outcome. P3: skill identity. P2/P1: expendable detail.
 	Bus.on('ui:feedback', playUiSemantic)
-	Bus.on('snake:hurt', function (d) { d = d || {}; var critical = Number(d.coreHp) <= 1; playBank(critical ? 'player_critical' : 'player_hurt', { family: 'player', priority: 5, gain: critical ? 0.84 : 0.76, weight: 2 }); duck('major') })
+	Bus.on('snake:hurt', function (d) { d = d || {}; var critical = Number(d.coreHp) <= 1; playBank(critical ? 'player_critical' : 'player_hurt', { family: 'player', priority: 5, gain: critical ? 0.84 : 0.76, weight: 2 }); focusCombat('major'); duck('major') })
 	Bus.on('snake:wall', function () { throttled('snake:wall', SFXCFG.wallCooldownMs || 320, function () { playBank('wall_scrape', { family: 'player', priority: 1, gain: 0.28, weight: 0.45, vary: true }) }) })
-	Bus.on('enemy:charger_warn', function () { throttled('charger:warn', SFXCFG.chargerWarnCooldownMs || 180, function () { playBank('charger_warn', { family: 'threat', priority: 5, gain: 0.70, weight: 1.5 }); duck('light') }) })
+	Bus.on('enemy:charger_warn', function () { throttled('charger:warn', SFXCFG.chargerWarnCooldownMs || 180, function () { playBank('charger_warn', { family: 'threat', priority: 5, gain: 0.70, weight: 1.5 }); focusCombat('light'); duck('light') }) })
 	Bus.on('enemy:charger_charge', function () { throttled('charger:charge', SFXCFG.chargerChargeCooldownMs || 150, function () { playBank('charger_charge', { family: 'threat', priority: 4, gain: 0.66, weight: 1.2 }) }) })
-	Bus.on('boss:attack_warn', function () { throttled('boss:attack_warn', SFXCFG.bossAttackWarnCooldownMs || 220, function () { playBank('boss_attack_warn', { family: 'threat', priority: 5, gain: 0.72, weight: 1.5 }); duck('light') }) })
+	Bus.on('boss:attack_warn', function () { throttled('boss:attack_warn', SFXCFG.bossAttackWarnCooldownMs || 220, function () { playBank('boss_attack_warn', { family: 'threat', priority: 5, gain: 0.72, weight: 1.5 }); focusCombat('light'); duck('light') }) })
 	Bus.on('boss:attack_fire', function () { throttled('boss:attack_fire', SFXCFG.bossAttackFireCooldownMs || 180, function () { playBank('boss_attack_fire', { family: 'boss', priority: 4, gain: 0.76, weight: 1.3 }) }) })
-	Bus.on('enemy:phase', function () { playBank('boss_phase', { family: 'boss', priority: 5, gain: 0.78, weight: 2 }); duck('major') })
-	Bus.on('wave:boss_warn', function () { playBank('boss_warn', { family: 'threat', priority: 5, gain: 0.78, weight: 2 }); duck('major') })
+	Bus.on('enemy:phase', function () { playBank('boss_phase', { family: 'boss', priority: 5, gain: 0.78, weight: 2 }); focusCombat('major'); duck('major') })
+	Bus.on('wave:boss_warn', function () { playBank('boss_warn', { family: 'threat', priority: 5, gain: 0.78, weight: 2 }); focusCombat('major'); duck('major') })
 
 	Bus.on('enemy:hit', function (d) {
 		d = d || {}
-		if (d.isDot && d.src === 'fire') { throttled('hit:fire', SFXCFG.fireCooldownMs || 360, function () { playBank('fire_contact', { family: 'skill', priority: 1, gain: 0.36, weight: 0.8, vary: true }) }); return }
-		if (d.isDot && d.src === 'shield') { throttled('hit:shield', SFXCFG.shieldCooldownMs || 280, function () { playBank('shield_contact', { family: 'skill', priority: 2, gain: 0.40, weight: 0.7, vary: true }) }); return }
+		if (d.isDot && d.src === 'fire') { return } // Fire contact is owned by fx:firecontact (first entry), not accumulated DOT ticks.
+		if (d.isDot && d.src === 'shield') {
+			throttled('hit:shield', SFXCFG.shieldCooldownMs || 220, function () {
+				playCombatVariant(['shield_contact_1', 'shield_contact_2'], { family: 'skill', priority: 2, gain: 0.38, weight: 0.65, pan: panFromWorldX(d.x) })
+			}); return
+		}
 		if (d.isDot && d.src === 'burn') { return } // Burning Barrage projectile owns the audible identity; burn DOT is intentionally silent.
 		if (d.src === 'bolt' || d.src === 'burning' || d.src === 'steam' || d.src === 'lightning' || d.src === 'electro') { return }
 		throttled('hit:generic', SFXCFG.genericHitCooldownMs || 120, function () { playBank(d.crit ? 'crit_hit' : 'generic_hit', { family: 'impact', priority: d.crit ? 3 : 1, gain: d.crit ? 0.55 : 0.30, weight: d.crit ? 1.2 : 0.55, vary: !d.crit }) })
@@ -379,15 +582,43 @@
 	Bus.on('combo:found', playComboFound)
 	Bus.on('pickup:eat', function (d) { d = d || {}; if (d.kind === 'skill') { return }; if (d.kind === 'heal') { playBank('pickup_heal', { family: 'ui', priority: 3, gain: 0.50 }) } else { throttled('pickup:food', 90, function () { playBank('pickup_food', { family: 'ui', priority: 2, gain: 0.34 }) }) } })
 
-	Bus.on('fx:bolt', function (d) { d = d || {}; if ((d.shotIndex || 0) !== 0) { return }; var count = Math.max(1, Math.min(5, Number(d.shotCount) || 1)), level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel('bolt'))); playBank('bolt_' + count, { family: 'skill', priority: 2, gain: 0.38 + level * 0.018, rate: 0.99 + level * 0.006, weight: 0.85 }) })
-	Bus.on('fx:ice_throw', function () { throttled('fx:ice_throw', 115, function () { playBank('ice_throw', { family: 'skill', priority: 3, gain: 0.46, weight: 1.0, vary: true }) }) })
-	Bus.on('fx:ice_pool', function () { throttled('fx:ice_pool', 160, function () { playBank('ice_bloom', { family: 'skill', priority: 3, gain: 0.50, weight: 1.0, vary: true }) }) })
-	Bus.on('fx:lightning', function (d) { d = d || {}; var meta = d.chain && d.chain.vfxMeta, level = Math.max(1, Math.min(5, Number(meta && meta.level) || ownedLevel('lightning'))); playBank('lightning_' + level, { family: 'skill', priority: 4, gain: 0.64 + level * 0.026, weight: 1.2 }) })
-	Bus.on('fx:electroturretdeploy', function () { playBank('electro_deploy', { family: 'combo', priority: 4, gain: 0.58, weight: 1.0 }) })
-	Bus.on('fx:electroturretfire', function (d) { d = d || {}; var level = Math.max(1, Math.min(5, Number(d.comboLevel) || 1)); playBank('electro_fire', { family: 'combo', priority: 5, gain: 0.70 + level * 0.020, rate: 1 - (level - 1) * 0.006, weight: 1.35 }) })
-	Bus.on('fx:electroturretend', function () { playBank('electro_end', { family: 'combo', priority: 2, gain: 0.34, weight: 0.5 }) })
-	Bus.on('fx:steamblast', function (d) { d = d || {}; throttled('fx:steamblast', SFXCFG.steamCooldownMs || 180, function () { var c = Math.max(1, Math.min(6, Number(d.hitCount) || 1)); playBank('steam_blast', { family: 'combo', priority: 5, gain: 0.68 + (c - 1) * 0.018, rate: 1 - (c - 1) * 0.004, weight: 1.45 }) }) })
-	Bus.on('fx:burndart', function (d) { d = d || {}; if ((Number(d.shotIndex) || 0) !== 0) { return }; var level = Math.max(1, Math.min(5, Number(d.level) || 1)); playBank('burn_barrage_' + level, { family: 'combo', priority: 4, gain: 0.60 + level * 0.020, weight: 1.15 }) })
+	Bus.on('fx:firecontact', function (d) {
+		d = d || {}; throttled('fx:firecontact', SFXCFG.fireContactCooldownMs || 180, function () {
+			playCombatVariant(['fire_contact_1', 'fire_contact_2'], { family: 'skill', priority: 1, gain: 0.29, weight: 0.55, pan: panFromWorldX(d.x) })
+		})
+	})
+	Bus.on('fx:bolt', function (d) {
+		d = d || {}
+		var level = Math.max(1, Math.min(5, Number(d.level) || ownedLevel('bolt')))
+		var delay = Math.max(0, Number(d.visualDelay) || 0), at = ctx ? ctx.currentTime + delay : null
+		playCombat('bolt_shot', { family: 'skill', priority: 2, gain: 0.32 + level * 0.014, weight: 0.34, when: at, pan: panFromWorldX(d.from && d.from.x) })
+	})
+	Bus.on('fx:ice_throw', function (d) {
+		d = d || {}; throttled('fx:ice_throw', 115, function () { playCombat('ice_throw', { family: 'skill', priority: 3, gain: 0.44, weight: 0.9, pan: panFromWorldX(d.from && d.from.x) }) })
+	})
+	Bus.on('fx:ice_pool', function (d) {
+		d = d || {}; throttled('fx:ice_pool', 160, function () { playCombat('ice_bloom', { family: 'skill', priority: 3, gain: 0.48, weight: 1.0, pan: panFromWorldX(d.x) }) })
+	})
+	Bus.on('fx:lightning', function (d) {
+		d = d || {}; var meta = d.chain && d.chain.vfxMeta, level = Math.max(1, Math.min(5, Number(meta && meta.level) || ownedLevel('lightning')))
+		var hits = Math.max(1, d.chain && d.chain.length ? d.chain.length - 1 : 1)
+		var byHits = hits >= 6 ? 5 : (hits >= 5 ? 4 : (hits >= 4 ? 3 : (hits >= 3 ? 2 : 1)))
+		var assetLevel = Math.max(1, Math.min(level, byHits))
+		playCombat('lightning_' + assetLevel, { family: 'skill', priority: 4, gain: 0.58 + level * 0.022, weight: 1.25, delay: Math.max(0, Number(meta && meta.audioDelay) || 0), pan: panFromWorldX(d.chain && d.chain[0] && d.chain[0].x) })
+	})
+	Bus.on('fx:electroturretdeploy', function (d) { d = d || {}; playCombat('electro_deploy', { family: 'combo', priority: 4, gain: 0.52, weight: 0.9, pan: panFromWorldX(d.x) }) })
+	Bus.on('audio:electroturretcharge', function (d) { d = d || {}; playCombat('electro_charge', { family: 'combo', priority: 3, gain: 0.40, weight: 0.65, pan: panFromWorldX(d.x) }) })
+	Bus.on('fx:electroturretfire', function (d) {
+		d = d || {}; var level = Math.max(1, Math.min(5, Number(d.comboLevel) || 1))
+		playCombat('electro_fire', { family: 'combo', priority: 4, gain: 0.62 + level * 0.018, rate: 1 - (level - 1) * 0.004, weight: 1.35, pan: panFromWorldX(d.x) })
+	})
+	Bus.on('fx:electroturretend', function (d) { d = d || {}; playCombat('electro_end', { family: 'combo', priority: 2, gain: 0.30, weight: 0.45, pan: panFromWorldX(d.x) }) })
+	Bus.on('fx:steamblast', queueSteamBlast)
+	Bus.on('fx:burndart', function (d) {
+		d = d || {}; if ((Number(d.shotIndex) || 0) !== 0) { return }
+		var level = Math.max(1, Math.min(5, Number(d.level) || 1)), tier = level >= 5 ? 3 : (level >= 3 ? 2 : 1)
+		playCombat('burning_' + tier, { family: 'combo', priority: 4, gain: 0.47 + level * 0.014, weight: 1.15, pan: panFromWorldX(d.from && d.from.x) })
+	})
 	// ================= Golden-Master Single-Source BGM =================
 	// Five clean loops only. No musical transition assets and no Boss-warning BGM.
 	// Stage changes are phase-locked to the current 4-bar cycle; gameplay owns all durations.
@@ -461,6 +692,23 @@
 		if (!sfxGain || !ctx) { return }
 		var t = ctx.currentTime, g = sfxGain.gain, v = (AUDIO.sfxVolume == null ? 0.78 : AUDIO.sfxVolume) * sfxPauseMul; g.cancelScheduledValues(t)
 		if (immediate) { g.setValueAtTime(v, t) } else { g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + AUDIO_MIX.pauseRampSec) }
+	}
+	var combatFocusMul = 1, combatFocusTimer = null
+	function applyCombatFocus(immediate) {
+		if (!ctx || !sfxBus.skill || !sfxBus.combo) { return }
+		var t = ctx.currentTime, ramp = immediate ? 0 : 0.012
+		var skillBase = MIX.skillBusGain == null ? 0.98 : MIX.skillBusGain, comboBase = MIX.comboBusGain == null ? 1.02 : MIX.comboBusGain
+		;[[sfxBus.skill, skillBase], [sfxBus.combo, comboBase]].forEach(function (pair) {
+			var a = pair[0].gain, v = pair[1] * combatFocusMul; a.cancelScheduledValues(t); a.setValueAtTime(a.value, t)
+			if (ramp > 0) { a.linearRampToValueAtTime(v, t + ramp) } else { a.setValueAtTime(v, t) }
+		})
+	}
+	function focusCombat(kind) {
+		var major = kind === 'major', mul = major ? (MIX.focusMajorMul == null ? 0.72 : MIX.focusMajorMul) : (MIX.focusLightMul == null ? 0.84 : MIX.focusLightMul)
+		var sec = major ? (MIX.focusMajorSec == null ? 0.14 : MIX.focusMajorSec) : (MIX.focusLightSec == null ? 0.10 : MIX.focusLightSec)
+		combatFocusMul = Math.min(combatFocusMul, mul); applyCombatFocus(false)
+		if (combatFocusTimer) { clearTimeout(combatFocusTimer) }
+		combatFocusTimer = setTimeout(function () { combatFocusTimer = null; combatFocusMul = 1; applyCombatFocus(false) }, Math.max(1, sec * 1000))
 	}
 	function normalizeMusicState(value) {
 		if (value == null) { return '' }
@@ -682,7 +930,9 @@
 	}
 	function clearAudioTimers() {
 		if (duckTimer) { clearTimeout(duckTimer); duckTimer = null }
-		clearDeathCluster(); duckReleaseAt = 0; resetDensity(); eventDuckMul = 1
+		if (combatFocusTimer) { clearTimeout(combatFocusTimer); combatFocusTimer = null }
+		combatFocusMul = 1; applyCombatFocus(true)
+		clearSteamAggregate(true); clearDeathCluster(); duckReleaseAt = 0; resetDensity(); eventDuckMul = 1
 	}
 
 	// —— BGM 事件订阅（追加，不动既有 12 事件音效行）——
@@ -739,8 +989,24 @@
 		isRunning: function () { return !!(ctx && ctx.state === 'running') },
 		registerSample: registerSample,
 		playSample: playSample,
+		preloadCombatBank: function () { prefetchCombatBank(); if (ctx) { decodeCombatBank() }; return combatBankState() },
+		combatBankState: combatBankState,
 		previewSfx: function (id) { return playBank(id, { family: 'ui', priority: 5, gain: 0.55 }) },
+		previewCombat: function (id) { return playCombat(id, { family: 'ui', priority: 5, gain: 0.55 }) },
+		previewSkill: function (id, variant) {
+			var key = ''
+			if (id === 'fire') { key = variant === 'contact' ? 'fire_contact_1' : 'fire_body' }
+			else if (id === 'ice') { key = variant === 'pool' ? 'ice_bloom' : 'ice_throw' }
+			else if (id === 'bolt') { key = 'bolt_shot' }
+			else if (id === 'shield') { key = variant === 5 || variant === 'lv5' ? 'shield_orbit_lv5' : (variant === 'contact' ? 'shield_contact_1' : 'shield_activate') }
+			else if (id === 'lightning') { key = 'lightning_' + Math.max(1, Math.min(5, Number(variant) || 1)) }
+			else if (id === 'steamExplosion') { key = variant === 'large' ? 'steam_large' : 'steam_small' }
+			else if (id === 'electroTurret') { key = variant === 'charge' ? 'electro_charge' : (variant === 'fire' ? 'electro_fire' : (variant === 'end' ? 'electro_end' : 'electro_deploy')) }
+			else if (id === 'burningBarrage') { key = 'burning_' + Math.max(1, Math.min(3, Number(variant) || 1)) }
+			return key ? playCombat(key, { family: 'ui', priority: 5, gain: 0.55 }) : false
+		},
 		listSfx: function () { ensure(); return Object.keys(sampleBank).filter(function (k) { return k !== '__ready' }).sort() },
+		listCombatSfx: function () { return Object.keys(COMBAT_ASSETS).sort() },
 		debugState: function () {
 			var mediaPlaying = [], mediaAudible = []
 			for (var key in bgmMedia) {
@@ -749,10 +1015,11 @@
 				if (!media.paused) { mediaPlaying.push(key) }
 				if (!media.paused && media.volume > 0.0001) { mediaAudible.push(key) }
 			}
-			return { specVersion: 'AUDIO-FINAL-1.1', context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, sfxDensity: densityScore, sampleCount: Object.keys(sampleBank).length - (sampleBank.__ready ? 1 : 0), voices: voiceSnapshot() }
+			return { specVersion: 'AUDIO-NEXT-1.0-20260816-rc2', context: ctx ? ctx.state : 'none', bgmRunning: bgmRunning, bgmWanted: bgmWanted, transport: bgmTransportSerial, owner: bgmPlaySerial, stage: currentStage, musicState: currentMusicState, pendingMusicState: pendingMusicState, pendingStage: pendingMusicStage, bossWarningActive: bossWarningActive, layer: curLayer, mediaSegment: bgmActiveKey, mediaPlaying: mediaPlaying, mediaAudible: mediaAudible, bpm: MUSIC_STATE_BPM[currentMusicState] || 124, stageGain: stageBgmMul, heat: battleHeat, pressure: pressureLevel, build: buildLevel, sfxDensity: densityScore, combatFocus: combatFocusMul, sampleCount: Object.keys(sampleBank).length - (sampleBank.__ready ? 1 : 0), combat: combatBankState(), voices: voiceSnapshot(), arbitration: { densityDrops: audioDiag.densityDrops, voiceRejects: audioDiag.voiceRejects, evictions: audioDiag.evictions, plays: audioDiag.plays, byFamily: audioDiag.byFamily } }
 		}
 	}
 	Registry.register('audio', Audio)
-	Log.info('audio 就绪：AUDIO-FINAL-1.1 · Golden Master BGM冻结 + 技能身份优先 Sample Bank + Priority/Voice Budget')
+	prefetchCombatBank()
+	Log.info('audio 就绪：AUDIO-NEXT-1.0-20260816-rc2 · BGM冻结 + Combat WAV Bank + Synth Fallback + Priority/Voice Budget')
 
 })(typeof window !== 'undefined' ? window : this)

@@ -1,0 +1,231 @@
+{
+  "version": "AUDIO-NEXT-1.0-20260816-rc3.2",
+  "status": "final-user-selection-adversarial-reviewed-timing-debt-fixed-real-device-acceptance-rc3.2",
+  "format": "44.1kHz mono PCM16 WAV",
+  "runtimeFiles": 25,
+  "runtimeBytes": 1238804,
+  "estimatedDecodedBytes": 2475408,
+  "budgets": {
+    "runtimeBytesMax": 2621440,
+    "decodedBytesMax": 8388608
+  },
+  "combatFiles": {
+    "bolt_shot.wav": {
+      "sha256": "bf728a96d3a845c448dfcb03f722810485976f5963953ebadfefed75c81e582f",
+      "bytes": 4894,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.055
+    },
+    "burning_1.wav": {
+      "sha256": "1f49b9ca52a5caabb08223fdabad21f6a99368153bce178f2a1efcab8edb6ffe",
+      "bytes": 72368,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.82
+    },
+    "burning_2.wav": {
+      "sha256": "821ec32bfb1a168b4e247f429e48af8b1dd13f9975da885e33be87437d6f6b92",
+      "bytes": 72368,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.82
+    },
+    "burning_3.wav": {
+      "sha256": "0ed786b5f3f954932ed4831b6977f3811413a894f0990b141d379984be3f3153",
+      "bytes": 72368,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.82
+    },
+    "electro_charge.wav": {
+      "sha256": "f725e2431dfca0b7b6dec57044fb2eef415208f774750d34c71ed8ec5ea7bb0b",
+      "bytes": 15920,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.18
+    },
+    "electro_deploy.wav": {
+      "sha256": "482876938c488a80f83be3059f15c3377a2fbc96e4e7edd9692694c783700fa9",
+      "bytes": 24740,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.28
+    },
+    "electro_end.wav": {
+      "sha256": "a0e29b8d5527661271255d9f7420b58ed7f36409ed1eb5cf117f37edfb4d2bad",
+      "bytes": 45026,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.51
+    },
+    "electro_fire.wav": {
+      "sha256": "64a3d19902fc42117aba027a0065b1eaa1a2b92bffb9494f96a0fc4608917b20",
+      "bytes": 23858,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.27
+    },
+    "fire_body.wav": {
+      "sha256": "a9727040154dbb7335f3fecfce3b003ef8e1dc4fdd0def0ae6dc3c87fd92e2bc",
+      "bytes": 48554,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.55
+    },
+    "fire_contact_1.wav": {
+      "sha256": "05f936f250d670c85789e707d4df670659bd56cc46c546033e3effa943e5919e",
+      "bytes": 45908,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.52
+    },
+    "fire_contact_2.wav": {
+      "sha256": "d8aa0bc7796df70336931b8a4214f8df459a0d82e91e8b9f459eb32603712b9e",
+      "bytes": 45908,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.52
+    },
+    "ice_bloom.wav": {
+      "sha256": "ef810e5e91846cdef9c74fd8b7bb7b91e4fdc8c88d9e5b7f70483df748b14c71",
+      "bytes": 69722,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.79
+    },
+    "ice_throw.wav": {
+      "sha256": "90b8173993f02e9a84352f08814069aa3a273e948255aa731845a1038930478c",
+      "bytes": 14156,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.16
+    },
+    "lightning_1.wav": {
+      "sha256": "f82f8849ba131cd2dd0bb318cd898ce7c6d07cc8823fb09fbf1e1bc79485e60e",
+      "bytes": 25180,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.285
+    },
+    "lightning_2.wav": {
+      "sha256": "6f04f6badc908e9f9e4e351cd390bb1800da1e63bcae8719a20de9e5d6c443fc",
+      "bytes": 29502,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.334
+    },
+    "lightning_3.wav": {
+      "sha256": "6e95089ece9087a9bac285525b48a57cff17026d841c24c4064d6ea467747da1",
+      "bytes": 33294,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.377
+    },
+    "lightning_4.wav": {
+      "sha256": "bfdcc555a91a3ee2e8af2340c650fa1c710685c4b82bae2eca228647bdee4b01",
+      "bytes": 36558,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.414
+    },
+    "lightning_5.wav": {
+      "sha256": "fa69b4e781cae72ab2532be139fe86faa9463812e081676674c656fcccf19035",
+      "bytes": 43084,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.488
+    },
+    "shield_activate.wav": {
+      "sha256": "31b0bd30c342ee1262c7e50525ecbf523daf9bcd93fbd4213769c89aa3726824",
+      "bytes": 51200,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.58
+    },
+    "shield_contact_1.wav": {
+      "sha256": "278072f062882748544ba5695cd6d7b36640788e066ed1869d57e8a5206dd1cd",
+      "bytes": 28268,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.32
+    },
+    "shield_contact_2.wav": {
+      "sha256": "dd546b8330655e4865cbb10a45d15b723336c60160cea328a5b7d7f8bdc0f1d8",
+      "bytes": 28268,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.32
+    },
+    "shield_orbit_lv1.wav": {
+      "sha256": "988f662eabe0cd6c7b1824922675e34a07cdda36ab8ceb7c6feb1988838e7864",
+      "bytes": 141164,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 1.6
+    },
+    "shield_orbit_lv5.wav": {
+      "sha256": "f7314d2b885a3b630d80ff4cfb45e4d7363dded252df69a8b44aab6988b54e6c",
+      "bytes": 141164,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 1.6
+    },
+    "steam_large.wav": {
+      "sha256": "ba17aabcb737a6f1052f23071488376d8579fe6dbb393d027f6a226d238dbb03",
+      "bytes": 72368,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.82
+    },
+    "steam_small.wav": {
+      "sha256": "7cc65a5f61acbb77caeadff76116faf3a124efe7624a00a89b45bfc91f5589bf",
+      "bytes": 52964,
+      "sampleRate": 44100,
+      "channels": 1,
+      "bitsPerSample": 16,
+      "seconds": 0.6
+    }
+  },
+  "frozenBgm": {
+    "bgm_boss_loop.wav": {
+      "sha256": "a392d751283fa6a7806b12141b974535f8101c7bba1f10b8925491c76e5d25cb"
+    },
+    "bgm_climax_loop.wav": {
+      "sha256": "c3e458150133db0ad698930bbb53d6368162f11a0cd97eec50f7783b7e3002c5"
+    },
+    "bgm_growth_loop.wav": {
+      "sha256": "38f6db8e763eb89fe8e1c1a2d56f510ef7fab7f4f95e245907c36d9a0100e4b9"
+    },
+    "bgm_mowing_loop.wav": {
+      "sha256": "2565bb545bf4db2ddc0610fa4c46d150ebdb683476271546d81f1da825ffc21f"
+    },
+    "bgm_protection_loop.wav": {
+      "sha256": "a4cf5c15f2ec1ec39090649c304254ae4c1b3fc53023ccb24d53709e3f97e9ed"
+    }
+  }
+}

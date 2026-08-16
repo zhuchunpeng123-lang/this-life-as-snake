@@ -1,0 +1,15 @@
+{
+  "status": "user-final-selected mix; RC3 timing behavior; RC3.2 PowerShell-only transactional installer; do not reinterpret during application",
+  "selection": {
+    "fire": "new refinement Fire A; one-shot skill identity + separate contact",
+    "ice": "legacy Round 3; engineering split at 0.16s into throw/bloom",
+    "bolt": "legacy Round 1; first projectile atom replayed per actual fx:bolt visualDelay",
+    "shield": "new refinement; activate/orbit/contact",
+    "lightning": "new refinement Lightning A; Lv1-Lv5 = 2/3/4/5/7 hops",
+    "steam": "new refinement Small/Large",
+    "electro": "legacy Round 3; atomized deploy/charge/fire/end",
+    "burning": "new candidate; 3 runtime tiers"
+  },
+  "runtimeRule": "No remote downloads. Runtime consumes only local verified assets. Synth sampleBank is fallback if file fetch/decode fails.",
+  "bgmRule": "Five BGM WAVs are frozen by SHA and unchanged."
+}
