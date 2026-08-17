@@ -87,7 +87,6 @@
 		{ path: 'PLAYER.turnRateDecayPerSeg', label: '转向衰减%/节', rng: 'turnRateDecay', def: 1.0, dec: 2 },   // 单位 %/节：RT 存 1.0 → 06_snake 热路径 /100 = 0.010；dec:2 防显示成 1
 		{ path: 'PLAYER.turnRateFloor', label: '转向下限°/s', rng: 'turnRateFloor', def: 120, dec: 0 },   // 满节不失控下限（真理源 100–150）
 		{ path: 'SKILL.ice.freezeCd', label: '冰冻CD s', rng: 'iceFreezeCd' },
-		{ path: 'PERF.steamBurstCapPerFrame', label: '蒸汽齐爆上限/帧', rng: 'steamCap' },   // b9-diag：蒸汽齐爆同帧 VFX 上限，运行时热调（08_skill RT 读）
 		{ path: 'PICKUP.gapEarly', label: '前期升级间隔s(段①②)', rng: 'earlyUpgradeGap12', def: 20, dec: 0 },   // 战线A 段①② 节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index0/1）；def 由 config 推导=20（设计下限锚点），终值待实测锁 20/25
 		{ path: 'PICKUP.gapFarm', label: '割草升级间隔s(段③)', rng: 'earlyUpgradeGap3', def: 30, dec: 0 },   // 战线A 段③ 割草节奏主轴：RT 桥到 09_wave tryGiveSkill（数组 index2）；def 由 config 推导=30（锚，实测拍板 25/30/35）；段④⑤=0 地板失效
 		{ path: 'ENEMIES.wanderer.aggroRangeByStage.2', label: '游荡aggro·成长期(段②)px', rng: 'aggroRange', def: 800, dec: 0 },   // 段≥② 游荡型 aggro 圈（段-scaled）：成长期默认800覆盖刷怪环520-760，距蛇头<此值即切追踪(RT 桥到 07_enemy)；须>250才>原senseRange生效；min200=基线/关闭
@@ -333,6 +332,7 @@
 		gm += '<button id="gm_max" style="width:100%;padding:8px;margin:5px 0;border:0;border-radius:6px;background:#ffd166;color:#063;font:700 12px system-ui;cursor:pointer">立即满级（五技能 Lv5 + 检测 Combo）</button>'
 		gm += '<button id="gm_clear" style="width:100%;padding:8px;margin:5px 0;border:0;border-radius:6px;background:#ff8c5b;color:#063;font:700 12px system-ui;cursor:pointer">清空敌人（清当前波）</button>'
 		gm += '<button id="gm_box" style="width:100%;padding:8px;margin:5px 0;border:1px solid #2ad4ff;border-radius:6px;background:transparent;color:#2ad4ff;cursor:pointer;font:700 12px system-ui">显示碰撞盒：关</button>'
+		gm += '<button id="gm_damage_src" style="width:100%;padding:8px;margin:5px 0;border:1px solid #ffd166;border-radius:6px;background:transparent;color:#ffd166;cursor:pointer;font:700 12px system-ui">伤害来源调试：关</button>'
 		// 单技能精确激活（GM 指令区也放一份，方便测试；清空其余；B-2 修复：此前用户反馈 GM 找不到此功能）
 		gm += '<div style="font:600 11px system-ui;opacity:.7;margin:8px 0 2px">单技能激活（清空其余）</div>'
 		gm += '<div style="display:flex;gap:6px;margin:4px 0"><select id="gm_skill" style="flex:1;padding:6px;border-radius:6px;border:1px solid #2a3358;background:#0d0f1a;color:#fff;font:12px system-ui">'
@@ -585,6 +585,15 @@
 			this.style.color = global.GMDBG.showHitboxes ? '#7CFC00' : '#2ad4ff'
 			this.style.borderColor = global.GMDBG.showHitboxes ? '#7CFC00' : '#2ad4ff'
 		}
+		panel.querySelector('#gm_damage_src').onclick = function () {
+			var tf = CONFIG.STYLE && CONFIG.STYLE.combatFx && CONFIG.STYLE.combatFx.text
+			if (!tf) { Log.warn('[GM] combatFx.text 不存在'); return }
+			tf.debugSourceLabels = !tf.debugSourceLabels
+			this.textContent = '伤害来源调试：' + (tf.debugSourceLabels ? '开' : '关')
+			this.style.color = tf.debugSourceLabels ? '#7CFC00' : '#ffd166'
+			this.style.borderColor = tf.debugSourceLabels ? '#7CFC00' : '#ffd166'
+			Log.info('[GM] 伤害来源标签：' + (tf.debugSourceLabels ? '开' : '关'))
+		}
 		// B-2 修复：GM 指令区单技能激活（与 标定/Tuning 同源，清空其余）
 		panel.querySelector('#gm_skill_go').onclick = function () {
 			if (GS.status !== 'playing') { Log.warn('请先进入游戏再激活技能'); return }
@@ -676,7 +685,7 @@
 		var s = Registry.get('snake'), h = (s && s.head) ? { x: s.head.x, y: s.head.y } : { x: CONFIG.GAME.worldWidth / 2, y: CONFIG.GAME.worldHeight / 2 }
 		if (id === 'steamExplosion') {
 			Bus.emit('fx:steamblast', { x: h.x, y: h.y, radius: CO.steamExplosion.radius })
-			Log.info('[预览] 蒸汽爆炸：白色蒸汽云 + 冰晶碎屑 + 实心白闪核')
+			Log.info('[预览] 蒸汽爆炸：短热核 + 高压白蒸汽 + 破碎浅青压力弧 + 少量冰晶')
 		} else if (id === 'electroTurret') {
 			var ds = spawnDummiesNearHead(3)
 			var targets = []

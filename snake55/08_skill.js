@@ -7,10 +7,9 @@
 	FIRE_HEAT = FIRE_HEAT.heatScorch || {}   // Fire V1.7 Presentation-only：只读配置，不参与伤害/判定
 
 // 🟡 真理源未量化的表现/节奏，占位 + 候选，待回写
-var COMBO_STEAM_INTERVAL_SEC = 2.0  // TODO: 待确认（候选 1.5 / 3.0）
 // —— ⑥ 冰冻机制重做：常驻尾迹 → CD 自动索敌冰池（对象池 + 活动表，render 读此画）——
 //    每 freezeCd 秒触发一次：以蛇头为源、在 seekRange 内找最密敌群 → 在该点落一个冰池（poolRadius），存续 poolLingerSec；
-//    池内敌人吃减速→冻结（applySlow；冻结＝pct=1）；④ 蒸汽引爆只读 slowT>0 不变。
+//    池内敌人吃减速→冻结（applySlow；Lv5 冻结＝pct=1）；Steam Explosion 由冰锥落地时一次性触发，不再依赖火墙重叠。
 var ICE_POOL_CAP = 64               // 冰池对象池上限（富余）；实际并发上限由 config SKILL.ice.maxActivePools=2 管控（dropIcePool 不新增第三片）
 var icePoolPool = Core.createPool(
   function () { return { x: 0, y: 0, r: 0, life: 0, expire: 0, growT: 0, growDur: 0 } },
@@ -34,14 +33,14 @@ var icePending = []  // 冰锥落地队列：到达前只有预告，不创建 g
 var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，视觉命中时才 applyDamage
 	// 电磁炮台只由有效飞镖命中部署，后续齐射由自身状态机驱动。
 
-	var timer = { bolt: 0, lightning: 0, ice: 0, burningBarrage: 0 }   // ice CD；steam 使用 per-enemy 冷却
+	var timer = { bolt: 0, lightning: 0, ice: 0, burningBarrage: 0 }   // Ice/远程/Combo 各自节奏；蒸汽爆炸 V3 由冰锥落地事件一次性触发
 	var foundCombo = {}
 	var fireContactPrev = {}   // 纯表现进入态：只用于 Fire 首次接触反馈；伤害仍由 tickFire 真判定结算
 	var fireFieldVisualUntil = {}   // Fire V1.7：enemyId→热蚀视觉保留截止时刻；纯 Presentation，不写 burnT/burnDps
 	var electroTurretState = { active: false, phase: 'inactive', x: 0, y: 0, age: 0, comboLevel: 1, shotsFired: 0, nextShotAt: 0, chargeShot: -1, collapseSent: false, redeployCooldown: 0 }
 	var _enemySnap = []   // 每帧敌列快照（原地填充复用，零每帧分配；b6b380d 性能优化的回归修复：原每帧 new 数组 → GC 偶发卡顿）
 	var _aoeScratch = []   // enemiesIn 复用数组（AOE 索敌每帧多次调用，消除重复分配）
-	var _fireBounds = {}, _steamFireBounds = {}, _fireSegScratch = []   // Fire 精判 scratch：头 + 可见身体中心线；AABB 先剔除，再做线段距离，零每帧对象分配
+	var _fireBounds = {}, _fireSegScratch = []   // Fire 精判 scratch：头 + 可见身体中心线；AABB 先剔除，再做线段距离，零每帧对象分配
 	var electroDiag = {
 		electroAttempts: 0, electroSuccess: 0, electroNoTarget: 0, electroTargetsHit: 0,
 		electroLastTriggerSec: -1, electroLastGapSec: 0
@@ -235,7 +234,8 @@ var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，
 	// —— 冰池存续 + 减速施加（每帧）——
 	var pct = RT('SKILL.ice.slowPct.' + i, SK.ice.slowPct[i])
 	var freeze = lvl('ice') >= SK.maxLevel
-	var slowWin = freeze ? SK.ice.lv5FreezeSec : RT('SKILL.ice.poolLingerSec.' + i, SK.ice.poolLingerSec[i])   // ⑥ 系统性调整：Lv5 冻结时长 lv5FreezeSec；否则按等级取 poolLingerSec[i]（原 flat 4.0 → [4,5,6,7,8]）
+	if (freeze) { pct = 1 }   // 蒸汽爆炸 V3 correctness：Lv5 设计语义是真冻结，移动倍率必须归零；此前仅沿用 slowPct[4]=0.60，实际只是 60% slow。
+	var slowWin = freeze ? SK.ice.lv5FreezeSec : RT('SKILL.ice.poolLingerSec.' + i, SK.ice.poolLingerSec[i])   // Lv5 真冻结仅持续 lv5FreezeSec；Lv1~4 仍按冰池等级维持 Chill/Slow。
 	// ⑥ 首测：冰锥飞到落点 → 出霜环（pause-safe 延迟，由 GS.timeSec 驱动）
 	for (var qi = icePending.length - 1; qi >= 0; qi--) {
 		if (icePending[qi].at <= GS.timeSec) {
@@ -266,7 +266,7 @@ var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，
 		for (var n = 0; n < all.length; n++) {
 			var en = all[n]
 			var was = en.inIce; en.inIce = !!en._iceHit; en._iceHit = false
-			if (en.inIce && !was) { Bus.emit('fx:iceslow', { x: en.x, y: en.y, r: en.radius }) }   // 坐标用敌人位置；事件名全小写过 Bus 断言
+			if (en.inIce && !was) { Bus.emit('fx:iceslow', { x: en.x, y: en.y, r: en.radius, frozen: freeze }) }   // 坐标用敌人位置；事件名全小写过 Bus 断言
 		}
 	}
 	// ⑥ 系统性调整：索敌 + 落池（并发上限 maxActivePools）
@@ -306,7 +306,25 @@ var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，
 		}
 		return false
 	}
-	// 冰锥到达后才真正建立 Gameplay 冰池；持续时长从落地时刻起算，配置数值长度不变。
+	// 蒸汽爆炸 V3：Combo 将 Ice 的一次落地升级成「先爆发、后留场控制」。
+	// 一次冰锥落地最多触发一次；不再按敌人逐体/每 2 秒循环，也不再把 Fire Tube 当第二个触发真相源。
+	function triggerSteamExplosionAt(x, y) {
+		if (!foundCombo.steamExplosion) { return }
+		var fi = idx('fire'); if (fi < 0) { return }   // Combo 契约本应保证 Fire 已拥有；兜底防 GM/热改中间态。
+		var radius = CO.steamExplosion.radius, candidates = enemiesIn(x, y, radius), hits = 0
+		var _p = Registry.get('particle'), _pdbg = (_p && _p.DBG) ? _p.DBG : null
+		if (_pdbg) { _pdbg.steamBlasts++; _pdbg.steamAoeCmp += candidates.length }
+		for (var i = 0; i < candidates.length; i++) {
+			var e = candidates[i], rr = radius + e.radius, dx = e.x - x, dy = e.y - y
+			if (dx * dx + dy * dy > rr * rr) { continue }   // 爆炸环看到的范围 = 实际命中范围；排除 spatial cell 候选的假阳性。
+			hurtCombo(e, SK.fire.dotPerSec[fi] * CO.steamExplosion.damageMul, false, 'steam')
+			hits++
+		}
+		// 即使落地前目标已被其他来源击杀，也保留这次 Combo 爆发：玩家已经完成一次 Ice Cast，节奏不能凭空吞掉。
+		Bus.emit('fx:steamblast', { x: x, y: y, radius: radius, hitCount: hits })
+	}
+
+	// 冰锥到达后才真正建立 Gameplay 冰池；Steam（若已解锁）先结算一次爆发，同一 tick 再建立/刷新 Ice Pool 控场。
 	function landIcePool(x, y, r, linger) {
 		var maxP = RT('SKILL.ice.maxActivePools', SK.ice.maxActivePools)
 		if (icePools.length < maxP) {
@@ -324,6 +342,7 @@ var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，
 			old.x = x; old.y = y; old.r = r; old.life = linger; old.expire = GS.timeSec + linger
 			old.growT = ICE_POOL_GROW_SEC; old.growDur = ICE_POOL_GROW_SEC
 		}
+		triggerSteamExplosionAt(x, y)
 		Bus.emit('fx:ice_pool', { x: x, y: y, r: r, life: linger })
 	}
 	// 尾部甩冰锥 → 落地队列；到达前只有预告圈，没有 Slow/Steam 触发资格。
@@ -582,32 +601,7 @@ var impactPending = [] // Bolt/Lightning：发射时锁定目标+伤害快照，
 	}
 function tickCombos(dt) {
 	tickBurningBarrage(dt)
-	var _pdbg = (function () { var _pp = Registry.get('particle'); return (_pp && _pp.DBG) ? _pp.DBG : null })()   // b9-measure：只读计数器句柄（蒸汽引爆/邻居比较），零 gameplay
-	if (foundCombo.steamExplosion) {                 // ④ 火+冰：火墙扫到带冰敌 → 该敌位置引爆蒸汽 AOE；冰只作触发条件（slowT>0），无直伤；per-enemy 2.0s 节流（复用 COMBO_STEAM_INTERVAL_SEC，零新数值）
-		var fi = idx('fire')
-		var fr = RT('SKILL.fire.radius.' + fi, SK.fire.radius[fi])   // 与 tickFire 共用连续火域精确几何
-		var segs = fireSegmentsList(), fireBounds = buildFireBounds(segs, fr, _steamFireBounds)
-		var all = _enemySnap
-		var steamFxCap = RT('PERF.steamBurstCapPerFrame', CONFIG.PERF.steamBurstCapPerFrame)   // 🟡 性能护栏(非 §9 平衡值·b9)：齐爆同帧 VFX 上限，候选 8/10/12；仅门控视觉，不影响平衡
-		var steamFxCount = 0
-		for (var n = 0; n < all.length; n++) {
-			var e = all[n]
-			if (!e.inIce) { continue }                   // ⑥ 修复：仅当敌本帧真在冰池内（inIce，tickIce 实时置位）才引爆；排除「离开冰池但 slowT 残留」误触发，杜绝冰圈外的蒸汽爆炸（tickIce 先于本函数，数据新鲜）
-			if (!enemyTouchesFireTube(e, segs, fr, fireBounds)) { continue }   // Fire 与基础 DOT 共用同一精确连续范围
-			if (e.steamCd > 0) { continue }              // per-enemy 节流（复用 COMBO_STEAM_INTERVAL_SEC=2.0，不新增数值）
-		e.steamCd = COMBO_STEAM_INTERVAL_SEC          // 先置位冷却（消耗该敌 steam 窗口，防漏炸后永久逃逸）；视觉上限不影响伤害结算
-		var es2 = enemiesIn(e.x, e.y, CO.steamExplosion.radius)
-		if (_pdbg) { _pdbg.steamBlasts++; _pdbg.steamAoeCmp += es2.length }   // b9-measure：只读计数（真引爆次数 + AOE 邻居比较总次数），不改逻辑/伤害
-			for (var m = 0; m < es2.length; m++) {
-				// §4.6/§9：基础伤害 = 火焰当前等级 DOT/s × damageMul，不叠 effectMul（comboDamage），保留暴击
-				hurtCombo(es2[m], SK.fire.dotPerSec[fi] * CO.steamExplosion.damageMul, false, 'steam')
-			}
-			if (steamFxCount < steamFxCap) {   // 仅门控视觉 VFX（白闪+爆环+橙粒）；伤害始终结算，敌仍死
-				Bus.emit('fx:steamblast', { x: e.x, y: e.y, radius: CO.steamExplosion.radius, hitCount: es2.length })   // ④-B：带 hitCount 供 render 帧末聚合屏震；爆环对准真实爆心（该敌位置）；事件名全小写以过 Bus 断言
-				steamFxCount++
-			}
-		}
-	}
+	// 蒸汽爆炸 V3 已迁到 landIcePool：每次 Ice Cast 落地只爆一次，再留下 Ice Pool；不再做 Fire×Ice overlap 周期判定。
 	// 电磁炮台部署与齐射由 tickBolt/tickElectroTurret 驱动；基础闪电仍只走 tickLightning。
 }
 

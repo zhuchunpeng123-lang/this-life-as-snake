@@ -26,6 +26,7 @@
 	var BURN_DART_SPRITE_SRC = 'assets/vfx/burning_barrage_dart_v5_2_tailfire.png'
 	var FIRE_HIT_SPRITE_SRC = 'assets/vfx/fire/vfx_fire_hit_burst_v1.png'
 	var ICE_BLOOM_SPRITE_SRC = 'assets/vfx/ice/vfx_ice_crystal_bloom_v1.png'
+	var STEAM_BURST_SPRITE_SRC = 'assets/vfx/steam/vfx_steam_blast_main_v1.png'
 	var BURN_TRAIL = '#ff6f26', BURN_TRAIL_HOT = '#ffd36a'
 	var DART_LAUNCH_LIFE = 0.06
 	var DOT_TEXT_COLOR = '#ff7a3c'    // TODO: DOT 飘字专属橙红（候选 #ff6a2c / #ff944d）
@@ -74,14 +75,15 @@
 		burnDartWorldSprite.onerror = function () { burnDartWorldReady = false }
 		burnDartWorldSprite.src = BURN_DART_SPRITE_SRC
 	}
-	var fireHitSprite = null, fireHitSpriteReady = false, iceBloomSprite = null, iceBloomSpriteReady = false
+	var fireHitSprite = null, fireHitSpriteReady = false, iceBloomSprite = null, iceBloomSpriteReady = false, steamBurstSprite = null, steamBurstSpriteReady = false
 	if (global.Image) {
 		fireHitSprite = new global.Image(); fireHitSprite.onload = function () { fireHitSpriteReady = true }; fireHitSprite.onerror = function () { fireHitSpriteReady = false }; fireHitSprite.src = FIRE_HIT_SPRITE_SRC
 		iceBloomSprite = new global.Image(); iceBloomSprite.onload = function () { iceBloomSpriteReady = true }; iceBloomSprite.onerror = function () { iceBloomSpriteReady = false }; iceBloomSprite.src = ICE_BLOOM_SPRITE_SRC
+		steamBurstSprite = new global.Image(); steamBurstSprite.onload = function () { steamBurstSpriteReady = true }; steamBurstSprite.onerror = function () { steamBurstSpriteReady = false }; steamBurstSprite.src = STEAM_BURST_SPRITE_SRC
 	}
 
-	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high' } }
-	function resetParticle(p) { p.active = false }
+	function newParticle() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 1, color: '#fff', drag: 0.88, prio: 'high', soft: false } }
+	function resetParticle(p) { p.active = false; p.soft = false }
 	function newText() { return { active: false, x: 0, y: 0, prevX: 0, prevY: 0, vy: -40, life: 0, maxLife: 1, text: '', color: '#fff', size: 14, weight: 700, prio: 'high', strokeColor: null, strokeWidth: 0, iconId: null, iconColor: null } }
 	function resetText(t) { t.active = false }
 
@@ -90,14 +92,14 @@
 	// 通用光束（fx:bolt / fx:lightning），curve=true 走 quadratic 折线；电磁炮台束由 drawElectroBeam 直接绘制；爆环（fx:steamblast）
 	function newBeam() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, cx: 0, cy: 0, curve: false, life: 0, maxLife: 1, width: 2, color: '#fff' } }
 	function resetBeam(b) { b.active = false }
-	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff' } }
-	function resetBlast(b) { b.active = false }
+	function newBlast() { return { active: false, x: 0, y: 0, radius: 0, life: 0, maxLife: 1, ringWidth: 4, color: '#fff', startA: 0, endA: M.PI2 } }
+	function resetBlast(b) { b.active = false; b.startA = 0; b.endA = M.PI2 }
 	function newDart() { return { active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0, maxLife: 1, delay: 0, color: '#fff', burning: false, level: 1, shotIndex: 0, shotCount: 1, targetId: null } }
 	function resetDart(b) { b.active = false; b.targetId = null }
 	function newDartAccent() { return { active: false, kind: 'impact', x: 0, y: 0, life: 0, maxLife: 1, burning: false, angle: 0 } }
 	function resetDartAccent(a) { a.active = false }
-	function newSkillBurst() { return { active: false, kind: '', x: 0, y: 0, life: 0, maxLife: 1, size: 0, angle: 0 } }
-	function resetSkillBurst(b) { b.active = false; b.kind = '' }
+	function newSkillBurst() { return { active: false, kind: '', spriteKind: '', x: 0, y: 0, life: 0, maxLife: 1, delay: 0, size: 0, angle: 0, alphaMul: 1, growMul: 0, fadePower: 2 } }
+	function resetSkillBurst(b) { b.active = false; b.kind = ''; b.spriteKind = ''; b.delay = 0; b.alphaMul = 1; b.growMul = 0; b.fadePower = 2 }
 	var beamPool = Core.createPool(newBeam, resetBeam, 64)
 	var blastPool = Core.createPool(newBlast, resetBlast, 96)   // b9：爆环池 32→96（蒸汽齐爆峰值）
 	var particles = []
@@ -136,7 +138,7 @@
 	var skipNextSteamFlash = false
 	// 优先级挤占：满上限时，high 挤掉最旧 low；low 或无可挤则丢弃（drop-newest）
 	function evictLow(pool) { for (var k = 0; k < pool.length; k++) { if (pool[k].prio === 'low') { return k } } return -1 }
-	function emitParticle(x, y, vx, vy, life, size, color, drag, prio) {
+	function emitParticle(x, y, vx, vy, life, size, color, drag, prio, soft) {
 		if (frameSpawn >= spawnBudget()) { return false }                 // 每帧预算耗尽：丢弃（削平齐爆尖峰）
 		if (particles.length >= maxParticles()) {
 			if (prio === 'high') { var ei = evictLow(particles); if (ei < 0) { return false } particlePool.release(particles[ei]); particles.splice(ei, 1) }
@@ -144,7 +146,7 @@
 		}
 		var p = particlePool.acquire()
 		p.active = true; p.x = x; p.y = y; p.prevX = x; p.prevY = y; p.vx = vx; p.vy = vy
-		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio
+		p.life = p.maxLife = life; p.size = size; p.color = color; p.drag = drag; p.prio = prio; p.soft = !!soft
 		particles.push(p); frameSpawn++; return true
 	}
 	function emitText(x, y, str, color, size, prio, opts) {
@@ -201,10 +203,11 @@
 		beams.push(b); frameSpawn++; return true
 	}
 	// 生成扩张爆环 + 少量爆散团（爆散团走小圆点粒子）
-	function spawnBlast(x, y, radius, color, life) {
+	function spawnBlast(x, y, radius, color, life, startA, endA) {
 		if (frameSpawn >= spawnBudget()) { return }   // 每帧预算：削平齐爆爆环尖峰
 		var b = blastPool.acquire()
 		b.active = true; b.x = x; b.y = y; b.radius = radius; b.color = color; b.ringWidth = BLAST_RING_W
+		b.startA = startA == null ? 0 : startA; b.endA = endA == null ? M.PI2 : endA
 		b.life = b.maxLife = life
 		blasts.push(b); frameSpawn++
 	}
@@ -274,11 +277,14 @@
 		}
 	}
 	function spawnText(x, y, str, color, size, prio, opts) { emitText(x, y, str, color, size, (prio === 'low') ? 'low' : 'high', opts) }   // prio 默认 high；仅 enemy:hit 伤害飘字传 'low'
-	function spawnSkillBurst(kind, x, y, radius, angle) {
-		var style = SKILL_VFX[kind]
-		if (!style || skillBursts.length >= style.maxBursts) { return }
+	function spawnSkillBurst(kind, x, y, radius, angle, opts) {
+		var style = SKILL_VFX[kind], o = opts || {}
+		if (!style || skillBursts.length >= (o.maxBursts || style.maxBursts)) { return }
 		var burst = skillBurstPool.acquire()
-		burst.active = true; burst.kind = kind; burst.x = x; burst.y = y; burst.life = burst.maxLife = style.burstLifeSec; burst.size = radius * style.burstSizeMul; burst.angle = angle || 0
+		burst.active = true; burst.kind = kind; burst.spriteKind = o.spriteKind || kind; burst.x = x; burst.y = y
+		burst.life = burst.maxLife = o.lifeSec || style.burstLifeSec; burst.delay = o.delaySec || 0
+		burst.size = radius * (o.sizeMul || style.burstSizeMul); burst.angle = angle || 0
+		burst.alphaMul = o.alphaMul == null ? 1 : o.alphaMul; burst.growMul = o.growMul || 0; burst.fadePower = o.fadePower || 2
 		skillBursts.push(burst)
 	}
 
@@ -1000,7 +1006,9 @@
 			if (fc.life <= 0) { flashPool.release(fc); flashCores.splice(i, 1) }
 		}
 		for (i = skillBursts.length - 1; i >= 0; i--) {
-			var sb = skillBursts[i]; sb.life -= dt
+			var sb = skillBursts[i]
+			if (sb.delay > 0) { sb.delay -= dt; continue }
+			sb.life -= dt
 			if (sb.life <= 0) { skillBurstPool.release(sb); skillBursts.splice(i, 1) }
 		}
 	},
@@ -1010,20 +1018,24 @@
 			var i
 			drawElectricWorld(ctx)
 			for (i = 0; i < skillBursts.length; i++) {
-				var sb = skillBursts[i], sprite = sb.kind === 'ice' ? iceBloomSprite : fireHitSprite
-				var ready = sb.kind === 'ice' ? iceBloomSpriteReady : fireHitSpriteReady
+				var sb = skillBursts[i]
+				if (sb.delay > 0) { continue }
+				var skind = sb.spriteKind || sb.kind, sprite = skind === 'ice' ? iceBloomSprite : (skind === 'steam' ? steamBurstSprite : fireHitSprite)
+				var ready = skind === 'ice' ? iceBloomSpriteReady : (skind === 'steam' ? steamBurstSpriteReady : fireHitSpriteReady)
 				if (!ready || !sprite || !sprite.naturalWidth) { continue }
-				var burstAlpha = sb.life / sb.maxLife
-				ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = burstAlpha * burstAlpha
-				ctx.translate(sb.x, sb.y); ctx.rotate(sb.angle); ctx.drawImage(sprite, -sb.size, -sb.size, sb.size * 2, sb.size * 2); ctx.restore()
+				var burstAlpha = Math.max(0, sb.life / sb.maxLife), progress = 1 - burstAlpha
+				var drawSize = sb.size * (1 + progress * sb.growMul)
+				ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.pow(burstAlpha, sb.fadePower) * sb.alphaMul
+				ctx.translate(sb.x, sb.y); ctx.rotate(sb.angle); ctx.drawImage(sprite, -drawSize, -drawSize, drawSize * 2, drawSize * 2); ctx.restore()
 			}
 			for (i = 0; i < particles.length; i++) {
 				var p = particles[i]
 				var a = p.life / p.maxLife
 				if (a < 0) { a = 0 }
-				ctx.globalAlpha = a
 				ctx.fillStyle = p.color
-				ctx.beginPath(); ctx.arc(M.lerp(p.prevX, p.x, ra), M.lerp(p.prevY, p.y, ra), p.size * a, 0, M.PI2); ctx.fill()
+				var pr = p.soft ? p.size * (0.68 + (1 - a) * 0.72) : p.size * a
+				ctx.globalAlpha = p.soft ? a * 0.82 : a
+				ctx.beginPath(); ctx.arc(M.lerp(p.prevX, p.x, ra), M.lerp(p.prevY, p.y, ra), pr, 0, M.PI2); ctx.fill()
 			}
 			// 光束：廉价双描边发光（宽+低透明打底 + 窄+高亮覆盖），避免 shadowBlur 拖帧（验收⑤）
 			ctx.lineCap = 'round'
@@ -1044,7 +1056,7 @@
 				if (bla < 0) { bla = 0 }
 				var prog = 1 - bla
 				ctx.globalAlpha = bla * 0.6; ctx.strokeStyle = bl.color; ctx.lineWidth = bl.ringWidth
-				ctx.beginPath(); ctx.arc(bl.x, bl.y, Math.max(1, bl.radius * prog), 0, M.PI2); ctx.stroke()
+				ctx.beginPath(); ctx.arc(bl.x, bl.y, Math.max(1, bl.radius * prog), bl.startA, bl.endA); ctx.stroke()
 			}
 			ctx.globalAlpha = 1
 		},
@@ -1114,15 +1126,16 @@
 		var presentationDamage = Math.round(d.damage)
 		if (presentationDamage <= 0) { return }
 		var presentationY = d.y - 6 - (d.r || 0)
+		var debugPrefix = COMBAT_TEXT.debugSourceLabels && d.src && SRC_STYLE[d.src] ? SRC_STYLE[d.src].label : ''
 		if (d.isDot) {
 			if (d.src === 'fire') { DBG.fireDot++ }
-			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; emitCombatText(d.x, presentationY, '-' + presentationDamage, 'dot', d.src) }
+			if (dotTextThisFrame < RT('VFX.dotTextFrameCap', 10)) { dotTextThisFrame++; emitCombatText(d.x, presentationY, debugPrefix + '-' + presentationDamage, 'dot', d.src) }
 			return
 		}
 		var presentationRole = d.crit ? 'crit' : 'normal'
 		var presentation = resolveCombatText(presentationRole, d.src)
 		if (presentationRole === 'normal') { spawnBurst(d.x, d.y, 5, presentation.color, 160, 3, 0.3, 'low') }
-		emitCombatText(d.x, presentationY, String(presentationDamage), presentationRole, d.src)
+		emitCombatText(d.x, presentationY, debugPrefix + String(presentationDamage), presentationRole, d.src)
 		return
 		if (dmg <= 0) { return }                                  // 过滤 ≤0 伤害：绝不显示「0」飘字（防小数/无效伤害刷屏）
 		var st = (d.src && SRC_STYLE[d.src]) ? SRC_STYLE[d.src] : null   // B-1：按来源取标签+专属色（无来源则回退旧样式）
@@ -1182,26 +1195,41 @@
 		var steamTime = (typeof GS.timeSec === 'number' ? GS.timeSec : -1) + ':' + steamFrame
 		skipNextSteamFlash = steamTime === steamFlashTime
 		steamFlashTime = steamTime
-		spawnSkillBurst('steam', d.x, d.y, d.radius, Math.random() * M.PI2)
-		spawnFlashCore(d.x, d.y, d.radius * steamStyle.coreRadiusMul, steamStyle.coreColor, steamStyle.coreLifeSec)
-		spawnBlast(d.x, d.y, d.radius, steamStyle.outerColor, steamStyle.outerLifeSec)
-		spawnBlast(d.x, d.y, d.radius * steamStyle.coreRadiusMul, steamStyle.innerColor, steamStyle.innerLifeSec)
-		spawnBurst(d.x, d.y, HIT_BURST_N, BLAST_COLOR, 180, 4, 0.35)
-		for (var w = 0; w < 7; w++) {                                                // 上升白色蒸汽（vy<0，~0.5s）· high 优先（蒸汽 VFX 尽量保留）
-			var px = d.x + (Math.random() * 2 - 1) * d.radius * 0.3
-			var py = d.y + (Math.random() * 2 - 1) * d.radius * 0.3
-			emitParticle(px, py, (Math.random() * 2 - 1) * 20, -(50 + Math.random() * 60), 0.5, 4 + Math.random() * 4, 'rgba(255,255,255,0.6)', 0.92, 'high')
+
+		// 蒸汽爆炸 V4：父技能只负责“来源识别”，且必须同中心；Steam 是第三种结果和绝对主视觉。
+		// V4B 实机修正：skillBursts 在 drawWorld 中按插入顺序绘制。
+		// 必须先 Ice、再 Fire，才能得到“蓝冰外层 + 橙火前景热核”；V4 的 Fire→Ice 顺序会让 Ice 直接盖住 Fire。
+		spawnSkillBurst('steam', d.x, d.y, d.radius, 0, { spriteKind: 'ice', sizeMul: steamStyle.iceBurstSizeMul || 1.02, lifeSec: steamStyle.iceBurstLifeSec || 0.18, alphaMul: steamStyle.iceBurstAlpha == null ? 0.30 : steamStyle.iceBurstAlpha, fadePower: steamStyle.iceBurstFadePower == null ? 1.10 : steamStyle.iceBurstFadePower })
+		spawnSkillBurst('steam', d.x, d.y, d.radius, 0, { spriteKind: 'fire', sizeMul: steamStyle.fireBurstSizeMul || 0.92, lifeSec: steamStyle.fireBurstLifeSec || 0.24, alphaMul: steamStyle.fireBurstAlpha == null ? 1.00 : steamStyle.fireBurstAlpha, fadePower: steamStyle.fireBurstFadePower == null ? 0.72 : steamStyle.fireBurstFadePower })
+		spawnSkillBurst('steam', d.x, d.y, d.radius, 0, { spriteKind: 'steam', sizeMul: steamStyle.burstSizeMul || 1.05, lifeSec: steamStyle.burstLifeSec || 0.34, delaySec: steamStyle.burstDelaySec || 0.13, alphaMul: steamStyle.burstAlpha == null ? 0.96 : steamStyle.burstAlpha, growMul: steamStyle.burstGrowMul || 0.36, fadePower: steamStyle.burstFadePower == null ? 1.08 : steamStyle.burstFadePower })
+		spawnFlashCore(d.x, d.y, d.radius * (steamStyle.coreRadiusMul || 0.13), steamStyle.coreColor || 'rgba(255,205,112,0.78)', steamStyle.coreLifeSec || 0.10)
+
+		// 仅保留两段程序化破碎压力弧，避免新增第四张 PNG，也避免完整蓝圈与 Ice Field 混淆。
+		var arcLife = steamStyle.pressureArcLifeSec || 0.18, arcColor = steamStyle.pressureArcColor || 'rgba(184,241,255,0.70)', spin = Math.random() * M.PI2
+		spawnBlast(d.x, d.y, d.radius, arcColor, arcLife, spin + 0.10, spin + 2.35)
+		spawnBlast(d.x, d.y, d.radius * 0.95, 'rgba(247,254,255,0.62)', arcLife * 0.82, spin + 3.15, spin + 5.45)
+
+		// Steam PNG 已承担主体，程序粒子只补少量体积与散逸，防止 Combo 变成多素材堆叠。
+		var puffN = scN(steamStyle.puffCount || 6), pMin = steamStyle.puffSpeedMin || 30, pMax = steamStyle.puffSpeedMax || 62
+		for (var w = 0; w < puffN; w++) {
+			var pa = Math.random() * M.PI2, ps = pMin + Math.random() * Math.max(0, pMax - pMin)
+			var psize = (steamStyle.puffSizeMin || 6) + Math.random() * Math.max(0, (steamStyle.puffSizeMax || 10) - (steamStyle.puffSizeMin || 6))
+			var pcol = (w % 3 === 0) ? (steamStyle.puffCoolColor || 'rgba(190,242,255,0.34)') : (steamStyle.puffColor || 'rgba(247,254,255,0.46)')
+			emitParticle(d.x, d.y, Math.cos(pa) * ps, Math.sin(pa) * ps - (steamStyle.puffRiseSpeed || 28), steamStyle.puffLifeSec || 0.24, psize, pcol, 0.91, 'high', true)
 		}
-		for (var ic = 0; ic < 8; ic++) {                                            // 浅蓝冰晶碎屑（呼应冰只控）：径向迸射 · high 优先
-			var ia = Math.random() * M.PI2, isp = 120 + Math.random() * 120
-			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, 0.45, 2 + Math.random() * 2, SKFX.ice, 0.9, 'high')
+
+		spawnBurst(d.x, d.y, steamStyle.warmSparkCount || 2, steamStyle.warmSparkColor || '#ffb05a', 105, 2.1, 0.15)
+		var chipN = scN(steamStyle.iceChipCount || 2), chipMin = steamStyle.iceChipSpeedMin || 82, chipMax = steamStyle.iceChipSpeedMax || 125
+		for (var ic = 0; ic < chipN; ic++) {
+			var ia = Math.random() * M.PI2, isp = chipMin + Math.random() * Math.max(0, chipMax - chipMin)
+			emitParticle(d.x, d.y, Math.cos(ia) * isp, Math.sin(ia) * isp, steamStyle.iceChipLifeSec || 0.22, steamStyle.iceChipSizePx || 1.9, SKFX.ice, 0.9, 'high')
 		}
 	})
 	// b9-diag：灼烧弹幕点燃计数改为 direct DBG.ignite++（见 incIgnite），不在热路径发 Bus 事件（已确认无 gameplay listener，纯诊断噪声）
 	// B-2：敌人进入冰区 → 蓝字「减速」+ 小爆点（坐标用敌人位置；跨层走 Bus，不直调；事件名须全小写以过 Bus 断言）
 	Bus.on('fx:iceslow', function (d) {
 		if (!d || d.x == null || d.y == null) { return }
-		if (COMBAT_TEXT.debugSourceLabels) { emitCombatText(d.x, d.y - 6 - (d.r || 12), '减速', 'debugSource', 'ice') }
+		if (COMBAT_TEXT.debugSourceLabels) { emitCombatText(d.x, d.y - 6 - (d.r || 12), d.frozen ? '冻结' : '减速', 'debugSource', 'ice') }
 		spawnBurst(d.x, d.y, 3, SKFX.ice, 90, 2, 0.25)
 		return
 		emitText(d.x, d.y - 6 - (d.r || 12), '减速', SKFX.ice, 12, 'low')   // 减速标签：low 优先（满上限时丢弃，不抢伤害飘字预算）

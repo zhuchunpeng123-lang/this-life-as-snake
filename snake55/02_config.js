@@ -97,7 +97,7 @@
 
 		// —— §性能护栏（非 §9 平衡值；🟡 待实测+候选，归 b9 性能专项）——
 		PERF: {
-			steamBurstCapPerFrame: 10,  // 🟡 蒸汽齐爆同帧 VFX 上限（仅门控视觉 fx:steamblast 的 Bus.emit，伤害 hurtCombo 始终结算）；候选 8 / 10 / 12，实测再收。保住"大 AOE 齐爆"读感
+			steamBurstCapPerFrame: 10,  // 旧版兼容字段：蒸汽爆炸 V3 已改为每次 Ice 落地最多一次，不再读取该齐爆上限；暂保留避免历史调参数据/工具读取报错
 			maxParticles: 240,          // 🟡 全局粒子活跃上限（门控所有进池写入，含 fx:steamblast 直 push 旁路，否则齐爆打爆池）；350→240：火墙 DOT 粒子已停喷（见 05_particle），给余量，HUD「粒子」实测可调；候选 220/240/300，RT 热调
 			maxTexts: 48,              // 🟡 全局飘字活跃上限（门控最贵的 fillText 飘字）；候选 40/48/60，RT 热调
 			spawnBudgetPerFrame: 120,  // 🟡 每帧 VFX 生成预算（削平齐爆单帧尖峰，覆盖 burst/text/blast/beam/flash/dart）；候选 100/120/150，RT 热调
@@ -317,7 +317,7 @@
 					},
 					echo: {
 						combo: {
-							steamExplosion: ['冰和火撞在一起，蒸汽一下炸开了。', '冰火接上了，蛇身多了一次蒸汽爆发。'],
+							steamExplosion: ['冰锥落地先炸出一团蒸汽，再留下冰场。', '火性把冰霜变成了蒸汽炸弹：先爆，再控场。'],
 							electroTurret: ['电光停了下来，开始守住一块地方。', '飞出去的电，第一次留在原地继续开火。'],
 							burningBarrage: ['火追着飞镖出去，开始跟着怪潮烧。', '飞镖带上了火，余烬一路跟着怪走。']
 						},
@@ -334,7 +334,7 @@
 					},
 					buildArc: {
 						1: {
-							steamExplosion: ['冰和火撞在一起，蒸汽从蛇身里炸开。', '它把冰和火接到了一起，相撞就成了蒸汽爆发。'],
+							steamExplosion: ['冰锥落地时先炸开蒸汽，冰圈随后留下。', '冰霜接上火性后，每次落地会先爆一次蒸汽。'],
 							electroTurret: ['飞出去的电光停了下来，变成守在原地的炮台。', '电不再只往前冲，它开始留下来守住一片地方。'],
 							burningBarrage: ['飞镖带着火追出去，余烬一路跟着怪潮。', '火追上了飞镖，从此攻击走到哪，余烬就跟到哪。']
 						},
@@ -525,7 +525,24 @@
 					},
 					ice: { poolCoreSizePx: 74, poolCoreAlpha: 0.5, burstSizeMul: 1.05, burstLifeSec: 0.34, maxBursts: 8 },
 					shield: { orbSpriteSizePx: 30, trailAlpha: 0.18, trailWidthPx: 4, trailColor: '#79ffe5' },
-					steam: { burstSizeMul: 1.15, burstLifeSec: 0.28, maxBursts: 8, coreRadiusMul: 0.34, coreColor: 'rgba(190,245,255,0.72)', coreLifeSec: 0.14, outerColor: 'rgba(173,238,255,0.62)', outerLifeSec: 0.42, innerColor: '#ffb05a', innerLifeSec: 0.16 },
+					steam: {
+						// 蒸汽爆炸 V4B（实机录屏修正）：先给 Fire + Ice 一个真正可读的同中心反应窗，再由 Steam 接管。
+						// 录屏根因：skillBursts 按插入顺序绘制，旧版 Ice 压在 Fire 上；同时白闪核/Steam 进入过早，导致肉眼几乎只读到 Ice。
+						maxBursts: 8,
+						// 反应窗：Ice 做外层冷源，Fire 做前景热核。两者同中心，不允许空间分离。
+						fireBurstSizeMul: 0.92, fireBurstLifeSec: 0.24, fireBurstAlpha: 1.00, fireBurstFadePower: 0.72,
+						iceBurstSizeMul: 1.02, iceBurstLifeSec: 0.18, iceBurstAlpha: 0.30, iceBurstFadePower: 1.10,
+						// Steam 延后约 130ms 再接管；起始尺寸收一点，随后快速长开，避免第一帧直接盖住 Fire。
+						burstSizeMul: 1.05, burstLifeSec: 0.34, burstDelaySec: 0.13, burstAlpha: 0.96, burstGrowMul: 0.36, burstFadePower: 1.08,
+						// 起爆前段不再用大白核洗掉橙色：缩小并改成暖白热核。
+						coreRadiusMul: 0.13, coreColor: 'rgba(255,205,112,0.78)', coreLifeSec: 0.10,
+						pressureArcColor: 'rgba(184,241,255,0.58)', pressureArcLifeSec: 0.18,
+						// 蒸汽辅助粒子减量：主身份交给 Steam PNG，避免反应窗被白粒子提前糊住。
+						puffCount: 3, puffLifeSec: 0.22, puffSpeedMin: 30, puffSpeedMax: 58, puffSizeMin: 5.5, puffSizeMax: 8.5, puffRiseSpeed: 27,
+						puffColor: 'rgba(247,254,255,0.38)', puffCoolColor: 'rgba(190,242,255,0.28)',
+						warmSparkColor: '#ffb05a', warmSparkCount: 3,
+						iceChipCount: 2, iceChipLifeSec: 0.20, iceChipSpeedMin: 82, iceChipSpeedMax: 120, iceChipSizePx: 1.8
+					},
 					// 远程技能共用节奏：保持晶叶投射物的清爽方向感，燃烧弹幕只加强暖色层与命中余韵，不扩张判定或伤害。
 					ranged: {
 						bolt: { trailOuterAlpha: 0.16, trailCoreAlpha: 0.44, trailOuterWidthPx: 2.7, trailCoreWidthPx: 1.1, impactLifeSec: 0.17, impactArcPx: 10, impactCorePx: 2.2 },

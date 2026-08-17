@@ -84,7 +84,7 @@
 	// 任务2+❷：屏震分档节流 + 蒸汽齐爆帧末聚合状态
 	var _traumaGateUntil = 0   // 节流窗口末（GS.timeSec）；窗口内同/低档请求丢弃
 	var _traumaLastRank = 0    // 上次应用档位 rank（1=T1/2=T2/3=T3）
-	var _steamThisFrame = 0    // 本帧 fx:steamblast 计数（帧末聚合→T1 一次，单体 T0 不震）
+	var _steamThisFrame = 0    // 蒸汽爆炸 V3：每次 Ice Cast 最多一个 fx:steamblast；帧末聚合后给单次 Combo 一次轻震
 	var _lastSteamCount = 0    // HUD：上帧蒸汽齐爆数
 	var _frameMs = 0           // HUD：本帧绘制耗时(ms)
 	var _ra = 1                // 渲染插值系数（main 经 draw(alpha) 写入 = 剩余累计时间/固定步长）；消 fixed-step 无插值导致的头部一顿一顿
@@ -1244,9 +1244,9 @@ function drawSnake() {
 	rcx = cam.x; rcy = cam.y
 	diagCamTick(rcx, rcy)   // DIAG：相机屏幕位移直方图（window.__SNAKE_DIAG=true 时生效）
 	diagHeadTick(rcx, rcy)  // DIAG：蛇头屏幕位移直方图（区分"相对运动不同步" vs "worldScale shimmer"）
-	// 任务2+❷：本帧蒸汽齐爆聚合 → T1 轻档一次（addTrauma 节流防常震脱敏）；单体(<manyMin)→T0 不震
+	// 蒸汽爆炸 V3：触发频率已收口为每次 Ice 落地最多一次，因此单次 Combo 也允许一次 T1 轻震，强调‘先爆再留冰’的峰值。
 	_lastSteamCount = _steamThisFrame
-	if (_steamThisFrame >= SHK.steam.manyMin) { addTrauma(1, SHK.light) }
+	if (_steamThisFrame > 0) { addTrauma(1, SHK.light) }
 	_steamThisFrame = 0
 	var mag = 0
 	if (shakeFrames > 0) { mag = Math.max(mag, shakeMag); shakeFrames--; if (shakeFrames <= 0) { shakeMag = 0 } else { shakeMag *= 0.85 } }
@@ -1378,7 +1378,7 @@ function drawDebugHud() {
 	Bus.on('boss:defeated', function () { addTrauma(3, SHK.death) })   // 击败 Boss → T3 通关强震
 	Bus.on('enemy:die', function (d) { if (d && d.kind === 'elite') { addTrauma(2, SHK.process) } })   // 精英死 → T2
 	Bus.on('combo:found', function () { addTrauma(2, SHK.process) })   // combo 首触 → T2
-	Bus.on('fx:steamblast', function (d) {   // 任务2+❷：仅计数；屏震改由 draw() 帧末聚合（≥manyMin→T1 轻档一次，单体 T0 不震）
+	Bus.on('fx:steamblast', function (d) {   // 蒸汽爆炸 V3：仅计数；每次 Ice Cast 最多一个事件，帧末统一给一次 T1 轻震
 		if (!d) { return }
 		_steamThisFrame++
 	})
